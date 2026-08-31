@@ -5,8 +5,8 @@ from typing import Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.database import get_db
-from app.config import settings
+from app.core.database import get_db
+from app.core.config import settings
 from app.core.security import limiter, sanitize_arxiv_id, validate_and_sanitize_url, verify_api_key
 from app.services.pipeline import process_paper
 

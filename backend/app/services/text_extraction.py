@@ -7,7 +7,7 @@ import requests
 import fitz  # PyMuPDF
 from dataclasses import dataclass, field
 from typing import List, Optional
-from app.config import settings
+from app.core.config import settings
 from app.core.security import sanitize_arxiv_id, validate_and_sanitize_url
 
 

@@ -1,8 +1,8 @@
 """Graph extraction and verification service."""
 
 import json
-from app.config import settings
-from app.models.graph import ArchitectureGraph
+from app.core.config import settings
+from app.models.architecture import ArchitectureGraph
 from app.services.llm import groq_client
 
 

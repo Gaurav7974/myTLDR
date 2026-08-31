@@ -1,6 +1,6 @@
 """Layout computation using dagre."""
 
-from app.models.graph import ArchitectureGraph
+from app.models.architecture import ArchitectureGraph
 
 
 def compute_layout(graph: ArchitectureGraph) -> list[dict]:

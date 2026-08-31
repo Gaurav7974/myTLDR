@@ -3,7 +3,7 @@
 import json
 import re
 from typing import Dict, Any, List
-from app.config import settings
+from app.core.config import settings
 from app.services.llm import groq_client
 
 BYCROFT_EXTRACTION_SYSTEM_PROMPT = """You are a world-class AI researcher and neural network architecture visualizer.

@@ -2,7 +2,7 @@
 
 import json
 from typing import Dict, Any, Tuple
-from app.config import settings
+from app.core.config import settings
 from app.services.llm import groq_client
 from app.models.architecture_ir import ArchitectureIR, SceneGraph3D
 from app.services.graph_validator import graph_validator

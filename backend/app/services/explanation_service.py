@@ -3,9 +3,9 @@
 import json
 import re
 from typing import Dict, Any
-from app.config import settings
+from app.core.config import settings
 from app.services.llm import groq_client
-from app.models.paper_summary import StructuredPaperSummary
+from app.models.summary import StructuredPaperSummary
 
 STRUCTURED_EXPLANATION_SYSTEM_PROMPT = """You are a research-paper summarization engine for an academic visualization platform.
 Your task is NOT to write a general article or create arbitrary sections.

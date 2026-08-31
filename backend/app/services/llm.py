@@ -8,7 +8,7 @@ Kept the legacy symbol name `groq_client` so existing imports keep working.
 import time
 import json
 import requests
-from app.config import settings
+from app.core.config import settings
 
 
 class ChatClient:

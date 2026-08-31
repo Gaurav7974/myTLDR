@@ -3,7 +3,7 @@
 import asyncio
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.config import settings
+from app.core.config import settings
 from app.services.text_extraction import text_extractor
 from app.services.graph_service import graph_service
 from app.services.explanation_service import explanation_service
@@ -124,7 +124,7 @@ async def process_paper(
     diagram_available = False
     
     if cached_graph is not None:
-        from app.models.graph import ArchitectureGraph
+        from app.models.architecture import ArchitectureGraph
         graph = ArchitectureGraph(**cached_graph)
         diagram_available = True
     else:

@@ -10,8 +10,8 @@ import time
 import requests
 from typing import Optional
 
-from app.config import settings
-from app.models.graph import ArchitectureGraph
+from app.core.config import settings
+from app.models.architecture import ArchitectureGraph
 
 
 VISION_GRAPH_PROMPT = """You are an expert at reading neural-network architecture diagrams.

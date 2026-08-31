@@ -5,9 +5,9 @@ import math
 from typing import List, Dict, Any, Optional
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.db import PaperChunk
+from app.models.orm import PaperChunk
 from app.services.llm import groq_client
-from app.config import settings
+from app.core.config import settings
 
 # In-memory vector store fallback if Postgres/pgvector is temporarily offline
 _MEMORY_VECTOR_STORE: Dict[str, List[Dict[str, Any]]] = {}

@@ -9,7 +9,7 @@ from fastapi import Request, HTTPException, Security, status
 from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from app.config import settings
+from app.core.config import settings
 
 # API Key headers
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -20,7 +20,7 @@ def get_rate_limit_key(request: Request) -> str:
     """
     Extract rate limiting key:
     If a valid API key is present, rate limit per API key.
-    Otherwise, rate limit per client IP address.
+    Otherwise, rate limit per client IP (respecting X-Forwarded-For from Vercel).
     """
     api_key = request.headers.get("X-API-Key")
     if not api_key:
@@ -30,6 +30,11 @@ def get_rate_limit_key(request: Request) -> str:
 
     if api_key and (api_key == settings.MASTER_API_KEY or api_key in settings.API_KEYS):
         return f"apikey:{api_key}"
+
+    # Prefer real client IP from Vercel proxy
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
 
     return get_remote_address(request)
 

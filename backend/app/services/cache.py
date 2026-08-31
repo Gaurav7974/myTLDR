@@ -3,7 +3,7 @@
 import hashlib
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.db import PaperCache, GraphCache
+from app.models.orm import PaperCache, GraphCache
 from app.services.text_extraction import text_extractor
 
 

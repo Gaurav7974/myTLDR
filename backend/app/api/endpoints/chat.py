@@ -4,8 +4,8 @@ from typing import List, Dict, Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.database import get_db
-from app.config import settings
+from app.core.database import get_db
+from app.core.config import settings
 from app.core.security import limiter, sanitize_arxiv_id, verify_api_key
 from app.services.rag_service import rag_service
 
