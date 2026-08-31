@@ -54,6 +54,11 @@ class Settings:
     LLM_FALLBACK_MODEL: str = os.getenv("LLM_FALLBACK_MODEL", GROQ_EXTRACT_MODEL)
     LLM_FALLBACK_ENABLED: bool = os.getenv("LLM_FALLBACK_ENABLED", "true").lower() == "true"
     
+    # Embedding (Google Gemini)
+    GOOGLE_EMBEDDING_KEY: str = os.getenv("GOOGLE_EMBEDDING_KEY", "")
+    GOOGLE_EMBEDDING_MODEL: str = os.getenv("GOOGLE_EMBEDDING_MODEL", "gemini-embedding-001")
+    EMBEDDING_DIM: int = 3072
+    
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/papers")
     

@@ -2,6 +2,7 @@
 
 import re
 import math
+import asyncio
 from typing import List, Dict, Any, Optional
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,35 +13,34 @@ from app.core.config import settings
 # In-memory vector store fallback if Postgres/pgvector is temporarily offline
 _MEMORY_VECTOR_STORE: Dict[str, List[Dict[str, Any]]] = {}
 
-# Lazy-loaded fastembed model
-_embedding_model = None
+# Embedding cache to avoid redundant API calls
+_embedding_cache: Dict[str, List[float]] = {}
 
 
-def get_embedding_model():
-    """Lazy-load ONNX fastembed model (BAAI/bge-small-en-v1.5, 384 dims)."""
-    global _embedding_model
-    if _embedding_model is None:
+async def compute_dense_embedding(text_str: str) -> List[float]:
+    """Compute embedding via Google Gemini API (with deterministic fallback)."""
+    if text_str in _embedding_cache:
+        return _embedding_cache[text_str]
+
+    if settings.GOOGLE_EMBEDDING_KEY:
         try:
-            from fastembed import TextEmbedding
-            _embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
-        except Exception:
-            _embedding_model = False
-    return _embedding_model
-
-
-def compute_dense_embedding(text_str: str, dim: int = 384) -> List[float]:
-    """Compute normalized dense vector embedding (via fastembed or deterministic projection fallback)."""
-    model = get_embedding_model()
-    if model:
-        try:
-            embeddings = list(model.embed([text_str]))
-            if embeddings:
-                return embeddings[0].tolist()
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GOOGLE_EMBEDDING_MODEL}:embedContent",
+                    params={"key": settings.GOOGLE_EMBEDDING_KEY},
+                    json={"content": {"parts": [{"text": text_str}]}}
+                )
+                resp.raise_for_status()
+                values = resp.json()["embedding"]["values"]
+                _embedding_cache[text_str] = values
+                return values
         except Exception:
             pass
 
-    # High-entropy deterministic dense vector projection fallback (normalized to unit length)
+    # Deterministic fallback
     import hashlib
+    dim = settings.EMBEDDING_DIM
     vec = [0.0] * dim
     words = text_str.lower().split()
     for i, word in enumerate(words):
@@ -49,10 +49,10 @@ def compute_dense_embedding(text_str: str, dim: int = 384) -> List[float]:
             bit = (h >> (d % 32)) & 1
             val = (1.0 if bit else -1.0) / math.sqrt(i + 1)
             vec[d] += val
-    
-    # L2 normalize
     norm = math.sqrt(sum(x * x for x in vec)) or 1.0
-    return [x / norm for x in vec]
+    result = [x / norm for x in vec]
+    _embedding_cache[text_str] = result
+    return result
 
 
 def chunk_paper_text(full_text: str, chunk_size: int = 600, overlap: int = 100) -> List[Dict[str, Any]]:
@@ -134,7 +134,7 @@ class RAGService:
 
             # Insert chunks into pgvector
             for c in chunks:
-                emb = compute_dense_embedding(c["content"])
+                emb = await compute_dense_embedding(c["content"])
                 db_chunk = PaperChunk(
                     paper_hash=paper_hash,
                     chunk_index=c["chunk_index"],
@@ -156,7 +156,7 @@ class RAGService:
         except Exception as e:
             # Fallback to in-memory store
             for c in chunks:
-                emb = compute_dense_embedding(c["content"])
+                emb = await compute_dense_embedding(c["content"])
                 in_memory_records.append({
                     "section_title": c["section_title"],
                     "content": c["content"],
@@ -175,7 +175,7 @@ class RAGService:
         """
         Retrieve the top-K most relevant paper chunks using pgvector cosine distance (<=>).
         """
-        query_embedding = compute_dense_embedding(query)
+        query_embedding = await compute_dense_embedding(query)
 
         # 1. Try pgvector query
         try:

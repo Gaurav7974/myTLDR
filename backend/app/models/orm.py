@@ -51,6 +51,6 @@ class PaperChunk(Base):
     chunk_index = Column(Integer, nullable=False)
     section_title = Column(String, nullable=True)
     content = Column(Text, nullable=False)
-    # 384-dimensional dense vector embeddings (e.g. BAAI/bge-small-en-v1.5 / all-MiniLM-L6-v2)
-    embedding = Column(Vector(384) if Vector is not None else Text, nullable=True)
+    # 3072-dimensional dense vector embeddings (Google gemini-embedding-001)
+    embedding = Column(Vector(3072) if Vector is not None else Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
