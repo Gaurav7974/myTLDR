@@ -1,17 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+const ALLOWED_HOSTS = ['arxiv.org', 'www.arxiv.org'];
+const ARXIV_ID_REGEX = /^\d{4}\.\d{4,5}(?:v\d+)?$/;
+
+function isAllowedUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return false;
+    return ALLOWED_HOSTS.includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const arxivId = searchParams.get('arxivId');
   const customUrl = searchParams.get('url');
 
   let targetUrl = '';
+
   if (arxivId) {
-    // Extract clean 4-5 digit numeric ID (e.g. 2205.14135 from https://arxiv.org/abs/2205.14135 or 2205.14135v2)
     const match = arxivId.match(/(\d{4}\.\d{4,5})/);
     if (match) {
       targetUrl = `https://arxiv.org/pdf/${match[1]}.pdf`;
     } else if (arxivId.startsWith('http://') || arxivId.startsWith('https://')) {
+      if (!isAllowedUrl(arxivId)) {
+        return NextResponse.json({ error: 'URL not allowed' }, { status: 400 });
+      }
       targetUrl = arxivId;
     } else {
       targetUrl = 'https://arxiv.org/pdf/1706.03762.pdf';
@@ -21,6 +37,9 @@ export async function GET(request: NextRequest) {
     if (match) {
       targetUrl = `https://arxiv.org/pdf/${match[1]}.pdf`;
     } else {
+      if (!isAllowedUrl(customUrl)) {
+        return NextResponse.json({ error: 'URL not allowed' }, { status: 400 });
+      }
       targetUrl = customUrl;
     }
   } else {
@@ -50,7 +69,6 @@ export async function GET(request: NextRequest) {
         'Content-Type': 'application/pdf',
         'Content-Disposition': 'inline; filename="paper.pdf"',
         'Cache-Control': 'public, max-age=86400, s-maxage=86400',
-        'X-Frame-Options': 'ALLOWALL',
       },
     });
   } catch (error) {

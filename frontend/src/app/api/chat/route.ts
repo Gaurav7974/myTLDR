@@ -1,5 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Simple in-memory rate limiter: 30 requests per minute per IP
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT = 30;
+const RATE_WINDOW_MS = 60_000;
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return false;
+  }
+
+  entry.count++;
+  return entry.count > RATE_LIMIT;
+}
+
 interface ChatRequestBody {
   paper_hash?: string;
   paper_title?: string;
@@ -17,13 +35,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Query is required' }, { status: 400 });
     }
 
+    // Rate limit check: 30 requests per minute per IP
+    const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+    if (isRateLimited(clientIp)) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please wait a minute before trying again.' },
+        { status: 429 }
+      );
+    }
+
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+
+    // Forward real client IP so backend rate limiter works per-user
 
     // 1. Try FastAPI backend with pgvector RAG
     try {
       const response = await fetch(`${backendUrl}/api/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Forwarded-For': clientIp,
+        },
         body: JSON.stringify({
           paper_hash,
           paper_title,
@@ -37,6 +69,14 @@ export async function POST(req: NextRequest) {
       if (response.ok) {
         const data = await response.json();
         return NextResponse.json(data);
+      }
+
+      // Pass through rate limit (429) and other errors to client
+      if (response.status === 429) {
+        return NextResponse.json(
+          { error: 'Rate limit exceeded. Please wait a minute before trying again.' },
+          { status: 429 }
+        );
       }
     } catch {
       // Backend not running / timed out — proceed to grounded semantic fallback
