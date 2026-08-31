@@ -1,0 +1,297 @@
+[
+  {
+    "paper": "Attention Is All You Need",
+    "arxiv_id": "1706.03762",
+    "architecture": "vanilla transformer",
+    "graph_extracted": true,
+    "nodes_count": 0,
+    "edges_count": 0,
+    "eval_verdict": "FAIL",
+    "eval_details": {
+      "nodes_verification": [],
+      "edges_verification": [],
+      "missing_components": [
+        "Transformer architecture (encoder\u2011decoder stack)",
+        "self\u2011attention mechanism",
+        "scaled dot\u2011product attention",
+        "multi\u2011head attention",
+        "position representation / positional encoding",
+        "feed\u2011forward sub\u2011layers",
+        "residual connections and layer normalization",
+        "absence of recurrence and convolutions",
+        "parallelizable training",
+        "BLEU performance on WMT 2014 English\u2011German and English\u2011French",
+        "training on eight GPUs for 3.5 days",
+        "application to English constituency parsing",
+        "tensor2tensor codebase"
+      ],
+      "hallucinations": [],
+      "verdict": "FAIL",
+      "reason": "The extracted graph is empty; all major components described in the source text are missing, resulting in a complete failure to represent the architecture."
+    },
+    "graph": {
+      "nodes": [],
+      "edges": []
+    }
+  },
+  {
+    "paper": "DeepSeek-V2",
+    "arxiv_id": "2405.04434",
+    "architecture": "MoE transformer",
+    "graph_extracted": true,
+    "nodes_count": 0,
+    "edges_count": 0,
+    "eval_verdict": "FAIL",
+    "eval_details": {
+      "nodes_verification": [],
+      "edges_verification": [],
+      "missing_components": [
+        "Multi-head Latent Attention (MLA)",
+        "DeepSeekMoE",
+        "KV cache compression into a latent vector",
+        "42.5% training cost reduction",
+        "93.3% KV cache reduction",
+        "5.76\u00d7 generation throughput boost",
+        "Pretraining on an 8.1\u202fT token multi\u2011source corpus",
+        "Supervised Fine\u2011Tuning (SFT)",
+        "Reinforcement Learning (RL)",
+        "21\u202fB activated parameters",
+        "Chat versions of DeepSeek\u2011V2",
+        "Model checkpoints URL (https://github.com/deepseek-ai/DeepSeek-V2)"
+      ],
+      "hallucinations": [],
+      "verdict": "FAIL",
+      "reason": "The extracted graph contains no nodes or edges, omitting all major components described in the source text."
+    },
+    "graph": {
+      "nodes": [],
+      "edges": []
+    }
+  },
+  {
+    "paper": "Mamba",
+    "arxiv_id": "2312.00752",
+    "architecture": "SSM",
+    "graph_extracted": true,
+    "nodes_count": 3,
+    "edges_count": 2,
+    "eval_verdict": "FAIL",
+    "eval_details": {
+      "nodes_verification": [
+        {
+          "node_id": "n1",
+          "label": "Input",
+          "citation": "NONE"
+        },
+        {
+          "node_id": "n2",
+          "label": "Selective Structured State Space Model (SSM)",
+          "citation": "First, simply letting the SSM parameters be functions of the input addresses their weakness with discrete modalities, allowing the model to selectively propagate or forget information along the sequence length dimension depending on the current token. We integrate these selective SSMs into a simplified end-to-end neural network architecture without attention or even MLP blocks (Mamba)."
+        },
+        {
+          "node_id": "n3",
+          "label": "Output",
+          "citation": "NONE"
+        }
+      ],
+      "edges_verification": [
+        {
+          "edge": "n1->n2",
+          "citation": "letting the SSM parameters be functions of the input"
+        },
+        {
+          "edge": "n2->n3",
+          "citation": "NONE"
+        }
+      ],
+      "missing_components": [
+        "core attention module",
+        "linear attention",
+        "gated convolution",
+        "recurrent models",
+        "structured state space models (SSMs) (general)",
+        "hardware-aware parallel algorithm in recurrent mode",
+        "Mamba (overall end\u2011to\u2011end neural network architecture)",
+        "absence of attention and MLP blocks"
+      ],
+      "hallucinations": [
+        "node n1 (Input) not supported by text",
+        "node n3 (Output) not supported by text",
+        "edge n2->n3 not supported by text"
+      ],
+      "verdict": "FAIL",
+      "reason": "The graph contains nodes and an edge that are not grounded in the source text and omits several major components described (e.g., Mamba architecture, hardware\u2011aware algorithm, attention/MLP absence, etc.)."
+    },
+    "graph": {
+      "nodes": [
+        {
+          "id": "n1",
+          "label": "Input",
+          "type": "input"
+        },
+        {
+          "id": "n2",
+          "label": "Selective Structured State Space Model (SSM)",
+          "type": "ssm"
+        },
+        {
+          "id": "n3",
+          "label": "Output",
+          "type": "output"
+        }
+      ],
+      "edges": [
+        {
+          "source": "n1",
+          "target": "n2",
+          "label": null
+        },
+        {
+          "source": "n2",
+          "target": "n3",
+          "label": null
+        }
+      ]
+    }
+  },
+  {
+    "paper": "LLaMA 2",
+    "arxiv_id": "2307.09288",
+    "architecture": "modern transformer",
+    "graph_extracted": true,
+    "nodes_count": 6,
+    "edges_count": 5,
+    "eval_verdict": "FAIL",
+    "eval_details": {
+      "nodes_verification": [
+        {
+          "node_id": "n_input",
+          "label": "Input Tokens",
+          "citation": "NONE"
+        },
+        {
+          "node_id": "n_emb",
+          "label": "Rotary Positional Embedding (RoPE)",
+          "citation": "rotary positional embeddings (RoPE, Su et al. 2022)"
+        },
+        {
+          "node_id": "n_norm",
+          "label": "RMSNorm Pre-Normalization",
+          "citation": "apply pre-normalization using RMSNorm (Zhang and Sennrich, 2019)"
+        },
+        {
+          "node_id": "n_att",
+          "label": "Grouped-Query Attention (GQA)",
+          "citation": "grouped-query attention (GQA)"
+        },
+        {
+          "node_id": "n_ff",
+          "label": "Feedforward with SwiGLU",
+          "citation": "use the SwiGLU activation function (Shazeer, 2020)"
+        },
+        {
+          "node_id": "n_output",
+          "label": "Model Output",
+          "citation": "NONE"
+        }
+      ],
+      "edges_verification": [
+        {
+          "edge": "n_input->n_emb",
+          "citation": "NONE"
+        },
+        {
+          "edge": "n_emb->n_norm",
+          "citation": "NONE"
+        },
+        {
+          "edge": "n_norm->n_att",
+          "citation": "NONE"
+        },
+        {
+          "edge": "n_att->n_ff",
+          "citation": "NONE"
+        },
+        {
+          "edge": "n_ff->n_output",
+          "citation": "NONE"
+        }
+      ],
+      "missing_components": [
+        "Increased context length (mentioned as a primary architectural difference)"
+      ],
+      "hallucinations": [
+        "node n_input",
+        "node n_output",
+        "edge n_input->n_emb",
+        "edge n_emb->n_norm",
+        "edge n_norm->n_att",
+        "edge n_att->n_ff",
+        "edge n_ff->n_output"
+      ],
+      "verdict": "FAIL",
+      "reason": "Several nodes (input tokens, model output) and all edges lack explicit support in the source text; the graph also omits the increased context length mentioned in the paper."
+    },
+    "graph": {
+      "nodes": [
+        {
+          "id": "n_input",
+          "label": "Input Tokens",
+          "type": "input"
+        },
+        {
+          "id": "n_emb",
+          "label": "Rotary Positional Embedding (RoPE)",
+          "type": "embedding"
+        },
+        {
+          "id": "n_norm",
+          "label": "RMSNorm Pre-Normalization",
+          "type": "normalization"
+        },
+        {
+          "id": "n_att",
+          "label": "Grouped-Query Attention (GQA)",
+          "type": "attention"
+        },
+        {
+          "id": "n_ff",
+          "label": "Feedforward with SwiGLU",
+          "type": "feedforward"
+        },
+        {
+          "id": "n_output",
+          "label": "Model Output",
+          "type": "output"
+        }
+      ],
+      "edges": [
+        {
+          "source": "n_input",
+          "target": "n_emb",
+          "label": null
+        },
+        {
+          "source": "n_emb",
+          "target": "n_norm",
+          "label": null
+        },
+        {
+          "source": "n_norm",
+          "target": "n_att",
+          "label": null
+        },
+        {
+          "source": "n_att",
+          "target": "n_ff",
+          "label": null
+        },
+        {
+          "source": "n_ff",
+          "target": "n_output",
+          "label": null
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,572 @@
+[
+  {
+    "paper": "Attention Is All You Need",
+    "arxiv_id": "1706.03762",
+    "architecture": "vanilla transformer",
+    "graph_extracted": true,
+    "nodes_count": 13,
+    "edges_count": 15,
+    "eval_verdict": "PASS_WITH_CAVEATS",
+    "eval_details": {
+      "nodes_verification": [
+        {
+          "node_id": "encoder_stack",
+          "label": "Encoder Stack",
+          "citation": "The encoder is composed of a stack of N = 6 identical layers."
+        },
+        {
+          "node_id": "decoder_stack",
+          "label": "Decoder Stack",
+          "citation": "The decoder is also composed of a stack of N = 6 identical layers."
+        },
+        {
+          "node_id": "encoder_layer",
+          "label": "Encoder Layer",
+          "citation": "Each layer has two sub-layers."
+        },
+        {
+          "node_id": "decoder_layer",
+          "label": "Decoder Layer",
+          "citation": "In addition to the two sub-layers in each encoder layer, the decoder inserts a third sub-layer"
+        },
+        {
+          "node_id": "encoder_self_attention",
+          "label": "Multi-Head Self-Attention (Encoder)",
+          "citation": "The first is a multi-head self-attention mechanism"
+        },
+        {
+          "node_id": "encoder_ffn",
+          "label": "Position-wise Feed-Forward Network (Encoder)",
+          "citation": "and the second is a simple, position-wise fully connected feed-forward network."
+        },
+        {
+          "node_id": "decoder_masked_self_attention",
+          "label": "Masked Multi-Head Self-Attention (Decoder)",
+          "citation": "We also modify the self-attention sub-layer in the decoder stack to prevent positions from attending to subsequent positions."
+        },
+        {
+          "node_id": "encoder_decoder_attention",
+          "label": "Multi-Head Encoder-Decoder Attention",
+          "citation": "the decoder inserts a third sub-layer, which performs multi-head attention over the output of the encoder stack."
+        },
+        {
+          "node_id": "decoder_ffn",
+          "label": "Position-wise Feed-Forward Network (Decoder)",
+          "citation": "In addition to attention sub-layers, each of the layers in our encoder and decoder contains a fully connected feed-forward network"
+        },
+        {
+          "node_id": "input_embedding",
+          "label": "Input Embedding",
+          "citation": "we use learned embeddings to convert the input tokens and output tokens to vectors of dimension dmodel."
+        },
+        {
+          "node_id": "positional_encoding",
+          "label": "Positional Encoding",
+          "citation": "we add \"positional encodings\" to the input embeddings at the bottoms of the encoder and decoder stacks."
+        },
+        {
+          "node_id": "output_embedding",
+          "label": "Output Embedding",
+          "citation": "we use learned embeddings to convert the input tokens and output tokens to vectors of dimension dmodel."
+        },
+        {
+          "node_id": "linear_softmax",
+          "label": "Linear Transformation and Softmax",
+          "citation": "We also use the usual learned linear transformation and softmax function to convert the decoder output to predicted next-token probabilities."
+        }
+      ],
+      "edges_verification": [
+        {
+          "edge": "input_embedding->encoder_stack",
+          "citation": "we use learned embeddings to convert the input tokens and output tokens to vectors of dimension dmodel."
+        },
+        {
+          "edge": "positional_encoding->encoder_stack",
+          "citation": "we add \"positional encodings\" to the input embeddings at the bottoms of the encoder and decoder stacks."
+        },
+        {
+          "edge": "encoder_stack->encoder_layer",
+          "citation": "The encoder is composed of a stack of N = 6 identical layers."
+        },
+        {
+          "edge": "encoder_layer->encoder_self_attention",
+          "citation": "The first is a multi-head self-attention mechanism"
+        },
+        {
+          "edge": "encoder_self_attention->encoder_ffn",
+          "citation": "We employ a residual connection [11] around each of the two sub-layers, followed by layer normalization [1]."
+        },
+        {
+          "edge": "encoder_ffn->encoder_stack",
+          "citation": "That is, the output of each sub-layer is LayerNorm(x + Sublayer(x))"
+        },
+        {
+          "edge": "encoder_stack->encoder_decoder_attention",
+          "citation": "the memory keys and values come from the output of the encoder."
+        },
+        {
+          "edge": "output_embedding->decoder_stack",
+          "citation": "we use learned embeddings to convert the input tokens and output tokens to vectors of dimension dmodel."
+        },
+        {
+          "edge": "positional_encoding->decoder_stack",
+          "citation": "we add \"positional encodings\" to the input embeddings at the bottoms of the encoder and decoder stacks."
+        },
+        {
+          "edge": "decoder_stack->decoder_layer",
+          "citation": "The decoder is also composed of a stack of N = 6 identical layers."
+        },
+        {
+          "edge": "decoder_layer->decoder_masked_self_attention",
+          "citation": "We also modify the self-attention sub-layer in the decoder stack to prevent positions from attending to subsequent positions."
+        },
+        {
+          "edge": "decoder_masked_self_attention->encoder_decoder_attention",
+          "citation": "In addition to the two sub-layers in each encoder layer, the decoder inserts a third sub-layer, which performs multi-head attention over the output of the encoder stack."
+        },
+        {
+          "edge": "encoder_decoder_attention->decoder_ffn",
+          "citation": "Similar to the encoder, we employ residual connections around each of the sub-layers, followed by layer normalization."
+        },
+        {
+          "edge": "decoder_ffn->decoder_stack",
+          "citation": "That is, the output of each sub-layer is LayerNorm(x + Sublayer(x))"
+        },
+        {
+          "edge": "decoder_stack->linear_softmax",
+          "citation": "We also use the usual learned linear transformation and softmax function to convert the decoder output to predicted next-token probabilities."
+        }
+      ],
+      "missing_components": [
+        "Weight sharing between input/output embeddings and the pre-softmax linear transformation (Section 3.4)",
+        "Scaling of embedding weights by sqrt(d_model) (Section 3.4)"
+      ],
+      "hallucinations": [],
+      "verdict": "PASS_WITH_CAVEATS",
+      "reason": "The graph accurately captures the main architectural blocks and data flow. However, it omits the specific detail of weight sharing between embeddings and the final linear layer, which is a distinct architectural choice mentioned in the text."
+    },
+    "graph": {
+      "nodes": [
+        {
+          "id": "encoder_stack",
+          "label": "Encoder Stack",
+          "type": "block"
+        },
+        {
+          "id": "decoder_stack",
+          "label": "Decoder Stack",
+          "type": "block"
+        },
+        {
+          "id": "encoder_layer",
+          "label": "Encoder Layer",
+          "type": "block"
+        },
+        {
+          "id": "decoder_layer",
+          "label": "Decoder Layer",
+          "type": "block"
+        },
+        {
+          "id": "encoder_self_attention",
+          "label": "Multi-Head Self-Attention (Encoder)",
+          "type": "attention"
+        },
+        {
+          "id": "encoder_ffn",
+          "label": "Position-wise Feed-Forward Network (Encoder)",
+          "type": "feedforward"
+        },
+        {
+          "id": "decoder_masked_self_attention",
+          "label": "Masked Multi-Head Self-Attention (Decoder)",
+          "type": "attention"
+        },
+        {
+          "id": "encoder_decoder_attention",
+          "label": "Multi-Head Encoder-Decoder Attention",
+          "type": "attention"
+        },
+        {
+          "id": "decoder_ffn",
+          "label": "Position-wise Feed-Forward Network (Decoder)",
+          "type": "feedforward"
+        },
+        {
+          "id": "input_embedding",
+          "label": "Input Embedding",
+          "type": "embedding"
+        },
+        {
+          "id": "positional_encoding",
+          "label": "Positional Encoding",
+          "type": "other"
+        },
+        {
+          "id": "output_embedding",
+          "label": "Output Embedding",
+          "type": "embedding"
+        },
+        {
+          "id": "linear_softmax",
+          "label": "Linear Transformation and Softmax",
+          "type": "other"
+        }
+      ],
+      "edges": [
+        {
+          "source": "input_embedding",
+          "target": "encoder_stack",
+          "label": "Input tokens converted to vectors"
+        },
+        {
+          "source": "positional_encoding",
+          "target": "encoder_stack",
+          "label": "Added to input embeddings"
+        },
+        {
+          "source": "encoder_stack",
+          "target": "encoder_layer",
+          "label": "Stack of N=6 identical layers"
+        },
+        {
+          "source": "encoder_layer",
+          "target": "encoder_self_attention",
+          "label": "First sub-layer"
+        },
+        {
+          "source": "encoder_self_attention",
+          "target": "encoder_ffn",
+          "label": "Residual connection and LayerNorm"
+        },
+        {
+          "source": "encoder_ffn",
+          "target": "encoder_stack",
+          "label": "Output of encoder layer"
+        },
+        {
+          "source": "encoder_stack",
+          "target": "encoder_decoder_attention",
+          "label": "Keys and Values from encoder output"
+        },
+        {
+          "source": "output_embedding",
+          "target": "decoder_stack",
+          "label": "Output tokens converted to vectors (offset by one position)"
+        },
+        {
+          "source": "positional_encoding",
+          "target": "decoder_stack",
+          "label": "Added to output embeddings"
+        },
+        {
+          "source": "decoder_stack",
+          "target": "decoder_layer",
+          "label": "Stack of N=6 identical layers"
+        },
+        {
+          "source": "decoder_layer",
+          "target": "decoder_masked_self_attention",
+          "label": "First sub-layer"
+        },
+        {
+          "source": "decoder_masked_self_attention",
+          "target": "encoder_decoder_attention",
+          "label": "Residual connection and LayerNorm"
+        },
+        {
+          "source": "encoder_decoder_attention",
+          "target": "decoder_ffn",
+          "label": "Residual connection and LayerNorm"
+        },
+        {
+          "source": "decoder_ffn",
+          "target": "decoder_stack",
+          "label": "Output of decoder layer"
+        },
+        {
+          "source": "decoder_stack",
+          "target": "linear_softmax",
+          "label": "Decoder output"
+        }
+      ]
+    }
+  },
+  {
+    "paper": "DeepSeek-V2",
+    "arxiv_id": "2405.04434",
+    "architecture": "MoE transformer",
+    "graph_extracted": true,
+    "nodes_count": 9,
+    "edges_count": 9,
+    "eval_verdict": "PASS_WITH_CAVEATS",
+    "eval_details": {
+      "nodes_verification": [
+        {
+          "node_id": "transformer_block",
+          "label": "Transformer Block",
+          "citation": "each Transformer block consists of an attention module and a Feed-Forward Network (FFN)."
+        },
+        {
+          "node_id": "mla",
+          "label": "Multi-Head Latent Attention (MLA)",
+          "citation": "For attention, we design MLA, which utilizes low-rank key-value joint compression to eliminate the bottleneck of inference-time key-value cache"
+        },
+        {
+          "node_id": "deepseekmoe",
+          "label": "DeepSeekMoE",
+          "citation": "For FFNs, we adopt the DeepSeekMoE architecture (Dai et al., 2024), a high-performance MoE architecture"
+        },
+        {
+          "node_id": "kv_compression",
+          "label": "Low-Rank Key-Value Joint Compression",
+          "citation": "The core of MLA is the low-rank joint compression for keys and values to reduce KV cache"
+        },
+        {
+          "node_id": "decoupled_rope",
+          "label": "Decoupled Rotary Position Embedding",
+          "citation": "As a solution, we propose the decoupled RoPE strategy that uses additional multi-head queries qRt,i\u2208RdRh and a shared key kRt\u2208RdRh to carry RoPE"
+        },
+        {
+          "node_id": "shared_experts",
+          "label": "Shared Experts",
+          "citation": "isolating some shared experts for mitigating knowledge redundancy among routed experts"
+        },
+        {
+          "node_id": "routed_experts",
+          "label": "Routed Experts",
+          "citation": "segmenting experts into finer granularity for higher expert specialization... isolating some shared experts for mitigating knowledge redundancy among routed experts"
+        }
+      ],
+      "edges_verification": [
+        {
+          "edge": "transformer_block->mla",
+          "citation": "each Transformer block consists of an attention module and a Feed-Forward Network (FFN). However, for both the attention module and the FFN, we design and employ innovative architectures. For attention, we design MLA"
+        },
+        {
+          "edge": "transformer_block->deepseekmoe",
+          "citation": "each Transformer block consists of an attention module and a Feed-Forward Network (FFN). However, for both the attention module and the FFN, we design and employ innovative architectures. ... For FFNs, we adopt the DeepSeekMoE architecture"
+        },
+        {
+          "edge": "mla->kv_compression",
+          "citation": "The core of MLA is the low-rank joint compression for keys and values to reduce KV cache"
+        },
+        {
+          "edge": "mla->decoupled_rope",
+          "citation": "As a solution, we propose the decoupled RoPE strategy... Equipped with the decoupled RoPE strategy, MLA performs the following computation"
+        },
+        {
+          "edge": "deepseekmoe->shared_experts",
+          "citation": "isolating some shared experts for mitigating knowledge redundancy among routed experts"
+        },
+        {
+          "edge": "deepseekmoe->routed_experts",
+          "citation": "segmenting experts into finer granularity for higher expert specialization... isolating some shared experts for mitigating knowledge redundancy among routed experts"
+        }
+      ],
+      "missing_components": [
+        "Query Compression (Low-rank compression for queries to reduce activation memory during training)",
+        "Layer Normalization",
+        "Activation Function in FFNs"
+      ],
+      "hallucinations": [],
+      "verdict": "PASS_WITH_CAVEATS",
+      "reason": "The graph correctly identifies the main architectural components (MLA, DeepSeekMoE) and their sub-components (KV compression, Decoupled RoPE, Shared/Routed Experts) with accurate citations. However, it omits the specific 'Query Compression' mechanism mentioned in section 2.1.2 as part of the MLA design for training efficiency, and general components like Layer Normalization and Activation Functions which are explicitly mentioned as being present (following DeepSeek 67B settings)."
+    },
+    "graph": {
+      "nodes": [
+        {
+          "id": "transformer_block",
+          "label": "Transformer Block",
+          "type": "block"
+        },
+        {
+          "id": "mla",
+          "label": "Multi-Head Latent Attention (MLA)",
+          "type": "attention"
+        },
+        {
+          "id": "kv_compression",
+          "label": "Low-Rank Key-Value Joint Compression",
+          "type": "other"
+        },
+        {
+          "id": "kv_cache",
+          "label": "KV Cache",
+          "type": "cache"
+        },
+        {
+          "id": "decoupled_rope",
+          "label": "Decoupled Rotary Position Embedding",
+          "type": "other"
+        },
+        {
+          "id": "deepseek_moe",
+          "label": "DeepSeekMoE",
+          "type": "block"
+        },
+        {
+          "id": "shared_experts",
+          "label": "Shared Experts",
+          "type": "expert"
+        },
+        {
+          "id": "routed_experts",
+          "label": "Routed Experts",
+          "type": "expert"
+        },
+        {
+          "id": "router",
+          "label": "Router",
+          "type": "router"
+        }
+      ],
+      "edges": [
+        {
+          "source": "transformer_block",
+          "target": "mla",
+          "label": "Contains Attention Module"
+        },
+        {
+          "source": "transformer_block",
+          "target": "deepseek_moe",
+          "label": "Contains FFN Module"
+        },
+        {
+          "source": "mla",
+          "target": "kv_compression",
+          "label": "Utilizes Low-Rank Compression"
+        },
+        {
+          "source": "kv_compression",
+          "target": "kv_cache",
+          "label": "Reduces KV Cache Size"
+        },
+        {
+          "source": "mla",
+          "target": "decoupled_rope",
+          "label": "Uses Decoupled RoPE Strategy"
+        },
+        {
+          "source": "deepseek_moe",
+          "target": "shared_experts",
+          "label": "Includes Shared Experts"
+        },
+        {
+          "source": "deepseek_moe",
+          "target": "routed_experts",
+          "label": "Includes Routed Experts"
+        },
+        {
+          "source": "deepseek_moe",
+          "target": "router",
+          "label": "Uses Router for Expert Selection"
+        },
+        {
+          "source": "router",
+          "target": "routed_experts",
+          "label": "Routes to Top-k Experts"
+        }
+      ]
+    }
+  },
+  {
+    "paper": "Mamba",
+    "arxiv_id": "2312.00752",
+    "architecture": "SSM",
+    "graph_extracted": true,
+    "nodes_count": 0,
+    "edges_count": 0,
+    "eval_verdict": "FAIL",
+    "eval_details": {
+      "nodes_verification": [],
+      "edges_verification": [],
+      "missing_components": [
+        "Selective State Space Model (SSM) core mechanism",
+        "Selection Mechanism (input-dependent parameters)",
+        "Hardware-aware Parallel Algorithm (Scan-based recurrence)",
+        "Mamba Architecture (simplified end-to-end network)",
+        "Discretization step (ZOH)",
+        "Linear Time Invariance (LTI) constraint removal"
+      ],
+      "hallucinations": [],
+      "verdict": "FAIL",
+      "reason": "The extracted graph is empty (contains no nodes or edges), failing to represent any of the major architectural components described in the source text, such as the Selective SSM, the hardware-aware algorithm, or the Mamba architecture."
+    },
+    "graph": {
+      "nodes": [],
+      "edges": []
+    }
+  },
+  {
+    "paper": "LLaMA 2",
+    "arxiv_id": "2307.09288",
+    "architecture": "modern transformer",
+    "graph_extracted": true,
+    "nodes_count": 4,
+    "edges_count": 0,
+    "eval_verdict": "PASS_WITH_CAVEATS",
+    "eval_details": {
+      "nodes_verification": [
+        {
+          "node_id": "rmsnorm",
+          "label": "RMSNorm",
+          "citation": "apply pre-normalization using RMSNorm (Zhang and Sennrich, 2019)"
+        },
+        {
+          "node_id": "gqa",
+          "label": "Grouped-Query Attention",
+          "citation": "used grouped-query attention (GQA) to improve inference scalability for our larger models"
+        },
+        {
+          "node_id": "swiglu",
+          "label": "SwiGLU",
+          "citation": "use the SwiGLU activation function (Shazeer, 2020)"
+        },
+        {
+          "node_id": "rope",
+          "label": "Rotary Positional Embeddings",
+          "citation": "rotary positional embeddings (RoPE, Su et al. 2022)"
+        }
+      ],
+      "edges_verification": [],
+      "missing_components": [
+        "Auto-regressive Transformer architecture",
+        "BPE Tokenizer",
+        "AdamW Optimizer",
+        "Supervised Fine-Tuning (SFT)",
+        "Reinforcement Learning with Human Feedback (RLHF)",
+        "Reward Model",
+        "Policy Model"
+      ],
+      "hallucinations": [],
+      "verdict": "PASS_WITH_CAVEATS",
+      "reason": "All extracted nodes are explicitly supported by the text in Section 2.2. However, the graph is incomplete as it omits the core 'Auto-regressive Transformer' structure and the fine-tuning components (SFT, RLHF) which are central to the paper's description of the model pipeline."
+    },
+    "graph": {
+      "nodes": [
+        {
+          "id": "rmsnorm",
+          "label": "RMSNorm",
+          "type": "normalization"
+        },
+        {
+          "id": "gqa",
+          "label": "Grouped-Query Attention",
+          "type": "attention"
+        },
+        {
+          "id": "swiglu",
+          "label": "SwiGLU",
+          "type": "feedforward"
+        },
+        {
+          "id": "rope",
+          "label": "Rotary Positional Embeddings",
+          "type": "embedding"
+        }
+      ],
+      "edges": []
+    }
+  }
+]
