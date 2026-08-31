@@ -1,0 +1,28 @@
+# Environment & secrets
+.env
+.env*.local
+.env.*
+*.log
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build outputs
+dist/
+.next/
+build/
+*.egg-info/
+
+# Internal / planning docs (not for public repo)
+*.md
+!README.md
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

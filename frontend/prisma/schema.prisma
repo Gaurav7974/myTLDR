@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Paper {
+  id               String            @id @default(uuid())
+  title            String
+  authors          String[]
+  publishedDate    String?
+  arxivId          String?
+  tags             String[]
+  pdfUrl           String?
+  citationsCount   Int               @default(0)
+  markdownContent  String            @db.Text
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  summary          PaperSummary?
+  architectureNodes ArchitectureNode[]
+  equations        Equation[]
+}
+
+model PaperSummary {
+  id                  String   @id @default(uuid())
+  paperId            String   @unique
+  paper              Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  oneSentenceSummary String   @db.Text
+  analogy            String   @db.Text
+  coreProblem        String   @db.Text
+  keyInnovations     String[]
+  prerequisites      String[]
+}
+
+model ArchitectureNode {
+  id                 String   @id @default(uuid())
+  paperId            String
+  paper              Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  nodeId             String
+  name               String
+  category           String
+  description        String   @db.Text
+  positionX          Float
+  positionY          Float
+  positionZ          Float
+  color              String
+  tensorShapeInput   String?
+  tensorShapeOutput  String?
+  latexFormula       String?  @db.Text
+  subComponentsJson  Json?
+}
+
+model Equation {
+  id            String   @id @default(uuid())
+  paperId       String
+  paper         Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  title         String
+  latex         String   @db.Text
+  explanation   String   @db.Text
+  variablesJson Json
+}
