@@ -4,6 +4,7 @@ import asyncio
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
+from app.core.security import sanitize_arxiv_id
 from app.services.text_extraction import text_extractor
 from app.services.graph_extraction import graph_extractor
 from app.services.explanation import explanation_service
@@ -35,6 +36,9 @@ async def process_paper(
     if source_type == "arxiv":
         arxiv_id = _extract_arxiv_id(url)
         metadata = text_extractor.get_arxiv_metadata(arxiv_id)
+        # Provide direct PDF URL for frontend iframe (no /api/pdf proxy needed for arXiv)
+        metadata["pdf_url"] = f"https://arxiv.org/pdf/{sanitize_arxiv_id(arxiv_id)}.pdf"
+        metadata["arxiv_id"] = sanitize_arxiv_id(arxiv_id)
         pdf_bytes = text_extractor.download_arxiv_pdf(arxiv_id)
         try:
             extraction = text_extractor.extract_from_pdf_bytes(pdf_bytes)
@@ -42,6 +46,11 @@ async def process_paper(
             yield {"stage": "error", "message": f"OCR failed: {str(e)}. This paper appears to be image-based and could not be processed."}
             return
     elif source_type == "url":
+        # Preserve direct PDF URL for iframe; if it's a PDF link the download will succeed
+        if url and url.lower().endswith(".pdf"):
+            metadata["pdf_url"] = url
+        else:
+            metadata["pdf_url"] = url
         pdf_bytes = text_extractor.download_pdf(url)
         try:
             extraction = text_extractor.extract_from_pdf_bytes(pdf_bytes)
