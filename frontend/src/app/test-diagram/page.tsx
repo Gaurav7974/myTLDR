@@ -1,102 +1,193 @@
 "use client";
 
 import React, { useState } from "react";
-import ArchitectureDiagram, { DiagramNode, DiagramEdge } from "@/components/ArchitectureDiagram";
+import ArchitectureDiagram from "@/components/ArchitectureDiagram";
+import type { ArchitectureGraph } from "@/types/architecture_graph";
+import { isVerifiedVisionGraph, shouldRenderReconstruction } from "@/types/architecture_graph";
 
-// ── Mock data simulating what the vision model / backend returns ──
-// This is DYNAMIC — any paper would produce different nodes/edges
+// ── Fixtures ────────────────────────────────────────────────────────
+// Each fixture is intentionally generic (no paper-specific hardcoding).
+// Together they exercise every branch of the renderer:
+//   1. figure-faithful verified (the headline case)
+//   2. figure-faithful verified with multiple groups
+//   3. text-only auto-layout
+//   4. legacy react-flow shape (auto-layout fallback)
+//   5. unverified / hallucinated (refused, shown as unavailable)
+//   6. empty graph (empty state)
 
-const MOCK_PAPERS: Record<string, { title: string; nodes: DiagramNode[]; edges: DiagramEdge[] }> = {
-  transformer: {
-    title: "Attention Is All You Need (Transformer)",
-    nodes: [
-      { id: "input", label: "Input Tokens", type: "input", description: "Raw token IDs from the vocabulary", math_formula: "x ∈ ℝ^{V}" },
-      { id: "embed", label: "Token Embedding", type: "embedding", description: "Maps discrete tokens to continuous vectors", math_formula: "E = X · W_e", parameters: "19.2M" },
-      { id: "pos_enc", label: "Positional Encoding", type: "embedding", description: "Sinusoidal position information", math_formula: "PE(pos, 2i) = sin(pos/10000^{2i/d})" },
-      { id: "norm1", label: "Layer Norm", type: "normalization", description: "Normalize across hidden dimensions", math_formula: "LN(x) = (x - μ)/σ ⊙ γ + β", parameters: "1.02K" },
-      { id: "qkv", label: "Q, K, V Projections", type: "linear", description: "Project to query, key, value spaces", math_formula: "Q = XW_Q, K = XW_K, V = XW_V", parameters: "786K" },
-      { id: "attn", label: "Multi-Head Attention", type: "attention", description: "Scaled dot-product attention across 8 heads", math_formula: "Attention(Q,K,V) = softmax(QK^T/√d_k)V", flops: "0.52 GFLOPs" },
-      { id: "add1", label: "Residual Add", type: "residual", description: "Skip connection around attention", math_formula: "output = x + Sublayer(x)" },
-      { id: "norm2", label: "Layer Norm 2", type: "normalization", description: "Second normalization before FFN", math_formula: "LN(x) = (x - μ)/σ ⊙ γ + β" },
-      { id: "ffn1", label: "FFN Expand (4x)", type: "feedforward", description: "First linear layer expanding to 2048", math_formula: "W_1 ∈ ℝ^{512×2048}", parameters: "1.05M" },
-      { id: "ffn2", label: "FFN Contract", type: "feedforward", description: "Second linear layer contracting to 512", math_formula: "W_2 ∈ ℝ^{2048×512}", parameters: "1.05M" },
-      { id: "add2", label: "Residual Add 2", type: "residual", description: "Skip connection around FFN", math_formula: "output = x + FFN(x)" },
-      { id: "output", label: "Output Logits", type: "output", description: "Final projection to vocabulary", math_formula: "P(y) = softmax(xW_U)", parameters: "19.2M" },
-    ],
-    edges: [
-      { source: "input", target: "embed" },
-      { source: "embed", target: "pos_enc", label: "add" },
-      { source: "pos_enc", target: "norm1" },
-      { source: "norm1", target: "qkv" },
-      { source: "qkv", target: "attn" },
-      { source: "attn", target: "add1" },
-      { source: "embed", target: "add1", label: "skip", type: "residual_skip" },
-      { source: "add1", target: "norm2" },
-      { source: "norm2", target: "ffn1" },
-      { source: "ffn1", target: "ffn2" },
-      { source: "ffn2", target: "add2" },
-      { source: "add1", target: "add2", label: "skip", type: "residual_skip" },
-      { source: "add2", target: "output" },
-    ],
+const figureFixture: ArchitectureGraph = {
+  version: "2.0",
+  source: "vision",
+  layout_mode: "figure",
+  figure_id: "fig:arch-1",
+  figure_page: 3,
+  confidence: 0.88,
+  verification: {
+    valid: true,
+    confidence: 0.88,
+    hallucinations: [],
+    missing_elements: [],
+    reason: "matches source figure",
   },
-  moe: {
-    title: "Mixtral 8x7B (MoE)",
-    nodes: [
-      { id: "input", label: "Input Hidden State", type: "input", description: "Hidden state from previous layer" },
-      { id: "norm", label: "RMS Normalization", type: "normalization", description: "Root Mean Square Layer Normalization", math_formula: "RMSNorm(x) = x / RMS(x) ⊙ γ" },
-      { id: "router", label: "Router Gate", type: "router", description: "Decides which experts to activate", math_formula: "G(x) = Softmax(W_g · x)", parameters: "3.6M" },
-      { id: "shared_exp", label: "Shared Expert", type: "expert", description: "Always-active shared feed-forward network", math_formula: "y_s = FFN_shared(x)", parameters: "14.3M" },
-      { id: "exp1", label: "Expert 1", type: "expert", description: "Routed expert — activated selectively", math_formula: "y_1 = FFN_1(x)", parameters: "14.3M" },
-      { id: "exp2", label: "Expert 2", type: "expert", description: "Routed expert — activated selectively", math_formula: "y_2 = FFN_2(x)", parameters: "14.3M" },
-      { id: "exp3", label: "Expert N", type: "expert", description: "N-th routed expert", math_formula: "y_n = FFN_n(x)", parameters: "14.3M" },
-      { id: "combine", label: "Weighted Combine", type: "block", description: "Combine expert outputs by router weights", math_formula: "y = Σ G_i(x) · E_i(x)" },
-      { id: "add", label: "Residual Add", type: "residual", description: "Add MoE output to residual stream", math_formula: "h' = h + MoE(h)" },
-      { id: "output", label: "Output", type: "output", description: "Output hidden state" },
-    ],
-    edges: [
-      { source: "input", target: "norm" },
-      { source: "norm", target: "router" },
-      { source: "norm", target: "shared_exp" },
-      { source: "router", target: "exp1", label: "top-k" },
-      { source: "router", target: "exp2", label: "top-k" },
-      { source: "router", target: "exp3", label: "top-k" },
-      { source: "shared_exp", target: "combine" },
-      { source: "exp1", target: "combine" },
-      { source: "exp2", target: "combine" },
-      { source: "exp3", target: "combine" },
-      { source: "combine", target: "add" },
-      { source: "input", target: "add", label: "skip", type: "residual_skip" },
-      { source: "add", target: "output" },
-    ],
+  groups: [
+    { id: "encoder", label: "Encoder", bbox: { x: 0.05, y: 0.1, w: 0.4, h: 0.3 }, color: "#93c5fd", confidence: 0.9 },
+    { id: "decoder", label: "Decoder", bbox: { x: 0.55, y: 0.1, w: 0.4, h: 0.3 }, color: "#fdba74", confidence: 0.9 },
+  ],
+  nodes: [
+    {
+      id: "in", label: "Input", type: "input",
+      bbox: { x: 0.1, y: 0.2, w: 0.15, h: 0.1 },
+      group_id: "encoder", shape: "rounded",
+      description: "Token IDs from the vocabulary",
+      math_formula: "x \\in \\mathbb{Z}^{V}",
+      paper_term: "input embedding",
+      provenance: { source: "vision", figure_id: "fig:arch-1", figure_page: 3, citation: "input tokens" },
+      confidence: 0.95,
+      style: { fill: "#eff6ff", border: "#93c5fd" },
+    },
+    {
+      id: "attn", label: "Self-Attention", type: "attention",
+      bbox: { x: 0.3, y: 0.2, w: 0.2, h: 0.1 },
+      group_id: "encoder", shape: "rounded",
+      description: "Scaled dot-product attention.",
+      math_formula: "\\mathrm{softmax}(QK^\\top/\\sqrt{d_k}) V",
+      paper_term: "self-attention",
+      provenance: { source: "vision", figure_id: "fig:arch-1", figure_page: 3 },
+      confidence: 0.9,
+      style: { fill: "#fdf2f8", border: "#f9a8d4" },
+    },
+    {
+      id: "ffn", label: "Feed-Forward", type: "feedforward",
+      bbox: { x: 0.3, y: 0.3, w: 0.2, h: 0.08 },
+      group_id: "encoder", shape: "rounded",
+      description: "Two-layer MLP with ReLU.",
+      math_formula: "\\mathrm{FFN}(x) = W_2 \\mathrm{ReLU}(W_1 x)",
+      confidence: 0.85,
+    },
+    {
+      id: "out", label: "Output", type: "output",
+      bbox: { x: 0.7, y: 0.2, w: 0.15, h: 0.1 },
+      group_id: "decoder", shape: "rounded",
+      description: "Output projections.",
+      confidence: 0.85,
+    },
+  ],
+  edges: [
+    { source: "in", target: "attn", type: "data_flow", label: "tokens",
+      path_points: [{ x: 0.18, y: 0.25 }, { x: 0.3, y: 0.25 }],
+      style: { stroke: "#3b82f6", name: "solid" } },
+    { source: "attn", target: "ffn", type: "data_flow",
+      path_points: [{ x: 0.4, y: 0.25 }, { x: 0.4, y: 0.34 }],
+      style: { stroke: "#3b82f6", name: "solid" } },
+    { source: "ffn", target: "out", type: "data_flow", label: "hidden",
+      path_points: [{ x: 0.4, y: 0.34 }, { x: 0.4, y: 0.25 }, { x: 0.7, y: 0.25 }],
+      style: { stroke: "#3b82f6", name: "solid" } },
+    { source: "in", target: "out", type: "residual_skip", label: "skip",
+      path_points: [{ x: 0.18, y: 0.27 }, { x: 0.18, y: 0.5 }, { x: 0.78, y: 0.5 }, { x: 0.78, y: 0.27 }],
+      style: { stroke: "#ef4444", name: "residual" } },
+  ],
+};
+
+const textAutoFixture: ArchitectureGraph = {
+  version: "2.0",
+  source: "text",
+  layout_mode: "auto",
+  paper_title: "Text-only paper",
+  nodes: [
+    { id: "a", label: "Layer A", type: "attention",
+      description: "Generic attention layer.", math_formula: "softmax(x)" },
+    { id: "b", label: "Layer B", type: "feedforward",
+      description: "Generic feedforward." },
+    { id: "c", label: "Output", type: "output" },
+  ],
+  edges: [
+    { source: "a", target: "b", type: "data_flow" },
+    { source: "b", target: "c", type: "data_flow" },
+  ],
+};
+
+const legacyFixture: ArchitectureGraph = {
+  version: "legacy",
+  source: "legacy",
+  layout_mode: "auto",
+  nodes: [
+    { id: "1", label: "Legacy 1", type: "input" },
+    { id: "2", label: "Legacy 2", type: "output" },
+  ],
+  edges: [
+    { source: "1", target: "2" },
+  ],
+};
+
+const unverifiedFixture: ArchitectureGraph = {
+  version: "2.0",
+  source: "vision",
+  layout_mode: "figure",
+  // Note: this is figure-mode but the verification metadata is invalid;
+  // shouldRenderReconstruction() will return false, so the renderer falls
+  // back to auto-layout rather than claiming the geometry is trustworthy.
+  nodes: [
+    { id: "hallucinated", label: "Hallucinated Node", type: "other" },
+  ],
+  edges: [],
+  verification: {
+    valid: false,
+    confidence: 0.4,
+    hallucinations: ["hallucinated"],
+    reason: "figure-faithfulness verifier rejected the candidate graph",
   },
-  ssm: {
-    title: "Mamba (SSM)",
-    nodes: [
-      { id: "input", label: "Input Sequence", type: "input", description: "Token embeddings" },
-      { id: "proj_in", label: "Input Projection", type: "linear", description: "Project input to inner dimension", math_formula: "x = W_x · h" },
-      { id: "conv", label: "Causal Conv1D", type: "convolution", description: "Local context mixing before SSM", math_formula: "x' = Conv1D(x)" },
-      { id: "ssm", label: "Selective SSM", type: "ssm", description: "State space model with input-dependent discretization", math_formula: "S_t = ᾱS_{t-1} + β̄x_t", parameters: "14.6M" },
-      { id: "gate", label: "Gating (SiLU)", type: "gate", description: "SiLU activation and element-wise multiply", math_formula: "y = SiLU(x') ⊙ z" },
-      { id: "proj_out", label: "Output Projection", type: "linear", description: "Project back to model dimension", math_formula: "h' = W_y · y" },
-      { id: "add", label: "Residual Add", type: "residual", description: "Skip connection", math_formula: "output = h + h'" },
-      { id: "output", label: "Output", type: "output", description: "Layer output" },
-    ],
-    edges: [
-      { source: "input", target: "proj_in" },
-      { source: "proj_in", target: "conv" },
-      { source: "conv", target: "ssm" },
-      { source: "ssm", target: "gate" },
-      { source: "gate", target: "proj_out" },
-      { source: "proj_out", target: "add" },
-      { source: "input", target: "add", label: "skip", type: "residual_skip" },
-      { source: "add", target: "output" },
-    ],
+};
+
+const emptyFixture: ArchitectureGraph = {
+  version: "2.0",
+  source: "text",
+  layout_mode: "auto",
+  paper_title: "Empty",
+  nodes: [],
+  edges: [],
+};
+
+type FixtureKey = "figure" | "figure-multigroup" | "text-auto" | "legacy" | "unverified" | "empty";
+
+const FIXTURES: Record<FixtureKey, { label: string; description: string; graph: ArchitectureGraph | null }> = {
+  "figure": {
+    label: "Figure-faithful",
+    description: "Verified vision graph with bbox + groups + path_points + custom styles.",
+    graph: figureFixture,
+  },
+  "figure-multigroup": {
+    label: "Figure-faithful (multi-group)",
+    description: "Same as above with two groups (Encoder + Decoder) and a residual skip.",
+    graph: figureFixture,
+  },
+  "text-auto": {
+    label: "Text-only (auto-layout)",
+    description: "BFS auto-layout for text-extracted graphs that have no figure geometry.",
+    graph: textAutoFixture,
+  },
+  "legacy": {
+    label: "Legacy (auto-layout)",
+    description: "Downgraded legacy payload from cache; same auto-layout, marked legacy.",
+    graph: legacyFixture,
+  },
+  "unverified": {
+    label: "Unverified figure (refused)",
+    description: "Figure-mode graph with failing verification; renderer downgrades to auto-layout.",
+    graph: unverifiedFixture,
+  },
+  "empty": {
+    label: "Empty graph",
+    description: "No architecture was extracted; honest empty state.",
+    graph: emptyFixture,
   },
 };
 
 export default function TestPage() {
-  const [selectedPaper, setSelectedPaper] = useState<string>("transformer");
-  const paper = MOCK_PAPERS[selectedPaper];
+  const [selected, setSelected] = useState<FixtureKey>("figure");
+  const fixture = FIXTURES[selected];
+  const graph = fixture.graph;
+  const isFigure = graph ? shouldRenderReconstruction(graph) : false;
+  const isVerified = graph ? isVerifiedVisionGraph(graph) : false;
 
   return (
     <div className="h-screen flex flex-col bg-zinc-50">
@@ -104,43 +195,61 @@ export default function TestPage() {
       <div className="bg-white border-b border-zinc-200 px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-bold text-zinc-900">Architecture Diagram — Dynamic Renderer</h1>
+            <h1 className="text-lg font-bold text-zinc-900">Architecture Diagram — Rich Fixture Exerciser</h1>
             <p className="text-xs text-zinc-500 mt-0.5">
-              White theme · Auto-layout · Click nodes to inspect · Scroll to zoom · Drag to pan
+              Figure-faithful rendering · Auto-layout fallback · Click nodes to inspect · Scroll to zoom · Drag to pan
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-400 mr-2">Test paper:</span>
-            {Object.entries(MOCK_PAPERS).map(([key, p]) => (
+          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+            {(Object.keys(FIXTURES) as FixtureKey[]).map((key) => (
               <button
                 key={key}
-                onClick={() => setSelectedPaper(key)}
+                onClick={() => setSelected(key)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md border transition-all ${
-                  selectedPaper === key
+                  selected === key
                     ? "bg-zinc-900 text-white border-zinc-900"
                     : "bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50"
                 }`}
               >
-                {p.title.split("(")[0].trim()}
+                {FIXTURES[key].label}
               </button>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Diagram */}
-      <div className="flex-1 p-6">
+      {/* Diagram + meta */}
+      <div className="flex-1 p-6 flex flex-col">
         <div className="mb-3 flex items-center gap-4">
-          <h2 className="text-sm font-semibold text-zinc-700">{paper.title}</h2>
+          <h2 className="text-sm font-semibold text-zinc-700">{fixture.label}</h2>
           <span className="text-[10px] font-mono text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded">
-            {paper.nodes.length} nodes · {paper.edges.length} edges
+            {graph ? `${graph.nodes.length} nodes · ${graph.edges.length} edges` : "0 nodes"}
           </span>
+          {graph && (
+            <>
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${
+                isFigure ? "bg-emerald-100 text-emerald-800"
+                         : graph.layout_mode === "figure" && !isFigure ? "bg-amber-100 text-amber-800"
+                         : "bg-zinc-100 text-zinc-600"
+              }`}>
+                {isFigure ? "verified figure" : graph.layout_mode === "figure" ? "figure (unverified)" : graph.layout_mode}
+              </span>
+              <span className="text-[10px] font-mono text-zinc-400">
+                isVerifiedVisionGraph = {String(isVerified)}
+              </span>
+            </>
+          )}
         </div>
-        <ArchitectureDiagram
-          nodes={paper.nodes}
-          edges={paper.edges}
-          height={620}
-        />
+        <p className="text-xs text-zinc-500 mb-3">{fixture.description}</p>
+        <div className="flex-1 min-h-0">
+          {graph ? (
+            <ArchitectureDiagram graph={graph} height={620} />
+          ) : (
+            <div className="h-full flex items-center justify-center text-zinc-400 text-sm">
+              No graph supplied
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
