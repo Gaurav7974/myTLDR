@@ -4,9 +4,9 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Float, Text, Line } from '@react-three/drei';
 import * as THREE from 'three';
-import { ReactFlow, Controls, Background, MiniMap } from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
 import { PaperData, BycroftStage } from '@/types/paper';
+import ArchitectureDiagram from '@/components/ArchitectureDiagram';
+import { isVerifiedVisionGraph } from '@/types/architecture_graph';
 import {
   Play,
   Pause,
@@ -376,51 +376,6 @@ export const Visualizer3DTab: React.FC<Visualizer3DTabProps> = ({ paper, onJumpT
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleStepNext, handleStepPrev]);
-
-  // 2D ReactFlow Nodes
-  const flowNodes = useMemo(
-    () => [
-      { id: '1', position: { x: 40, y: 160 }, data: { label: '1. Token & Pos Embedding', node_type: 'embedding' } },
-      { id: '2', position: { x: 220, y: 160 }, data: { label: '2. LayerNorm 1', node_type: 'norm' } },
-      { id: '3', position: { x: 380, y: 80 }, data: { label: '3. Q, K, V Projections', node_type: 'attention' } },
-      { id: '4', position: { x: 560, y: 80 }, data: { label: '4. Softmax Attention (QK^T)', node_type: 'attention' } },
-      { id: '5', position: { x: 740, y: 80 }, data: { label: '5. Value Output (W_O)', node_type: 'attention' } },
-      { id: '6', position: { x: 920, y: 160 }, data: { label: '6. Residual 1 & Add', node_type: 'residual' } },
-      { id: '7', position: { x: 1100, y: 160 }, data: { label: '7. LayerNorm 2', node_type: 'norm' } },
-      { id: '8', position: { x: 1280, y: 160 }, data: { label: '8. MLP 4x Expansion', node_type: 'encoder' } },
-      { id: '9', position: { x: 1460, y: 160 }, data: { label: '9. MLP Contraction', node_type: 'encoder' } },
-      { id: '10', position: { x: 1640, y: 160 }, data: { label: '10. Residual 2 & Final Norm', node_type: 'residual' } },
-      { id: '11', position: { x: 1840, y: 160 }, data: { label: '11. Unembedding Logits', node_type: 'output' } },
-    ],
-    []
-  );
-
-  const flowEdges = useMemo(
-    () => [
-      { id: 'e1-2', source: '1', target: '2', animated: true },
-      { id: 'e2-3', source: '2', target: '3', animated: true },
-      { id: 'e1-6-res', source: '1', target: '6', label: 'Residual 1 Highway', style: { stroke: '#EF4444', strokeDasharray: '5,5' }, animated: true },
-      { id: 'e3-4', source: '3', target: '4', animated: true },
-      { id: 'e4-5', source: '4', target: '5', animated: true },
-      { id: 'e5-6', source: '5', target: '6', animated: true },
-      { id: 'e6-7', source: '6', target: '7', animated: true },
-      { id: 'e6-10-res', source: '6', target: '10', label: 'Residual 2 Highway', style: { stroke: '#EF4444', strokeDasharray: '5,5' }, animated: true },
-      { id: 'e7-8', source: '7', target: '8', animated: true },
-      { id: 'e8-9', source: '8', target: '9', animated: true },
-      { id: 'e9-10', source: '9', target: '10', animated: true },
-      { id: 'e10-11', source: '10', target: '11', animated: true },
-    ],
-    []
-  );
-
-  const flowColors = {
-    embedding: '#1E293B',
-    attention: '#312E81',
-    norm: '#475569',
-    residual: '#991B1B',
-    encoder: '#4338CA',
-    output: '#064E3B',
-  };
 
   // Dynamic Attention Heatmap Matrix based on head and tokens
   const dynamicHeatmapMatrix = useMemo(() => {
@@ -850,34 +805,45 @@ export const Visualizer3DTab: React.FC<Visualizer3DTabProps> = ({ paper, onJumpT
 
         {viewMode === '2d-graph' && (
           <div className="w-full h-full bg-white">
-            <ReactFlow
-              nodes={flowNodes.map((n) => ({
-                ...n,
-                style: {
-                  background: flowColors[n.data.node_type as keyof typeof flowColors] || '#18181B',
-                  color: '#FAFAFA',
-                  borderRadius: '6px',
-                  padding: '8px 12px',
-                  fontSize: '11px',
-                  fontFamily: 'monospace',
-                  fontWeight: 600,
-                  border: '1px solid #3F3F46',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                },
-              }))}
-              edges={flowEdges.map((e) => ({
-                ...e,
-                style: { stroke: '#71717A', strokeWidth: 1.5, ...e.style },
-              }))}
-              fitView
-            >
-              <Background color="#E4E4E7" gap={16} />
-              <Controls />
-              <MiniMap
-                nodeColor={(node) => flowColors[node.data?.node_type as keyof typeof flowColors] || '#18181B'}
-                className="bg-white border border-zinc-200 rounded-md"
+            {paper.architectureGraph && (paper.architectureGraph.nodes?.length ?? 0) > 0 ? (
+              <ArchitectureDiagram
+                graph={paper.architectureGraph}
+                height={720}
               />
-            </ReactFlow>
+            ) : (
+              // Trust-first fallback: no static Transformer mock. The
+              // diagram tab shows an honest unavailable state and points
+              // the user to the parsed text / 3D scene instead.
+              <div className="w-full h-full flex items-center justify-center p-12">
+                <div className="max-w-md text-center">
+                  <div className="w-12 h-12 rounded-full bg-zinc-50 border border-zinc-100 flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-5 h-5 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7l8 5-8 5z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-sm font-semibold text-zinc-800 mb-1">
+                    2D architecture diagram not available for this paper
+                  </h3>
+                  <p className="text-xs text-zinc-500 leading-relaxed">
+                    The pipeline did not return a verified figure-faithful graph
+                    (or the text-only graph had no architecture to extract).
+                    Other tabs (3D scene, parsed text) still work; we deliberately
+                    do not render a placeholder diagram that could misrepresent
+                    the paper.
+                  </p>
+                  {isVerifiedVisionGraph(paper.architectureGraph) === false &&
+                   paper.architectureGraph &&
+                   paper.architectureGraph.verification &&
+                   !paper.architectureGraph.verification.valid && (
+                    <p className="text-[10px] text-amber-600 mt-3 italic">
+                      The figure-faithfulness verifier rejected the candidate graph
+                      (hallucinations or low confidence). See the parsed-text tab
+                      for the original figure.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
