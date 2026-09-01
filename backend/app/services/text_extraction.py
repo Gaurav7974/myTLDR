@@ -4,7 +4,7 @@ import re
 import time
 import base64
 import requests
-import fitz  # PyMuPDF
+import pymupdf  # PyMuPDF
 from dataclasses import dataclass, field
 from typing import List, Optional
 from app.core.config import settings
@@ -50,7 +50,7 @@ class TextExtractor:
 
     def extract_from_pdf_bytes(self, pdf_bytes: bytes) -> ExtractionResult:
         """Extract text per page. PyMuPDF for text pages, Mistral OCR for image pages."""
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
         pages: List[PageText] = [
             PageText(page_number=i + 1, markdown=page.get_text(), source="pymupdf")
             for i, page in enumerate(doc)
@@ -99,7 +99,7 @@ class TextExtractor:
 
     def _mistral_ocr_single_page(self, pdf_bytes: bytes, page_index: int) -> tuple:
         """OCR one page (0-based) of a PDF; returns (markdown with inline images, figures)."""
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
         try:
             doc.select([page_index])
             single_bytes = doc.tobytes()
