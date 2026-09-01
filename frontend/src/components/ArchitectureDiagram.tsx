@@ -1,37 +1,93 @@
 "use client";
 
 import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import {
+  ArchitectureGraph,
+  GraphBoundingBox,
+  GraphGroup,
+  GraphPoint,
+  shouldRenderReconstruction,
+} from "@/types/architecture_graph";
+import {
+  FIGURE_CANVAS_W,
+  FIGURE_CANVAS_H,
+  NODE_W_DEFAULT as NODE_W,
+  NODE_H_DEFAULT as NODE_H,
+  PADDING,
+  figureNodePosition,
+  computeAutoLayout,
+  resolveEdgeStyle as resolveEdgeStyleImpl,
+  type PositionedNode,
+} from "./architectureDiagramLayout";
 
-// ── Types ──────────────────────────────────────────────────────────
+// ── Public types ────────────────────────────────────────────────────
+// The simple `nodes`/`edges` props remain the primary API for callers
+// that only have a flat graph. The rich `graph` prop activates the
+// figure-faithful rendering path when present.
+
 export interface DiagramNode {
   id: string;
   label: string;
   type: string;
   description?: string;
+  how_it_works?: string;
   math_formula?: string;
+  paper_term?: string;
   parameters?: string;
   flops?: string;
+  group_id?: string;
+  bbox?: GraphBoundingBox;
+  shape?: "rect" | "rounded" | "ellipse" | "diamond" | "cylinder" | "parallelogram" | "trapezoid" | "custom";
+  style?: {
+    fill?: string;
+    border?: string;
+    text?: string;
+    shape?: "rect" | "rounded" | "ellipse" | "diamond" | "cylinder" | "parallelogram" | "trapezoid" | "custom";
+  };
+  confidence?: number;
+  provenance?: {
+    source?: "text" | "vision" | "merged";
+    paper_title?: string;
+    page?: number;
+    section?: string;
+    figure_id?: string;
+    figure_page?: number;
+    citation?: string;
+    confidence?: number;
+  };
 }
 
 export interface DiagramEdge {
   source: string;
   target: string;
   label?: string;
-  type?: "data_flow" | "residual_skip" | "cross_attention";
+  type?: "data_flow" | "residual_skip" | "cross_attention" | "gated_modulation" | "recurrent_state" | "custom";
+  semantic?: string;
+  path_points?: GraphPoint[];
+  style?: {
+    stroke?: string;
+    width?: number;
+    dasharray?: string;
+    name?: "solid" | "dashed" | "dotted" | "residual" | "beam" | "highlight" | "custom" | "default";
+  };
+  raw_style?: Record<string, unknown>;
 }
 
 export interface ArchitectureDiagramProps {
-  nodes: DiagramNode[];
-  edges: DiagramEdge[];
+  nodes?: DiagramNode[];
+  edges?: DiagramEdge[];
+  /** Optional rich graph. When `layout_mode === 'figure'` and the graph
+   *  is verified, nodes/groups render at extracted normalized coordinates.
+   *  When `layout_mode === 'auto'`, the BFS layout is used as a fallback. */
+  graph?: ArchitectureGraph;
   height?: number;
+  /** Optional callback when the user clicks a node — useful for tests. */
+  onNodeClick?: (node: DiagramNode) => void;
 }
 
-// ── Constants ──────────────────────────────────────────────────────
-const NODE_W = 160;
-const NODE_H = 44;
-const LAYER_GAP = 200;
-const NODE_GAP = 24;
-const PADDING = 60;
+// ── Constants (NODE_W, NODE_H, PADDING, FIGURE_CANVAS_W/H are imported
+//    from ./architectureDiagramLayout; LAYER_GAP/NODE_GAP are auto-layout
+//    constants and live with computeAutoLayout there.)
 
 const TYPE_COLORS: Record<string, { bg: string; border: string; text: string }> = {
   input: { bg: "#f8fafc", border: "#94a3b8", text: "#334155" },
@@ -56,103 +112,53 @@ function getNodeColors(type: string) {
   return TYPE_COLORS[type?.toLowerCase()] || TYPE_COLORS.default;
 }
 
-// ── Layout Engine ──────────────────────────────────────────────────
-interface PositionedNode {
-  id: string;
-  x: number;
-  y: number;
-  layer: number;
-  index: number;
-}
+// ── Edge style + layout helpers (imported) ─────────────────────────
+// resolveEdgeStyle, computeAutoLayout, figureNodePosition,
+// positionGroupsFigure, pathPointsToSvgPath, FIGURE_CANVAS_W, FIGURE_CANVAS_H,
+// NODE_W, NODE_H, PADDING, and PositionedNode all come from
+// ./architectureDiagramLayout so they can be unit-tested in isolation
+// without React or a DOM.
 
-function computeLayout(nodes: DiagramNode[], edges: DiagramEdge[]) {
-  if (nodes.length === 0) return new Map<string, PositionedNode>();
-
-  // Build adjacency
-  const adjacency = new Map<string, Set<string>>();
-  const inDegree = new Map<string, number>();
-  nodes.forEach((n) => {
-    adjacency.set(n.id, new Set());
-    inDegree.set(n.id, 0);
-  });
-  edges.forEach((e) => {
-    if (adjacency.has(e.source) && adjacency.has(e.target)) {
-      adjacency.get(e.source)!.add(e.target);
-      inDegree.set(e.target, (inDegree.get(e.target) || 0) + 1);
-    }
-  });
-
-  // BFS layering (Kahn's algorithm)
-  const layers: string[][] = [];
-  let current = nodes.filter((n) => (inDegree.get(n.id) || 0) === 0).map((n) => n.id);
-  const visited = new Set<string>();
-
-  while (current.length > 0) {
-    layers.push([...current]);
-    current.forEach((id) => visited.add(id));
-    const next: string[] = [];
-    current.forEach((id) => {
-      adjacency.get(id)?.forEach((target) => {
-        if (!visited.has(target)) {
-          const newDeg = (inDegree.get(target) || 0) - 1;
-          inDegree.set(target, newDeg);
-          if (newDeg <= 0 && !next.includes(target)) {
-            next.push(target);
-          }
-        }
-      });
-    });
-    current = next;
-  }
-
-  // Handle cycles — add remaining nodes to last layer
-  const remaining = nodes.filter((n) => !visited.has(n.id)).map((n) => n.id);
-  if (remaining.length > 0) {
-    layers.push(remaining);
-  }
-
-  // Assign positions
-  const positioned = new Map<string, PositionedNode>();
-  layers.forEach((layer, layerIdx) => {
-    layer.forEach((id, nodeIdx) => {
-      positioned.set(id, {
-        id,
-        layer: layerIdx,
-        index: nodeIdx,
-        x: PADDING + layerIdx * LAYER_GAP,
-        y: PADDING + nodeIdx * (NODE_H + NODE_GAP),
-      });
-    });
-  });
-
-  return positioned;
-}
-
-// ── Edge Path Calculator ───────────────────────────────────────────
-function computeEdgePath(
-  source: PositionedNode,
-  target: PositionedNode
-): { path: string; midX: number; midY: number } {
-  const sx = source.x + NODE_W;
-  const sy = source.y + NODE_H / 2;
-  const tx = target.x;
-  const ty = target.y + NODE_H / 2;
-
-  const dx = tx - sx;
-  const controlOffset = Math.max(40, dx * 0.4);
-  const path = `M ${sx} ${sy} C ${sx + controlOffset} ${sy}, ${tx - controlOffset} ${ty}, ${tx} ${ty}`;
-  const midX = (sx + tx) / 2;
-  const midY = (sy + ty) / 2;
-
-  return { path, midX, midY };
+// ── Math rendering (safe text + KaTeX for short LaTeX) ──────────────
+function MathText({ value, maxLen = 240 }: { value: string; maxLen?: number }) {
+  const safe = value.length > maxLen ? value.slice(0, maxLen) + "…" : value;
+  // Render Unicode math directly; for LaTeX-style, fall back to monospace text
+  // (KaTeX requires DOM measurement we don't have here; safe to keep as text
+  // to avoid overflow). The sidebar always shows the full text.
+  return <span style={{ fontFamily: "ui-monospace, monospace" }}>{safe}</span>;
 }
 
 // ── Component ──────────────────────────────────────────────────────
 export default function ArchitectureDiagram({
-  nodes,
-  edges,
+  nodes: nodesProp,
+  edges: edgesProp,
+  graph,
   height = 600,
+  onNodeClick,
 }: ArchitectureDiagramProps) {
+  // Unify the two APIs: a `graph` prop or flat `nodes`/`edges` props.
+  const unified: { nodes: DiagramNode[]; edges: DiagramEdge[]; layoutMode: string; groups: GraphGroup[]; source: string } = useMemo(() => {
+    if (graph && Array.isArray(graph.nodes) && graph.nodes.length > 0) {
+      return {
+        nodes: graph.nodes as unknown as DiagramNode[],
+        edges: (graph.edges || []) as unknown as DiagramEdge[],
+        layoutMode: graph.layout_mode || "auto",
+        groups: graph.groups || [],
+        source: graph.source || "auto",
+      };
+    }
+    return {
+      nodes: nodesProp || [],
+      edges: edgesProp || [],
+      layoutMode: "auto",
+      groups: [],
+      source: "auto",
+    };
+  }, [graph, nodesProp, edgesProp]);
+
+  const { nodes, edges, layoutMode, groups, source } = unified;
+  const isFigureMode = layoutMode === "figure" && shouldRenderReconstruction(graph as ArchitectureGraph | undefined);
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -160,8 +166,30 @@ export default function ArchitectureDiagram({
   const [isPanning, setIsPanning] = useState(false);
   const panStart = useRef({ x: 0, y: 0 });
 
-  // Compute layout
-  const positioned = useMemo(() => computeLayout(nodes, edges), [nodes, edges]);
+  // Compute layout: figure-coordinates when verified, BFS fallback otherwise
+  const positioned = useMemo(() => {
+    if (isFigureMode) {
+      const m = new Map<string, PositionedNode>();
+      const layer = 0;
+      nodes.forEach((n) => {
+        const p = figureNodePosition(n);
+        if (p) {
+          m.set(n.id, {
+            id: n.id, x: p.x, y: p.y, layer, index: 0, source: "figure",
+          });
+        }
+      });
+      if (m.size > 0) return m;
+      // fall through to auto if figure positions were all missing
+    }
+    return computeAutoLayout(nodes, edges);
+  }, [isFigureMode, nodes, edges]);
+
+  // Mark nodes that have no layout as "missing" so the renderer can draw
+  // them safely (or hide them).
+  const nodesWithMissingLayout = useMemo(() => {
+    return nodes.filter((n) => !positioned.has(n.id));
+  }, [nodes, positioned]);
 
   // Canvas dimensions
   const { canvasW, canvasH } = useMemo(() => {
@@ -172,8 +200,30 @@ export default function ArchitectureDiagram({
       maxX = Math.max(maxX, p.x + NODE_W);
       maxY = Math.max(maxY, p.y + NODE_H);
     });
+    if (isFigureMode) {
+      maxX = Math.max(maxX, FIGURE_CANVAS_W);
+      maxY = Math.max(maxY, FIGURE_CANVAS_H);
+    }
     return { canvasW: maxX + PADDING, canvasH: maxY + PADDING };
-  }, [positioned]);
+  }, [positioned, isFigureMode]);
+
+  // Group rectangles
+  const positionedGroups = useMemo(() => {
+    if (!isFigureMode || groups.length === 0) return [];
+    return groups.map((g) => {
+      const b = g.bbox;
+      if (!b) return null;
+      return {
+        id: g.id,
+        label: g.label || g.id,
+        x: b.x * FIGURE_CANVAS_W,
+        y: b.y * FIGURE_CANVAS_H,
+        w: b.w * FIGURE_CANVAS_W,
+        h: b.h * FIGURE_CANVAS_H,
+        color: g.color || "#e5e7eb",
+      };
+    }).filter(Boolean) as Array<{ id: string; label: string; x: number; y: number; w: number; h: number; color: string }>;
+  }, [isFigureMode, groups]);
 
   // Edge paths
   const edgePaths = useMemo(() => {
@@ -182,11 +232,26 @@ export default function ArchitectureDiagram({
         const src = positioned.get(e.source);
         const tgt = positioned.get(e.target);
         if (!src || !tgt) return null;
-        const { path, midX, midY } = computeEdgePath(src, tgt);
-        return { ...e, path, midX, midY };
+        // In figure mode with path_points, use them directly
+        if (isFigureMode && e.path_points && e.path_points.length >= 2) {
+          const points = e.path_points.map((p) => `${p.x * FIGURE_CANVAS_W},${p.y * FIGURE_CANVAS_H}`);
+          const path = `M ${points.join(" L ")}`;
+          const midX = ((e.path_points[0].x + e.path_points[e.path_points.length - 1].x) / 2) * FIGURE_CANVAS_W;
+          const midY = ((e.path_points[0].y + e.path_points[e.path_points.length - 1].y) / 2) * FIGURE_CANVAS_H;
+          return { ...e, path, midX, midY };
+        }
+        // Bezier fallback
+        const sx = src.x + NODE_W;
+        const sy = src.y + NODE_H / 2;
+        const tx = tgt.x;
+        const ty = tgt.y + NODE_H / 2;
+        const dx = tx - sx;
+        const controlOffset = Math.max(40, dx * 0.4);
+        const path = `M ${sx} ${sy} C ${sx + controlOffset} ${sy}, ${tx - controlOffset} ${ty}, ${tx} ${ty}`;
+        return { ...e, path, midX: (sx + tx) / 2, midY: (sy + ty) / 2 };
       })
       .filter(Boolean) as (DiagramEdge & { path: string; midX: number; midY: number })[];
-  }, [edges, positioned]);
+  }, [edges, positioned, isFigureMode]);
 
   const selectedNode = selectedId ? nodes.find((n) => n.id === selectedId) : null;
   const selectedMeta = selectedId ? positioned.get(selectedId) : null;
@@ -231,8 +296,9 @@ export default function ArchitectureDiagram({
     return () => el.removeEventListener("wheel", handler);
   }, []);
 
-  // Reset view
   const resetView = () => setTransform({ x: 0, y: 0, scale: 1 });
+
+  const isAvailable = nodes.length > 0;
 
   return (
     <div className="flex h-full w-full bg-white rounded-xl border border-zinc-200 overflow-hidden">
@@ -279,6 +345,18 @@ export default function ArchitectureDiagram({
           </button>
         </div>
 
+        {/* Mode badge */}
+        {isFigureMode && (
+          <div className="absolute top-3 left-3 z-20 px-2 py-1 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-semibold uppercase tracking-wider">
+            Figure-faithful
+          </div>
+        )}
+        {layoutMode === "auto" && !isFigureMode && source === "legacy" && isAvailable && (
+          <div className="absolute top-3 left-3 z-20 px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-semibold uppercase tracking-wider">
+            Auto-layout (legacy graph)
+          </div>
+        )}
+
         {/* SVG Canvas */}
         <svg
           width="100%"
@@ -289,7 +367,6 @@ export default function ArchitectureDiagram({
           <g
             transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}
           >
-            {/* Arrow marker */}
             <defs>
               <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                 <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
@@ -299,20 +376,47 @@ export default function ArchitectureDiagram({
               </marker>
             </defs>
 
+            {/* Group rectangles (figure-mode only) */}
+            {positionedGroups.map((g) => (
+              <g key={`group-${g.id}`}>
+                <rect
+                  x={g.x}
+                  y={g.y}
+                  width={g.w}
+                  height={g.h}
+                  fill={g.color}
+                  fillOpacity={0.06}
+                  stroke={g.color}
+                  strokeOpacity={0.5}
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
+                  rx={6}
+                />
+                <text
+                  x={g.x + 8}
+                  y={g.y + 16}
+                  className="text-[10px] font-semibold pointer-events-none select-none"
+                  fill="#52525b"
+                >
+                  {g.label}
+                </text>
+              </g>
+            ))}
+
             {/* Edges */}
             {edgePaths.map((e) => {
               const isActive =
                 selectedId && (e.source === selectedId || e.target === selectedId);
-              const isResidual = e.type === "residual_skip";
+              const { stroke, dasharray, width, marker } = resolveEdgeStyleImpl(e, !!isActive);
               return (
                 <g key={`${e.source}-${e.target}`}>
                   <path
                     d={e.path}
                     fill="none"
-                    stroke={isActive ? "#3b82f6" : isResidual ? "#f87171" : "#d1d5db"}
-                    strokeWidth={isActive ? 2.5 : 1.5}
-                    strokeDasharray={isResidual ? "6 4" : undefined}
-                    markerEnd={isActive ? "url(#arrow-active)" : "url(#arrow)"}
+                    stroke={stroke}
+                    strokeWidth={width}
+                    strokeDasharray={dasharray}
+                    markerEnd={marker}
                     className="transition-all duration-200"
                   />
                   {e.label && (
@@ -332,8 +436,12 @@ export default function ArchitectureDiagram({
             {/* Nodes */}
             {nodes.map((node) => {
               const pos = positioned.get(node.id);
-              if (!pos) return null;
+              if (!pos) return null;  // skip nodes without layout (figure mode missing bbox)
+              // Style resolution: explicit fill/border > taxonomy > default
               const colors = getNodeColors(node.type);
+              const fill = node.style?.fill || colors.bg;
+              const border = node.style?.border || colors.border;
+              const textColor = node.style?.text || colors.text;
               const isSelected = selectedId === node.id;
               const isHovered = hoveredId === node.id;
               const isConnected =
@@ -348,16 +456,19 @@ export default function ArchitectureDiagram({
                 <g
                   key={node.id}
                   data-node
+                  data-node-id={node.id}
+                  data-node-type={node.type}
+                  data-source={pos.source}
                   transform={`translate(${pos.x}, ${pos.y})`}
                   className="cursor-pointer"
                   onClick={(e) => {
                     e.stopPropagation();
                     setSelectedId(isSelected ? null : node.id);
+                    onNodeClick?.(node);
                   }}
                   onMouseEnter={() => setHoveredId(node.id)}
                   onMouseLeave={() => setHoveredId(null)}
                 >
-                  {/* Shadow on hover/select */}
                   {(isHovered || isSelected) && (
                     <rect
                       x={-2}
@@ -371,53 +482,44 @@ export default function ArchitectureDiagram({
                       opacity={0.5}
                     />
                   )}
-
-                  {/* Main box */}
                   <rect
                     width={NODE_W}
                     height={NODE_H}
                     rx={8}
-                    fill={colors.bg}
-                    stroke={isSelected ? "#3b82f6" : colors.border}
+                    fill={fill}
+                    stroke={isSelected ? "#3b82f6" : border}
                     strokeWidth={isSelected ? 2 : 1}
-                    opacity={
-                      selectedId && !isSelected && !isConnected ? 0.35 : 1}
+                    opacity={selectedId && !isSelected && !isConnected ? 0.35 : 1}
                     className="transition-all duration-150"
                   />
-
-                  {/* Type indicator bar */}
                   <rect
                     width={3}
                     height={NODE_H - 12}
                     x={6}
                     y={6}
                     rx={1.5}
-                    fill={colors.border}
+                    fill={border}
                     opacity={0.6}
                   />
-
-                  {/* Label */}
                   <text
                     x={NODE_W / 2 + 4}
                     y={NODE_H / 2 - 2}
                     textAnchor="middle"
                     dominantBaseline="middle"
                     className="text-[12px] font-medium pointer-events-none select-none"
-                    fill={colors.text}
+                    fill={textColor}
                   >
                     {node.label.length > 20
                       ? node.label.slice(0, 20) + "…"
                       : node.label}
                   </text>
-
-                  {/* Type badge */}
                   <text
                     x={NODE_W / 2 + 4}
                     y={NODE_H / 2 + 14}
                     textAnchor="middle"
                     dominantBaseline="middle"
                     className="text-[9px] pointer-events-none select-none uppercase tracking-wider"
-                    fill={colors.text}
+                    fill={textColor}
                     opacity={0.5}
                   >
                     {node.type}
@@ -428,16 +530,25 @@ export default function ArchitectureDiagram({
           </g>
         </svg>
 
-        {/* Empty state */}
-        {nodes.length === 0 && (
+        {/* Unavailable state — only when no graph at all */}
+        {!isAvailable && (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center text-zinc-400">
               <svg className="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
-              <p className="text-sm font-medium">No architecture data</p>
-              <p className="text-xs mt-1 text-zinc-300">Upload a paper to extract its architecture</p>
+              <p className="text-sm font-medium">Architecture diagram not available</p>
+              <p className="text-xs mt-1 text-zinc-300 max-w-xs">
+                The paper did not produce a figure-faithful architecture graph. Other tabs (3D scene, parsed text) still work.
+              </p>
             </div>
+          </div>
+        )}
+
+        {/* Figure-mode nodes with missing bbox warning */}
+        {isFigureMode && nodesWithMissingLayout.length > 0 && (
+          <div className="absolute bottom-3 left-3 z-20 px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[10px]">
+            {nodesWithMissingLayout.length} node(s) without extracted bbox
           </div>
         )}
       </div>
@@ -462,6 +573,11 @@ export default function ArchitectureDiagram({
                 >
                   {selectedNode.type}
                 </span>
+                {selectedNode.paper_term && (
+                  <span className="text-[9px] italic text-zinc-500 truncate">
+                    {selectedNode.paper_term}
+                  </span>
+                )}
               </div>
               <h3 className="text-base font-bold text-zinc-900 mt-2">
                 {selectedNode.label}
@@ -470,14 +586,26 @@ export default function ArchitectureDiagram({
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* Description */}
+              {/* Description (What it does) */}
               {selectedNode.description && (
                 <div>
                   <h4 className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
-                    Description
+                    What it does
                   </h4>
                   <p className="text-sm text-zinc-700 leading-relaxed">
                     {selectedNode.description}
+                  </p>
+                </div>
+              )}
+
+              {/* How it works (paper-specific usage) */}
+              {selectedNode.how_it_works && (
+                <div>
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
+                    How it is used in this paper
+                  </h4>
+                  <p className="text-sm text-zinc-700 leading-relaxed">
+                    {selectedNode.how_it_works}
                   </p>
                 </div>
               )}
@@ -486,10 +614,10 @@ export default function ArchitectureDiagram({
               {selectedNode.math_formula && (
                 <div>
                   <h4 className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
-                    Mathematical Formula
+                    Mathematical model
                   </h4>
-                  <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-100 font-mono text-sm text-zinc-800 overflow-x-auto">
-                    {selectedNode.math_formula}
+                  <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-100 text-sm text-zinc-800 overflow-x-auto">
+                    <MathText value={selectedNode.math_formula} />
                   </div>
                 </div>
               )}
@@ -560,18 +688,74 @@ export default function ArchitectureDiagram({
                 </div>
               </div>
 
+              {/* Provenance (figure / page / section / citation / confidence) */}
+              {selectedNode.provenance && (
+                <div className="pt-2 border-t border-zinc-100">
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
+                    Provenance
+                  </h4>
+                  <dl className="text-[11px] text-zinc-600 space-y-1">
+                    {selectedNode.provenance.source && (
+                      <div className="flex justify-between gap-2">
+                        <dt className="text-zinc-400">Source</dt>
+                        <dd className="font-mono">{selectedNode.provenance.source}</dd>
+                      </div>
+                    )}
+                    {selectedNode.provenance.section && (
+                      <div className="flex justify-between gap-2">
+                        <dt className="text-zinc-400">Section</dt>
+                        <dd className="font-mono truncate">{selectedNode.provenance.section}</dd>
+                      </div>
+                    )}
+                    {selectedNode.provenance.page && (
+                      <div className="flex justify-between gap-2">
+                        <dt className="text-zinc-400">Text page</dt>
+                        <dd className="font-mono">{selectedNode.provenance.page}</dd>
+                      </div>
+                    )}
+                    {selectedNode.provenance.figure_id && (
+                      <div className="flex justify-between gap-2">
+                        <dt className="text-zinc-400">Figure</dt>
+                        <dd className="font-mono">{selectedNode.provenance.figure_id}</dd>
+                      </div>
+                    )}
+                    {selectedNode.provenance.figure_page && (
+                      <div className="flex justify-between gap-2">
+                        <dt className="text-zinc-400">Figure page</dt>
+                        <dd className="font-mono">{selectedNode.provenance.figure_page}</dd>
+                      </div>
+                    )}
+                    {selectedNode.confidence !== undefined && (
+                      <div className="flex justify-between gap-2">
+                        <dt className="text-zinc-400">Confidence</dt>
+                        <dd className="font-mono">{(selectedNode.confidence * 100).toFixed(0)}%</dd>
+                      </div>
+                    )}
+                    {selectedNode.provenance.citation && (
+                      <div className="mt-2">
+                        <dt className="text-zinc-400 mb-0.5">Citation</dt>
+                        <dd className="text-zinc-700 italic leading-relaxed">
+                          &ldquo;{selectedNode.provenance.citation}&rdquo;
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                </div>
+              )}
+
               {/* Position */}
               {selectedMeta && (
                 <div className="pt-2 border-t border-zinc-100">
                   <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-300">
-                    Layer {selectedMeta.layer + 1} · Position {selectedMeta.index + 1}
+                    {selectedMeta.source === "figure"
+                      ? `Figure pos (${(selectedNode.bbox?.x ?? 0).toFixed(2)}, ${(selectedNode.bbox?.y ?? 0).toFixed(2)})`
+                      : `Layer ${selectedMeta.layer + 1} · Position ${selectedMeta.index + 1}`}
                   </span>
                 </div>
               )}
             </div>
           </>
         ) : (
-          /* Empty state */
           <div className="flex-1 flex items-center justify-center p-6">
             <div className="text-center">
               <div className="w-12 h-12 rounded-full bg-zinc-50 border border-zinc-100 flex items-center justify-center mx-auto mb-3">
@@ -581,8 +765,13 @@ export default function ArchitectureDiagram({
               </div>
               <p className="text-sm font-medium text-zinc-500">Select a component</p>
               <p className="text-xs text-zinc-300 mt-1 leading-relaxed">
-                Click any block in the diagram to inspect its function, formulas, and connections.
+                Click any block in the diagram to inspect its function, formulas, connections, and provenance.
               </p>
+              {isFigureMode && (
+                <p className="text-[10px] text-emerald-600 mt-2">
+                  Figure-faithful mode active.
+                </p>
+              )}
             </div>
           </div>
         )}
