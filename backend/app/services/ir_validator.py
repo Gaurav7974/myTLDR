@@ -4,7 +4,7 @@ from typing import Dict, Any, List, Set, Tuple
 from app.models.architecture_ir import ArchitectureIR, ArchitectureNode, ArchitectureEdge, NodeTypeTaxonomy
 
 
-class GraphValidator:
+class IRValidator:
     """Validates raw LLM-generated ArchitectureIR against schema and graph rules."""
 
     KNOWN_TYPES: Set[str] = {
@@ -125,4 +125,4 @@ class GraphValidator:
         return canonical_ir, notices
 
 
-graph_validator = GraphValidator()
+ir_validator = IRValidator()

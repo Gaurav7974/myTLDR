@@ -5,8 +5,8 @@ from typing import Dict, Any, Tuple
 from app.core.config import settings
 from app.services.llm import groq_client
 from app.models.architecture_ir import ArchitectureIR, SceneGraph3D
-from app.services.graph_validator import graph_validator
-from app.services.layout_engine import layout_engine
+from app.services.ir_validator import ir_validator
+from app.services.scene_layout import layout_engine
 
 ARCHITECTURE_IR_SYSTEM_PROMPT = """You are an elite neural architecture analyst.
 Your mission is to analyze the research paper's methodology, architecture descriptions, equations, and figures, and extract a canonical ArchitectureIR (Intermediate Representation) JSON.
@@ -64,7 +64,7 @@ SCHEMA:
 Return purely raw JSON."""
 
 
-class ArchitectureExtractor:
+class IRExtractor:
     """Extracts, validates, and layouts ArchitectureIR from paper text and context."""
 
     def extract(self, full_text: str, paper_title: str = "") -> Tuple[ArchitectureIR, SceneGraph3D]:
@@ -87,7 +87,7 @@ Extract the canonical ArchitectureIR JSON strictly matching the schema."""
                 model=settings.MISTRAL_LLM_MODEL
             )
             # 1. Validate & Normalize
-            canonical_ir, notices = graph_validator.validate_and_normalize(raw_data)
+            canonical_ir, notices = ir_validator.validate_and_normalize(raw_data)
             # 2. Compute 3D Scene Graph via Layout Engine
             scene_graph = layout_engine.compute_scene_graph(canonical_ir)
             return canonical_ir, scene_graph
@@ -155,8 +155,8 @@ Extract the canonical ArchitectureIR JSON strictly matching the schema."""
                 {"id": "res1", "source": "node_embed", "target": "node_mlp", "type": "residual_skip", "label": "Residual Stream 1"}
             ]
         }
-        canonical, _ = graph_validator.validate_and_normalize(raw_fallback)
+        canonical, _ = ir_validator.validate_and_normalize(raw_fallback)
         return canonical
 
 
-architecture_extractor = ArchitectureExtractor()
+ir_extractor = IRExtractor()

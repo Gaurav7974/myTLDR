@@ -3,7 +3,7 @@
 import hashlib
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.orm import PaperCache, GraphCache
+from app.models.orm import PaperCache, GraphCache, ParsedTextCache
 from app.services.text_extraction import text_extractor
 
 
@@ -16,6 +16,7 @@ def compute_content_hash(text: str) -> str:
 # Fast in-memory caches
 _IN_MEMORY_EXPLANATIONS = {}
 _IN_MEMORY_GRAPHS = {}
+_IN_MEMORY_PARSED_TEXT = {}
 
 
 class CacheService:
@@ -89,6 +90,39 @@ class CacheService:
             await db.commit()
         except Exception:
             pass
+
+    async def get_parsed_text(self, db: AsyncSession, content_hash: str) -> dict | None:
+        """Look up cached parsed text (per-page structure) by content hash."""
+        if content_hash in _IN_MEMORY_PARSED_TEXT:
+            return _IN_MEMORY_PARSED_TEXT[content_hash]
+        try:
+            result = await db.execute(
+                select(ParsedTextCache).where(ParsedTextCache.content_hash == content_hash)
+            )
+            cache = result.scalar_one_or_none()
+            if cache and cache.parsed_json:
+                _IN_MEMORY_PARSED_TEXT[content_hash] = cache.parsed_json
+                return cache.parsed_json
+        except Exception:
+            pass
+        return None
+
+    async def store_parsed_text(self, db: AsyncSession, content_hash: str, parsed: dict):
+        """Store parsed text structure in cache (skips payloads over ~16MB)."""
+        import json
+        if len(json.dumps(parsed, default=str)) > 16 * 1024 * 1024:
+            print("[WARN] Parsed text payload too large to cache; skipping")
+            return
+        _IN_MEMORY_PARSED_TEXT[content_hash] = parsed
+        try:
+            cache = ParsedTextCache(
+                content_hash=content_hash,
+                parsed_json=parsed
+            )
+            db.add(cache)
+            await db.commit()
+        except Exception as e:
+            print(f"[WARN] Failed to cache parsed text: {e}")
 
 
 cache_service = CacheService()

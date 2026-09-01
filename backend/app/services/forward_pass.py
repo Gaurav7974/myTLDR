@@ -1,4 +1,4 @@
-"""3D Architecture Extraction and Spatial Layout Service (Brendan Bycroft style)."""
+"""Forward-pass stage extraction for the interactive 3D LLM visualizer."""
 
 import json
 import re
@@ -38,7 +38,7 @@ Also extract:
 You must respond ONLY with a valid, clean JSON object matching this schema. Return purely raw JSON."""
 
 
-class BycroftService:
+class ForwardPassExtractor:
     """Extracts and computes 3D Bycroft architectures for arbitrary research papers."""
 
     def extract_3d_architecture(self, paper_text: str, model_title: str = "") -> Dict[str, Any]:
@@ -273,4 +273,4 @@ Extract the full sequential 3D Bycroft architecture pipeline JSON adhering stric
         }
 
 
-bycroft_service = BycroftService()
+forward_pass_extractor = ForwardPassExtractor()

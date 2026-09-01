@@ -11,7 +11,7 @@ import requests
 from typing import Optional
 
 from app.core.config import settings
-from app.models.architecture import ArchitectureGraph
+from app.models.graph import ArchitectureGraph
 
 
 VISION_GRAPH_PROMPT = """You are an expert at reading neural-network architecture diagrams.
@@ -33,7 +33,7 @@ Output valid JSON matching this schema:
 Node types: input, output, embedding, attention, feedforward, normalization, block, router, expert, ssm, gate, cache, other"""
 
 
-class VisionService:
+class FigureExtractor:
     """Extracts an ArchitectureGraph from a single paper figure."""
 
     def extract_architecture(
@@ -107,4 +107,4 @@ class VisionService:
         raise Exception("Vision extraction failed after retries")
 
 
-vision_service = VisionService()
+figure_extractor = FigureExtractor()

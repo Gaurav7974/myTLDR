@@ -38,6 +38,13 @@ class Settings:
     # Mistral OCR
     MISTRAL_OCR_URL: str = "https://api.mistral.ai/v1/ocr"
     MISTRAL_OCR_MODEL: str = "mistral-ocr-latest"
+    # Pages with fewer text chars than this are treated as image/scanned pages and OCR'd
+    OCR_PAGE_TEXT_THRESHOLD: int = 200
+    # Max individual page OCR calls per document (whole-doc OCR is used beyond this)
+    OCR_MAX_PAGE_CALLS: int = 8
+    # Inline images sent to the frontend in parsed_text (payload safety caps)
+    MAX_INLINE_IMAGES: int = 20
+    MAX_INLINE_IMAGE_KB: int = 2048
 
     # Vision (architecture-from-image). mistral-small-latest is multimodal on this tier
     # (mistral-large-latest is tier-gated). Override VISION_MODEL to a larger model if upgraded.

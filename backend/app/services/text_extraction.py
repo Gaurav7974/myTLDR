@@ -21,43 +21,120 @@ class Figure:
 
 
 @dataclass
+class PageText:
+    """Extracted content of a single PDF page, ready for the Parsed Text tab."""
+    page_number: int  # 1-based
+    markdown: str
+    source: str  # "pymupdf" | "mistral_ocr"
+
+
+@dataclass
 class ExtractionResult:
-    """Result of extracting a paper: the full text plus any extracted figures."""
+    """Result of extracting a paper: per-page content, flat text, and figures.
+
+    `text` is the plain-text join of all pages (images stripped) and feeds the
+    LLM/RAG pipeline; `pages` keeps the per-page markdown (with inline images)
+    for the frontend reader.
+    """
     text: str
     figures: List[Figure] = field(default_factory=list)
+    pages: List[PageText] = field(default_factory=list)
+    page_count: int = 0
 
 
 class TextExtractor:
     """Extracts text and figures from PDFs and arXiv papers."""
-    
+
     def __init__(self):
         self._last_arxiv_call = 0
-    
+
     def extract_from_pdf_bytes(self, pdf_bytes: bytes) -> ExtractionResult:
-        """Extract text (and figures) from PDF bytes. Uses PyMuPDF first, falls back to Mistral OCR."""
-        # Try direct text extraction first
+        """Extract text per page. PyMuPDF for text pages, Mistral OCR for image pages."""
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        text = ""
-        for page in doc:
-            text += page.get_text()
+        pages: List[PageText] = [
+            PageText(page_number=i + 1, markdown=page.get_text(), source="pymupdf")
+            for i, page in enumerate(doc)
+        ]
+        page_count = len(pages)
         doc.close()
-        
-        # If we got meaningful text, use it (no figures available from a raw text layer)
-        if len(text.strip()) > 200:
-            return ExtractionResult(text=text, figures=[])
-        
-        # No text layer — use Mistral OCR (which also returns figures)
-        print("[OCR] No text layer found, calling Mistral OCR...")
-        return self._mistral_ocr_pdf(pdf_bytes)
-    
+
+        if not pages:
+            return ExtractionResult(text="", figures=[], pages=[], page_count=0)
+
+        ocr_candidates = [
+            p for p in pages
+            if len(p.markdown.strip()) < settings.OCR_PAGE_TEXT_THRESHOLD
+        ]
+
+        if len(ocr_candidates) == page_count:
+            # No text layer anywhere — one whole-document OCR call covers all pages
+            print("[OCR] No text layer found, calling Mistral OCR on whole document...")
+            try:
+                return self._mistral_ocr_pdf(pdf_bytes)
+            except Exception as e:
+                print(f"[WARN] Mistral OCR failed: {e} — returning raw text layer")
+                return self._build_result(pages)
+
+        # Hybrid: OCR only the image/scanned pages individually
+        hybrid_figures: List[Figure] = []
+        for p in ocr_candidates[:settings.OCR_MAX_PAGE_CALLS]:
+            try:
+                md, figs = self._mistral_ocr_single_page(pdf_bytes, p.page_number - 1)
+                if md:
+                    p.markdown = md
+                    p.source = "mistral_ocr"
+                hybrid_figures.extend(figs)
+            except Exception as e:
+                print(f"[WARN] OCR failed for page {p.page_number}: {e}")
+        if len(ocr_candidates) > settings.OCR_MAX_PAGE_CALLS:
+            print(f"[WARN] {len(ocr_candidates)} image pages exceed OCR_MAX_PAGE_CALLS; "
+                  f"only the first {settings.OCR_MAX_PAGE_CALLS} were OCR'd")
+
+        return self._build_result(pages, hybrid_figures)
+
     def _mistral_ocr_pdf(self, pdf_bytes: bytes) -> ExtractionResult:
-        """Call Mistral OCR API for image-based PDFs, returning text + figures."""
+        """Call Mistral OCR API for image-based PDFs, returning per-page text + figures."""
+        result = self._call_mistral_ocr(pdf_bytes)
+        return self._parse_ocr_response(result)
+
+    def _mistral_ocr_single_page(self, pdf_bytes: bytes, page_index: int) -> tuple:
+        """OCR one page (0-based) of a PDF; returns (markdown with inline images, figures)."""
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        try:
+            doc.select([page_index])
+            single_bytes = doc.tobytes()
+        finally:
+            doc.close()
+        result = self._call_mistral_ocr(single_bytes)
+        pages = result.get("pages", [])
+        if not pages:
+            return "", []
+        page = pages[0]
+        raw_md = page.get("markdown", "") or ""
+        md = self._inline_images(raw_md, page.get("images", []) or [], {"count": 0})
+        captions = self._extract_figure_captions(raw_md)
+        figures = []
+        for img in page.get("images", []) or []:
+            img_id = img.get("id")
+            b64 = img.get("image_base64") or img.get("base64")
+            if not img_id or not b64:
+                continue
+            figures.append(Figure(
+                id=img_id,
+                page=page_index,
+                base64=b64,
+                caption=captions.get(img_id),
+            ))
+        return md, figures
+
+    def _call_mistral_ocr(self, pdf_bytes: bytes) -> dict:
+        """POST a PDF to Mistral OCR and return the raw response JSON."""
         if not settings.MISTRAL_API_KEY:
             raise Exception("Mistral OCR API key not configured")
-        
+
         # Encode PDF as base64
         b64 = base64.b64encode(pdf_bytes).decode()
-        
+
         resp = requests.post(
             settings.MISTRAL_OCR_URL,
             headers={
@@ -76,22 +153,25 @@ class TextExtractor:
             timeout=120
         )
         resp.raise_for_status()
-        result = resp.json()
-        
-        # Parse into text + figures
-        return self._parse_ocr_response(result)
-    
+        return resp.json()
+
     def _parse_ocr_response(self, ocr_result: dict) -> ExtractionResult:
-        """Parse Mistral OCR response into text and a list of figures (with base64 + caption)."""
-        pages = ocr_result.get("pages", [])
-        text_parts = []
+        """Parse Mistral OCR response into per-page content and figures."""
+        raw_pages = ocr_result.get("pages", [])
+        pages: List[PageText] = []
         figures: List[Figure] = []
-        for page in pages:
+        inline_state = {"count": 0}
+        for i, page in enumerate(raw_pages):
             md = page.get("markdown", "") or ""
+            page_idx = page.get("index", i)
+            md = self._inline_images(md, page.get("images", []) or [], inline_state)
             if md:
-                text_parts.append(md)
-            page_idx = page.get("index", len(figures))
-            captions = self._extract_figure_captions(md)
+                pages.append(PageText(
+                    page_number=page_idx + 1,
+                    markdown=md,
+                    source="mistral_ocr"
+                ))
+            captions = self._extract_figure_captions(page.get("markdown", "") or "")
             for img in page.get("images", []) or []:
                 img_id = img.get("id")
                 if not img_id:
@@ -105,7 +185,55 @@ class TextExtractor:
                     base64=b64,
                     caption=captions.get(img_id),
                 ))
-        return ExtractionResult(text="\n\n".join(text_parts), figures=figures)
+        return self._build_result(pages, figures)
+
+    def _inline_images(self, markdown: str, images: list, inline_state: dict) -> str:
+        """Replace `![id](id)` image refs with inline data URIs, subject to payload caps.
+
+        Images over the size/count caps are stripped so the frontend never sees a
+        broken ref. `inline_state` carries the running count across pages.
+        """
+        by_id = {}
+        for img in images:
+            img_id = img.get("id")
+            if img_id:
+                by_id[img_id] = img.get("image_base64") or img.get("base64")
+
+        max_chars = settings.MAX_INLINE_IMAGE_KB * 1024
+
+        def _replace(m):
+            alt = m.group("alt")
+            ref = m.group("ref")
+            if ref.startswith("data:") or ref.startswith("http"):
+                return m.group(0)
+            b64 = by_id.get(ref)
+            if not b64:
+                return ""
+            if inline_state["count"] >= settings.MAX_INLINE_IMAGES or len(b64) > max_chars:
+                return ""
+            inline_state["count"] += 1
+            mime = "image/png" if ref.lower().endswith(".png") else "image/jpeg"
+            alt_text = alt if alt and alt != ref else "Figure"
+            return f"![{alt_text}](data:{mime};base64,{b64})"
+
+        return re.sub(r"!\[(?P<alt>[^\]]*)\]\((?P<ref>[^)]+)\)", _replace, markdown)
+
+    def _strip_images(self, markdown: str) -> str:
+        """Remove image syntax so base64 payloads never reach the LLM/RAG text path."""
+        return re.sub(r"!\[[^\]]*\]\([^)]*\)", "", markdown)
+
+    def _build_result(self, pages: List[PageText], figures: Optional[List[Figure]] = None) -> ExtractionResult:
+        """Join per-page content into the flat text the pipeline consumes."""
+        text_parts = [
+            self._strip_images(p.markdown) if p.source == "mistral_ocr" else p.markdown
+            for p in pages
+        ]
+        return ExtractionResult(
+            text="\n\n".join(part for part in text_parts if part),
+            figures=figures or [],
+            pages=pages,
+            page_count=len(pages),
+        )
     
     def _extract_figure_captions(self, markdown: str) -> dict:
         """Map each image id (referenced as `![id](id)`) to its following caption line."""

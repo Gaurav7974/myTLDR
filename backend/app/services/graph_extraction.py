@@ -2,7 +2,7 @@
 
 import json
 from app.core.config import settings
-from app.models.architecture import ArchitectureGraph
+from app.models.graph import ArchitectureGraph
 from app.services.llm import groq_client
 
 
@@ -64,7 +64,7 @@ Extracted graph:
 ---"""
 
 
-class GraphService:
+class GraphExtractor:
     """Extracts and verifies architecture graphs."""
     
     def extract_graph(self, architecture_text: str) -> ArchitectureGraph | None:
@@ -99,4 +99,4 @@ class GraphService:
             return {"valid": False, "reason": f"Verification error: {e}"}
 
 
-graph_service = GraphService()
+graph_extractor = GraphExtractor()

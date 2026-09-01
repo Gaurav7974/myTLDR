@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.config import settings
 from app.core.security import limiter, sanitize_arxiv_id, verify_api_key
-from app.services.rag_service import rag_service
+from app.services.rag import rag_service
 
 router = APIRouter()
 

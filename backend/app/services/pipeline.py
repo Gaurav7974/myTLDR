@@ -5,14 +5,14 @@ from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.services.text_extraction import text_extractor
-from app.services.graph_service import graph_service
-from app.services.explanation_service import explanation_service
-from app.services.bycroft_service import bycroft_service
-from app.services.architecture_extractor import architecture_extractor
-from app.services.vision_service import vision_service
-from app.services.layout import graph_to_react_flow
+from app.services.graph_extraction import graph_extractor
+from app.services.explanation import explanation_service
+from app.services.forward_pass import forward_pass_extractor
+from app.services.ir_extraction import ir_extractor
+from app.services.figure_extraction import figure_extractor
+from app.services.flow_layout import graph_to_react_flow
 from app.services.cache import cache_service, compute_content_hash
-from app.services.rag_service import rag_service
+from app.services.rag import rag_service
 
 
 async def process_paper(
@@ -78,9 +78,41 @@ async def process_paper(
     # ── Content hash & cache check ──
     content_hash = compute_content_hash(full_text)
     arch_text = text_extractor.find_architecture_section(full_text)
+
+    # ── Parsed text for the frontend reader (per-page, images inlined) ──
+    cached_parsed = await cache_service.get_parsed_text(db, content_hash)
+    if cached_parsed:
+        parsed_text = cached_parsed
+    else:
+        parsed_text = {
+            "page_count": extraction.page_count,
+            "pages": [
+                {
+                    "page_number": p.page_number,
+                    "markdown": p.markdown,
+                    "source": p.source,
+                }
+                for p in extraction.pages
+            ],
+            "figures": [
+                {"id": f.id, "page": f.page, "caption": f.caption}
+                for f in figures
+            ],
+        }
+        await cache_service.store_parsed_text(db, content_hash, parsed_text)
     
     # ── Index paper chunks into pgvector for RAG Q&A ──
-    asyncio.create_task(rag_service.index_paper(db, content_hash, full_text))
+    # Own session: this task outlives the request, so it must not reuse the
+    # request-scoped db session (races with its teardown).
+    async def _index_rag_background(hash_key: str, text_key: str):
+        from app.core.database import async_session
+        try:
+            async with async_session() as session:
+                await rag_service.index_paper(session, hash_key, text_key)
+        except Exception as e:
+            print(f"[WARN] Background RAG indexing failed: {e}")
+
+    asyncio.create_task(_index_rag_background(content_hash, full_text))
     
     # Check explanation cache
     cached_explanation = await cache_service.get_explanation(db, content_hash, difficulty)
@@ -88,7 +120,9 @@ async def process_paper(
     
     if cached_explanation and cached_graph is not None:
         # Full cache hit
-        react_flow = graph_to_react_flow(cached_graph) if cached_graph else None
+        from app.models.graph import ArchitectureGraph
+        graph = ArchitectureGraph(**cached_graph) if cached_graph else None
+        react_flow = graph_to_react_flow(graph) if graph else None
         yield {
             "stage": "done",
             "explanation": cached_explanation,
@@ -96,6 +130,7 @@ async def process_paper(
             "diagram_available": cached_graph is not None,
             "summary_available": cached_explanation is not None,
             "metadata": metadata,
+            "parsed_text": parsed_text,
             "cached": True
         }
         return
@@ -117,14 +152,14 @@ async def process_paper(
     # ── Stage 3: Canonical ArchitectureIR & 3D Scene Graph Extraction ──
     yield {"stage": "diagramming", "message": "Extracting canonical ArchitectureIR & compiling 3D SceneGraph..."}
     
-    canonical_ir, scene_graph = architecture_extractor.extract(full_text, paper_title)
-    bycroft_data = bycroft_service.extract_3d_architecture(full_text, paper_title)
+    canonical_ir, scene_graph = ir_extractor.extract(full_text, paper_title)
+    bycroft_data = forward_pass_extractor.extract_3d_architecture(full_text, paper_title)
     
     graph = None
     diagram_available = False
     
     if cached_graph is not None:
-        from app.models.architecture import ArchitectureGraph
+        from app.models.graph import ArchitectureGraph
         graph = ArchitectureGraph(**cached_graph)
         diagram_available = True
     else:
@@ -133,10 +168,10 @@ async def process_paper(
         # back to the text section otherwise.
         arch_figure = _pick_architecture_figure(figures)
         vision_graph = (
-            vision_service.extract_architecture(arch_figure, paper_title)
+            figure_extractor.extract_architecture(arch_figure, paper_title)
             if arch_figure else None
         )
-        text_graph = graph_service.extract_graph(arch_text)
+        text_graph = graph_extractor.extract_graph(arch_text)
 
         if vision_graph and len(vision_graph.nodes) >= 2:
             graph = vision_graph
@@ -146,7 +181,7 @@ async def process_paper(
             )
         elif text_graph and len(text_graph.nodes) > 0:
             # Stage 4: Verification (text path only — image nodes can't cite text)
-            verification = graph_service.verify_graph(arch_text, text_graph)
+            verification = graph_extractor.verify_graph(arch_text, text_graph)
             if verification.get("valid", False):
                 graph = text_graph
                 diagram_available = True
@@ -184,6 +219,7 @@ async def process_paper(
         "diagram_available": diagram_available,
         "summary_available": explanation is not None,
         "metadata": metadata,
+        "parsed_text": parsed_text,
         "cached": False
     }
 

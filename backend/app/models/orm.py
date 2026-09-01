@@ -42,6 +42,16 @@ class GraphCache(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 
+class ParsedTextCache(Base):
+    """Caches per-page parsed text (difficulty-independent) keyed by content hash."""
+    __tablename__ = "parsed_text_cache"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    content_hash = Column(String, nullable=False, unique=True, index=True)
+    parsed_json = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
 class PaperChunk(Base):
     """Stores paper semantic chunks with pgvector embeddings for RAG Q&A."""
     __tablename__ = "paper_chunks"
