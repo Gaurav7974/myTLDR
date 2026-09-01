@@ -49,11 +49,11 @@ function HighlightQuery({ text, query }: { text: string; query: string }) {
   );
 }
 
-// Helper to render markdown paragraph with inline math, bold, code and highlights
+// Helper to render markdown paragraph with inline math, bold, code, images and highlights
 function HighlightedText({ text, query }: { text: string; query: string }) {
   if (!text) return null;
 
-  const tokens = text.split(/(\$\$[\s\S]*?\$\$|\$.*?\$|\*\*.*?\*\*|`.*?`)/g);
+  const tokens = text.split(/(\$\$[\s\S]*?\$\$|\$.*?\$|\*\*.*?\*\*|`.*?`|!\[[^\]]*\]\([^)]*\))/g);
 
   return (
     <>
@@ -84,6 +84,19 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
             </code>
           );
         }
+        // Inline markdown image (e.g. Mistral OCR figure data URIs)
+        const imgMatch = token.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+        if (imgMatch && imgMatch[2]) {
+          return (
+            <img
+              key={tIdx}
+              src={imgMatch[2]}
+              alt={imgMatch[1] || 'Figure'}
+              className="my-3 max-w-full max-h-96 w-auto mx-auto rounded-md border border-zinc-200 shadow-2xs bg-white"
+              loading="lazy"
+            />
+          );
+        }
         return <HighlightQuery key={tIdx} text={token} query={query} />;
       })}
     </>
@@ -95,6 +108,180 @@ interface DualPaneWorkspaceProps {
   onGoBack?: () => void;
 }
 
+// ── Reader block model & parsers ──────────────────────────────────────────────
+
+type ReaderBlock =
+  | { type: 'h1'; title: string }
+  | { type: 'h2'; title: string; id: string }
+  | { type: 'h3'; title: string; id: string }
+  | { type: 'math'; latex: string }
+  | { type: 'list'; items: string[] }
+  | { type: 'abstract'; text: string }
+  | { type: 'p'; text: string };
+
+const slugifySection = (title: string) => `sec-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+
+// Parse markdown (Mistral OCR pages / fallback markdownContent) into blocks.
+function parseMarkdownBlocks(raw: string): ReaderBlock[] {
+  const blocks: ReaderBlock[] = [];
+  const lines = raw.split('\n');
+  let currentList: string[] = [];
+  const flushList = () => {
+    if (currentList.length > 0) {
+      blocks.push({ type: 'list', items: [...currentList] });
+      currentList = [];
+    }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) {
+      flushList();
+      continue;
+    }
+
+    // Display Math $$ ... $$
+    if (line.startsWith('$$')) {
+      flushList();
+      let mathContent = line;
+      if (!line.endsWith('$$') || line === '$$') {
+        i++;
+        while (i < lines.length && !lines[i].trim().endsWith('$$')) {
+          mathContent += ' ' + lines[i].trim();
+          i++;
+        }
+        if (i < lines.length) {
+          mathContent += ' ' + lines[i].trim();
+        }
+      }
+      blocks.push({ type: 'math', latex: mathContent.replace(/^\$\$|\$\$$/g, '').trim() });
+      continue;
+    }
+
+    if (line.startsWith('# ')) {
+      flushList();
+      blocks.push({ type: 'h1', title: line.replace('# ', '').trim() });
+    } else if (line.startsWith('## ')) {
+      flushList();
+      const title = line.replace('## ', '').trim();
+      blocks.push({ type: 'h2', title, id: slugifySection(title) });
+    } else if (line.startsWith('### ')) {
+      flushList();
+      const title = line.replace('### ', '').trim();
+      blocks.push({ type: 'h3', title, id: slugifySection(title) });
+    } else if (line.startsWith('- ') || line.startsWith('* ') || /^\d+\.\s/.test(line)) {
+      currentList.push(line.replace(/^[-*]\s+|\d+\.\s+/, ''));
+    } else {
+      flushList();
+      if (line.toLowerCase().includes('dominant sequence transduction') || line.toLowerCase().startsWith('the dominant sequence')) {
+        blocks.push({ type: 'abstract', text: line });
+      } else {
+        blocks.push({ type: 'p', text: line });
+      }
+    }
+  }
+  flushList();
+
+  // A heading titled "Abstract" turns its following paragraph into the quote box
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if ((b.type === 'h1' || b.type === 'h2') && b.title.toLowerCase() === 'abstract') {
+      const next = blocks[i + 1];
+      blocks.splice(i, 1);
+      if (next && next.type === 'p') blocks[i] = { type: 'abstract', text: next.text };
+      break;
+    }
+  }
+  return blocks;
+}
+
+// Parse a raw text layer page (PyMuPDF) into paragraphs: consecutive non-blank
+// lines are joined — get_text() emits one line per visual line, not paragraphs.
+function parsePlainBlocks(raw: string): ReaderBlock[] {
+  const blocks: ReaderBlock[] = [];
+  let buf: string[] = [];
+  for (const line of raw.split('\n')) {
+    const t = line.trim();
+    if (!t) {
+      if (buf.length > 0) {
+        blocks.push({ type: 'p', text: buf.join(' ').trim() });
+        buf = [];
+      }
+    } else {
+      buf.push(t);
+    }
+  }
+  if (buf.length > 0) blocks.push({ type: 'p', text: buf.join(' ').trim() });
+  return blocks;
+}
+
+// Render one parsed block (shared by parsed-document and fallback paths).
+function ReaderBlockView({ block, query }: { block: ReaderBlock; query: string }) {
+  if (block.type === 'h1') return null; // Document title already rendered in header
+
+  if (block.type === 'h2') {
+    return (
+      <div id={block.id} className="pt-5 border-t border-zinc-100 space-y-2 scroll-mt-12">
+        <h2 className="text-sm md:text-base font-bold text-zinc-950 tracking-tight font-mono flex items-center gap-2">
+          <span className="w-1.5 h-4 bg-zinc-950 rounded-xs inline-block" />
+          <HighlightQuery text={block.title} query={query} />
+        </h2>
+      </div>
+    );
+  }
+
+  if (block.type === 'h3') {
+    return (
+      <div id={block.id} className="pt-2 space-y-1.5 scroll-mt-12">
+        <h3 className="text-xs md:text-sm font-bold text-zinc-900 font-mono flex items-center gap-1.5">
+          <span className="text-zinc-400">§</span>
+          <HighlightQuery text={block.title} query={query} />
+        </h3>
+      </div>
+    );
+  }
+
+  if (block.type === 'math') {
+    return (
+      <div className="my-3 p-4 rounded-md bg-zinc-50 border border-zinc-200 overflow-x-auto text-center shadow-2xs">
+        <MathFormula latex={block.latex} displayMode={true} />
+      </div>
+    );
+  }
+
+  if (block.type === 'list') {
+    return (
+      <ul className="space-y-1.5 pl-5 list-disc marker:text-zinc-400">
+        {block.items.map((it, itIdx) => (
+          <li key={itIdx} className="text-zinc-700 leading-relaxed pl-1">
+            <HighlightedText text={it} query={query} />
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  if (block.type === 'abstract') {
+    return (
+      <div className="p-5 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-800 space-y-2 font-serif shadow-2xs">
+        <div className="flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider font-bold text-zinc-900">
+          <Quote className="w-3.5 h-3.5 text-zinc-500" />
+          <span>Abstract</span>
+        </div>
+        <p className="leading-relaxed text-zinc-700 italic text-sm md:text-[15px]">
+          <HighlightedText text={block.text} query={query} />
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="text-zinc-700 leading-relaxed">
+      <HighlightedText text={block.text} query={query} />
+    </div>
+  );
+}
+
 export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onGoBack }) => {
   const [activeTab, setActiveTab] = useState<'summary' | 'visualizer' | 'math' | 'code' | 'chat'>('summary');
   const [mobileTab, setMobileTab] = useState<'paper' | 'workspace'>('workspace');
@@ -102,7 +289,35 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
   // Resizable Center Bar Split State (Percentage for Left Pane)
   const [splitPercent, setSplitPercent] = useState<number>(50);
   const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Computed: effective split (0% when expanded — workspace takes full width)
+  const effectiveSplit = isExpanded ? 0 : splitPercent;
+
+  // Tab click handler with auto-expand/collapse
+  const handleTabClick = useCallback((tab: typeof activeTab) => {
+    setActiveTab(tab);
+    if (tab === 'visualizer') {
+      if (!isExpanded) setIsExpanded(true);
+    } else {
+      if (isExpanded) setIsExpanded(false);
+    }
+  }, [isExpanded]);
+
+  // Toggle expand/collapse manually
+  const toggleExpand = useCallback(() => {
+    setIsExpanded((prev) => !prev);
+  }, []);
+
+  // Keyboard: Escape to collapse
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isExpanded) setIsExpanded(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isExpanded]);
 
   // Left Pane View Mode: 'pdf' (Real embedded PDF) or 'reader' (Parsed structured text)
   const [leftViewMode, setLeftViewMode] = useState<'pdf' | 'reader'>('pdf');
@@ -231,6 +446,38 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
     lg: 'text-base leading-relaxed'
   }[fontSize];
 
+  // Real parsed document from the backend (per-page extraction / OCR), if available
+  const parsedDoc = paper.parsedDocument;
+
+  // Jump-To entries: parsed headings when available, else ## lines of markdownContent
+  const tocSections = React.useMemo(() => {
+    const sections: { title: string; id: string }[] = [];
+    if (parsedDoc) {
+      for (const page of parsedDoc.pages) {
+        if (page.source !== 'mistral_ocr') continue;
+        for (const b of parseMarkdownBlocks(page.markdown)) {
+          if ((b.type === 'h2' || b.type === 'h3') && !sections.some((s) => s.id === b.id)) {
+            sections.push({ title: b.title, id: b.id });
+          }
+        }
+      }
+    } else {
+      (paper.markdownContent || '')
+        .split('\n')
+        .filter((l) => l.startsWith('## '))
+        .forEach((h2Line) => {
+          const title = h2Line.replace('## ', '').trim();
+          sections.push({ title, id: slugifySection(title) });
+        });
+    }
+    return sections;
+  }, [parsedDoc, paper.markdownContent]);
+
+  // Search corpus for the match counter (images stripped so data URIs aren't scanned)
+  const readerSearchText = parsedDoc
+    ? parsedDoc.pages.map((p) => p.markdown.replace(/!\[[^\]]*\]\([^)]*\)/g, '')).join('\n')
+    : paper.markdownContent || '';
+
   return (
     <div
       ref={containerRef}
@@ -261,12 +508,12 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
       {/* =========================================================================
           LEFT PANE: Paper Document / PDF Viewer
           ========================================================================= */}
-      <div
-        style={{ width: `${splitPercent}%` }}
-        className={`w-full lg:h-full flex-col bg-[#FFFFFF] border-r border-zinc-200/80 overflow-hidden shrink-0 ${
-          isDragging ? 'transition-none' : 'transition-[width] duration-75 ease-out'
-        } ${mobileTab === 'paper' ? 'flex flex-1' : 'hidden lg:flex'}`}
-      >
+        <div
+          style={{ width: `${effectiveSplit}%` }}
+          className={`w-full lg:h-full flex-col bg-[#FFFFFF] border-r border-zinc-200/80 overflow-hidden shrink-0 ${
+            isDragging ? 'transition-none' : 'transition-[width] duration-300 ease-in-out'
+          } ${mobileTab === 'paper' ? 'flex flex-1' : 'hidden lg:flex'}`}
+        >
         {/* Left Header Bar with Go Back & View Mode Switcher */}
         <div className="flex items-center justify-between px-3.5 py-2 border-b border-zinc-200/80 bg-[#FAFAFA] z-10 shrink-0">
           <div className="flex items-center gap-2">
@@ -434,26 +681,19 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
                 <span>Jump to:</span>
               </span>
 
-              {/* Extract sections from markdown */}
-              {(paper.markdownContent || '')
-                .split('\n')
-                .filter((l) => l.startsWith('## '))
-                .map((h2Line, hIdx) => {
-                  const title = h2Line.replace('## ', '').trim();
-                  const targetId = `sec-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-                  return (
-                    <button
-                      key={hIdx}
-                      onClick={() => {
-                        const el = document.getElementById(targetId);
-                        el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      }}
-                      className="px-2.5 py-0.5 rounded-md bg-white hover:bg-zinc-100 border border-zinc-200 text-[11px] font-mono text-zinc-700 font-medium whitespace-nowrap transition-all shadow-2xs active:scale-95 shrink-0"
-                    >
-                      {title}
-                    </button>
-                  );
-                })}
+              {/* Section entries derived from the parsed document (or fallback markdown) */}
+              {tocSections.map((section, hIdx) => (
+                <button
+                  key={hIdx}
+                  onClick={() => {
+                    const el = document.getElementById(section.id);
+                    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                  className="px-2.5 py-0.5 rounded-md bg-white hover:bg-zinc-100 border border-zinc-200 text-[11px] font-mono text-zinc-700 font-medium whitespace-nowrap transition-all shadow-2xs active:scale-95 shrink-0"
+                >
+                  {section.title}
+                </button>
+              ))}
             </div>
 
             {/* Search Match Counter Pill (if searching) */}
@@ -461,7 +701,7 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
               <div className="px-6 py-1.5 bg-amber-50/80 border-b border-amber-200/60 text-amber-900 text-xs font-mono flex items-center justify-between">
                 <span>Search results for: &ldquo;{searchQuery}&rdquo;</span>
                 <span className="font-semibold">
-                  {(paper.markdownContent.toLowerCase().match(new RegExp(searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').toLowerCase(), 'g')) || []).length} matches
+                  {(readerSearchText.toLowerCase().match(new RegExp(searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').toLowerCase(), 'g')) || []).length} matches
                 </span>
               </div>
             )}
@@ -495,153 +735,43 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
               {/* Dynamic Section Renderer */}
               <div className={`space-y-5 ${fontClass}`}>
                 {(() => {
-                  const raw = paper.markdownContent || '';
-                  const lines = raw.split('\n');
-                  const blocks: Array<
-                    | { type: 'h1'; title: string }
-                    | { type: 'h2'; title: string; id: string }
-                    | { type: 'h3'; title: string; id: string }
-                    | { type: 'math'; latex: string }
-                    | { type: 'list'; items: string[] }
-                    | { type: 'abstract'; text: string }
-                    | { type: 'p'; text: string }
-                  > = [];
-
-                  let currentList: string[] = [];
-
-                  for (let i = 0; i < lines.length; i++) {
-                    const line = lines[i].trim();
-                    if (!line) {
-                      if (currentList.length > 0) {
-                        blocks.push({ type: 'list', items: [...currentList] });
-                        currentList = [];
-                      }
-                      continue;
-                    }
-
-                    // Display Math $$ ... $$
-                    if (line.startsWith('$$')) {
-                      if (currentList.length > 0) {
-                        blocks.push({ type: 'list', items: [...currentList] });
-                        currentList = [];
-                      }
-                      let mathContent = line;
-                      if (!line.endsWith('$$') || line === '$$') {
-                        i++;
-                        while (i < lines.length && !lines[i].trim().endsWith('$$')) {
-                          mathContent += ' ' + lines[i].trim();
-                          i++;
-                        }
-                        if (i < lines.length) {
-                          mathContent += ' ' + lines[i].trim();
-                        }
-                      }
-                      blocks.push({ type: 'math', latex: mathContent.replace(/^\$\$|\$\$$/g, '').trim() });
-                      continue;
-                    }
-
-                    if (line.startsWith('# ')) {
-                      blocks.push({ type: 'h1', title: line.replace('# ', '').trim() });
-                    } else if (line.startsWith('## ')) {
-                      if (currentList.length > 0) {
-                        blocks.push({ type: 'list', items: [...currentList] });
-                        currentList = [];
-                      }
-                      const title = line.replace('## ', '').trim();
-                      const id = `sec-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-                      blocks.push({ type: 'h2', title, id });
-                    } else if (line.startsWith('### ')) {
-                      if (currentList.length > 0) {
-                        blocks.push({ type: 'list', items: [...currentList] });
-                        currentList = [];
-                      }
-                      const title = line.replace('### ', '').trim();
-                      const id = `sec-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-                      blocks.push({ type: 'h3', title, id });
-                    } else if (line.startsWith('- ') || line.startsWith('* ') || /^\d+\.\s/.test(line)) {
-                      currentList.push(line.replace(/^[-*]\s+|\d+\.\s+/, ''));
-                    } else {
-                      if (currentList.length > 0) {
-                        blocks.push({ type: 'list', items: [...currentList] });
-                        currentList = [];
-                      }
-                      if (line.toLowerCase().includes('dominant sequence transduction') || line.toLowerCase().startsWith('the dominant sequence')) {
-                        blocks.push({ type: 'abstract', text: line });
-                      } else {
-                        blocks.push({ type: 'p', text: line });
-                      }
-                    }
-                  }
-
-                  if (currentList.length > 0) {
-                    blocks.push({ type: 'list', items: [...currentList] });
-                  }
-
-                  return blocks.map((block, idx) => {
-                    if (block.type === 'h1') return null; // Already rendered in header
-
-                    if (block.type === 'h2') {
+                  // Real parsed document: render per-page with "Page N of M" pills
+                  if (parsedDoc) {
+                    return parsedDoc.pages.map((page) => {
+                      const blocks = (page.source === 'mistral_ocr'
+                        ? parseMarkdownBlocks(page.markdown)
+                        : parsePlainBlocks(page.markdown)
+                      ).map((b) => (b.type === 'h1' ? { ...b, type: 'h2' as const, id: slugifySection(b.title) } : b));
                       return (
-                        <div key={idx} id={block.id} className="pt-5 border-t border-zinc-100 space-y-2 scroll-mt-12">
-                          <h2 className="text-sm md:text-base font-bold text-zinc-950 tracking-tight font-mono flex items-center gap-2">
-                            <span className="w-1.5 h-4 bg-zinc-950 rounded-xs inline-block" />
-                            <HighlightQuery text={block.title} query={searchQuery} />
-                          </h2>
-                        </div>
-                      );
-                    }
-
-                    if (block.type === 'h3') {
-                      return (
-                        <div key={idx} id={block.id} className="pt-2 space-y-1.5 scroll-mt-12">
-                          <h3 className="text-xs md:text-sm font-bold text-zinc-900 font-mono flex items-center gap-1.5">
-                            <span className="text-zinc-400">§</span>
-                            <HighlightQuery text={block.title} query={searchQuery} />
-                          </h3>
-                        </div>
-                      );
-                    }
-
-                    if (block.type === 'math') {
-                      return (
-                        <div key={idx} className="my-3 p-4 rounded-md bg-zinc-50 border border-zinc-200 overflow-x-auto text-center shadow-2xs">
-                          <MathFormula latex={block.latex} displayMode={true} />
-                        </div>
-                      );
-                    }
-
-                    if (block.type === 'list') {
-                      return (
-                        <ul key={idx} className="space-y-1.5 pl-5 list-disc marker:text-zinc-400">
-                          {block.items.map((it, itIdx) => (
-                            <li key={itIdx} className="text-zinc-700 leading-relaxed pl-1">
-                              <HighlightedText text={it} query={searchQuery} />
-                            </li>
-                          ))}
-                        </ul>
-                      );
-                    }
-
-                    if (block.type === 'abstract') {
-                      return (
-                        <div key={idx} className="p-5 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-800 space-y-2 font-serif shadow-2xs">
-                          <div className="flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider font-bold text-zinc-900">
-                            <Quote className="w-3.5 h-3.5 text-zinc-500" />
-                            <span>Abstract</span>
+                        <div key={`page-${page.pageNumber}`}>
+                          {/* Page pill separator — click syncs the Original PDF pane */}
+                          <div className="flex items-center gap-3 pt-3 pb-1">
+                            <button
+                              onClick={() => setPdfPage(page.pageNumber)}
+                              title="Sync the Original PDF pane to this page"
+                              className="px-2.5 py-0.5 rounded-full bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 text-[10px] font-mono font-semibold text-zinc-600 transition-all shrink-0 active:scale-95"
+                            >
+                              Page {page.pageNumber} of {parsedDoc.pageCount}
+                            </button>
+                            <div className="flex-1 h-px bg-zinc-100" />
+                            <span className="text-[9px] font-mono uppercase tracking-wider text-zinc-400 shrink-0">
+                              {page.source === 'mistral_ocr' ? 'OCR' : 'Text layer'}
+                            </span>
                           </div>
-                          <p className="leading-relaxed text-zinc-700 italic text-sm md:text-[15px]">
-                            <HighlightedText text={block.text} query={searchQuery} />
-                          </p>
+                          <div className="space-y-3">
+                            {blocks.map((block, idx) => (
+                              <ReaderBlockView key={idx} block={block} query={searchQuery} />
+                            ))}
+                          </div>
                         </div>
                       );
-                    }
+                    });
+                  }
 
-                    return (
-                      <p key={idx} className="text-zinc-700 leading-relaxed">
-                        <HighlightedText text={block.text} query={searchQuery} />
-                      </p>
-                    );
-                  });
+                  // Fallback: single markdown string (mock data / older cached runs)
+                  return parseMarkdownBlocks(paper.markdownContent || '').map((block, idx) => (
+                    <ReaderBlockView key={idx} block={block} query={searchQuery} />
+                  ));
                 })()}
 
                 {/* Interactive Bridge Cards */}
@@ -690,6 +820,7 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
       </div>
 
       {/* Sleek Minimal Center Divider */}
+      {!isExpanded && (
       <div
         onMouseDown={startDragging}
         onTouchStart={startDragging}
@@ -705,21 +836,22 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
           isDragging ? 'bg-zinc-950 scale-y-110' : 'bg-zinc-300 group-hover:bg-zinc-700'
         }`} />
       </div>
+      )}
 
       {/* =========================================================================
           RIGHT PANE: Knowledge, Visualizer, Tabs & Docked LLM Chat
           ========================================================================= */}
       <div
-        style={{ width: `calc(100% - ${splitPercent}%)` }}
+        style={{ width: `calc(100% - ${effectiveSplit}%)` }}
         className={`w-full lg:h-full flex-col bg-[#FFFFFF] overflow-hidden relative ${
-          isDragging ? 'transition-none' : 'transition-[width] duration-75 ease-out'
+          isDragging ? 'transition-none' : 'transition-[width] duration-300 ease-in-out'
         } ${mobileTab === 'workspace' ? 'flex flex-1' : 'hidden lg:flex'}`}
       >
         {/* TOP TAB BAR ("TAB 1 TAB 2 TAB 3" + Clean Quick Actions on Right) */}
         <div className="flex items-center justify-between border-b border-zinc-200/80 bg-[#FAFAFA] px-3 overflow-x-auto shrink-0 scrollbar-none">
           <div className="flex items-center">
             <button
-              onClick={() => setActiveTab('summary')}
+              onClick={() => handleTabClick('summary')}
               className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
                 activeTab === 'summary'
                   ? 'border-zinc-950 text-zinc-950 bg-white font-semibold shadow-2xs'
@@ -731,7 +863,7 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
             </button>
 
             <button
-              onClick={() => setActiveTab('visualizer')}
+              onClick={() => handleTabClick('visualizer')}
               className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
                 activeTab === 'visualizer'
                   ? 'border-zinc-950 text-zinc-950 bg-white font-semibold shadow-2xs'
@@ -739,12 +871,12 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
-              <span>3D Visualizer</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-zinc-900"></span>
+              <span>Architecture</span>
+              {isExpanded && <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>}
             </button>
 
             <button
-              onClick={() => setActiveTab('math')}
+              onClick={() => handleTabClick('math')}
               className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
                 activeTab === 'math'
                   ? 'border-zinc-950 text-zinc-950 bg-white font-semibold shadow-2xs'
@@ -756,7 +888,7 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
             </button>
 
             <button
-              onClick={() => setActiveTab('code')}
+              onClick={() => handleTabClick('code')}
               className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
                 activeTab === 'code'
                   ? 'border-zinc-950 text-zinc-950 bg-white font-semibold shadow-2xs'
@@ -768,7 +900,7 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
             </button>
 
             <button
-              onClick={() => setActiveTab('chat')}
+              onClick={() => handleTabClick('chat')}
               className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
                 activeTab === 'chat'
                   ? 'border-zinc-950 text-zinc-950 bg-white font-semibold shadow-2xs'
@@ -782,6 +914,22 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
 
           {/* Quick Actions (Bookmark & BibTeX) integrated directly into Tab Bar */}
           <div className="flex items-center gap-1.5 shrink-0 pl-2">
+            {/* Expand/Collapse toggle */}
+            <button
+              onClick={toggleExpand}
+              className={`p-1.5 rounded-md border text-xs transition-all ${
+                isExpanded
+                  ? 'bg-blue-50 text-blue-600 border-blue-200'
+                  : 'bg-white text-zinc-500 hover:text-zinc-900 border-zinc-200 hover:bg-zinc-100'
+              }`}
+              title={isExpanded ? 'Collapse panel (Escape)' : 'Expand panel to full width'}
+            >
+              {isExpanded ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+              )}
+            </button>
             <button
               onClick={() => setIsBookmarked(!isBookmarked)}
               className={`p-1.5 rounded-md border text-xs transition-all ${
@@ -828,7 +976,7 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
 
         {/* =========================================================================
             BOTTOM DOCKED "SOFT BLUR AREA" WITH "LLM CHAT BOX"
-            Frosted Glassmorphism blur allowing text behind to show blurred beautifully
+            Frosted Glassmorphism blur allowing text behind to show beautifully
             ========================================================================= */}
         {/* Floating Bottom Chat Dock with Frosted Gradient Scrim */}
         {activeTab !== 'chat' && (
