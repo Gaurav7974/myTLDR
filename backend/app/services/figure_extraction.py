@@ -192,9 +192,13 @@ def _parse_verification_payload(raw: dict[str, Any]) -> GraphVerification:
     """
     if not isinstance(raw, dict):
         return GraphVerification(valid=False, reason="verification payload was not a JSON object")
+    # `valid` MUST be a literal boolean; coerce non-boolean values to False
+    # so a hallucinated "valid: yes" (string) is treated as invalid.
+    raw_valid = raw.get("valid", False)
+    valid = raw_valid is True
     try:
         return GraphVerification(
-            valid=bool(raw.get("valid", False)),
+            valid=valid,
             confidence=float(raw.get("confidence", 0.0) or 0.0),
             hallucinations=list(raw.get("hallucinations") or []),
             missing_elements=list(raw.get("missing_elements") or []),
