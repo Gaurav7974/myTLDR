@@ -37,3 +37,8 @@ railway.toml
 Thumbs.db
 .vscode/
 .idea/
+
+# Generated artifacts
+architecture.html
+summary_reference.txt
+test.md

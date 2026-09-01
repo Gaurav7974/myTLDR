@@ -632,9 +632,11 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
                 src={
                   paper.metadata.fileBlobUrl
                     ? `${paper.metadata.fileBlobUrl}#page=${pdfPage}&toolbar=1&navpanes=0&view=FitH`
-                    : `/api/pdf?arxivId=${encodeURIComponent(
-                        paper.metadata.arxivId || paper.metadata.id || '1706.03762'
-                      )}#page=${pdfPage}&toolbar=1&navpanes=0&view=FitH`
+                    : paper.metadata.pdfUrl
+                      ? `${paper.metadata.pdfUrl}#page=${pdfPage}&toolbar=1&navpanes=0&view=FitH`
+                      : `https://arxiv.org/pdf/${encodeURIComponent(
+                          paper.metadata.arxivId || '1706.03762'
+                        )}.pdf#page=${pdfPage}&toolbar=1&navpanes=0&view=FitH`
                 }
                 className={`w-full flex-1 border-0 bg-white ${isDragging ? 'pointer-events-none' : ''}`}
                 title={`Original arXiv PDF - ${paper.metadata.title}`}

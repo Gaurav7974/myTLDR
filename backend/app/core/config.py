@@ -67,7 +67,7 @@ class Settings:
     EMBEDDING_DIM: int = 3072
     
     # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/papers")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5433/papers")
     
     # Processing
     MAX_UPLOAD_SIZE_MB: int = 25
