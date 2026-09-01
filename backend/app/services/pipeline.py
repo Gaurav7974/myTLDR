@@ -10,7 +10,14 @@ from app.services.graph_extraction import graph_extractor
 from app.services.explanation import explanation_service
 from app.services.forward_pass import forward_pass_extractor
 from app.services.ir_extraction import ir_extractor
-from app.services.figure_extraction import figure_extractor
+from app.services.figure_extraction import (
+    figure_extractor,
+    is_verified_vision_graph,
+)
+from app.services.graph_merge import (
+    merge_graph_metadata,
+    should_render_reconstruction,
+)
 from app.services.flow_layout import graph_to_react_flow
 from app.services.cache import cache_service, compute_content_hash
 from app.services.rag import rag_service
@@ -131,12 +138,19 @@ async def process_paper(
         # Full cache hit
         from app.models.graph import ArchitectureGraph
         graph = ArchitectureGraph(**cached_graph) if cached_graph else None
-        react_flow = graph_to_react_flow(graph) if graph else None
+        if graph is not None and not should_render_reconstruction(graph):
+            # Legacy or unverifiable cache must not masquerade as figure-faithful.
+            if graph.layout_mode == "figure":
+                graph.layout_mode = "auto"
+            if graph.source is None:
+                graph.source = "legacy"
+        diagram_available = graph is not None and len(graph.nodes) > 0
+        react_flow = graph_to_react_flow(graph) if graph and diagram_available else None
         yield {
             "stage": "done",
             "explanation": cached_explanation,
             "graph": react_flow,
-            "diagram_available": cached_graph is not None,
+            "diagram_available": diagram_available,
             "summary_available": cached_explanation is not None,
             "metadata": metadata,
             "parsed_text": parsed_text,
@@ -144,67 +158,164 @@ async def process_paper(
         }
         return
     
-    # ── Stage 2: Explanation & Equation & Code Generation ──
+    # ── Stage 2 & 3: Parallel LLM generation (text 0.09s is done, LLM is 99% of time) ──
+    # Group A: explanation / equations / code are independent (all use full_text)
+    # Group B: IR / bycroft / graph are independent (IR+bycroft use full_text, graph uses arch_text)
     yield {"stage": "explaining", "message": f"Extracting mathematical formulations and pedagogical summary for {paper_title[:40]}..."}
     
+    # Group A: explanation first (rate-limit sensitive), then equations+code in parallel
     if cached_explanation:
         explanation = cached_explanation
+        try:
+            eq_code = await asyncio.gather(
+                asyncio.to_thread(explanation_service.extract_equations, full_text),
+                asyncio.to_thread(explanation_service.generate_pytorch_code, full_text, paper_title),
+            )
+            equations, code_snippets = eq_code[0] or [], eq_code[1] or []
+        except Exception as e:
+            print(f"[WARN] Group A (cached) failed: {e}")
+            equations, code_snippets = [], []
     else:
-        explanation = explanation_service.generate(full_text, difficulty)
-        # Never cache a failed (None) summary — that would replay fabricated/empty data.
-        if explanation is not None:
-            await cache_service.store_explanation(db, content_hash, difficulty, explanation)
-    
-    equations = explanation_service.extract_equations(full_text)
-    code_snippets = explanation_service.generate_pytorch_code(full_text, paper_title)
+        try:
+            explanation = await asyncio.to_thread(explanation_service.generate, full_text, difficulty)
+            if explanation is not None:
+                await cache_service.store_explanation(db, content_hash, difficulty, explanation)
+        except Exception as e:
+            print(f"[WARN] explanation failed: {e}")
+            explanation = None
+        try:
+            eq_code = await asyncio.gather(
+                asyncio.to_thread(explanation_service.extract_equations, full_text),
+                asyncio.to_thread(explanation_service.generate_pytorch_code, full_text, paper_title),
+            )
+            equations, code_snippets = eq_code[0] or [], eq_code[1] or []
+        except Exception as e:
+            print(f"[WARN] equations/code failed: {e}")
+            equations, code_snippets = [], []
+    # Ensure list types
+    equations = equations or []
+    code_snippets = code_snippets or []
 
-    # ── Stage 3: Canonical ArchitectureIR & 3D Scene Graph Extraction ──
+    # Yield progress for Group B — parallel IR / bycroft / graph
     yield {"stage": "diagramming", "message": "Extracting canonical ArchitectureIR & compiling 3D SceneGraph..."}
     
-    canonical_ir, scene_graph = ir_extractor.extract(full_text, paper_title)
-    bycroft_data = forward_pass_extractor.extract_3d_architecture(full_text, paper_title)
-    
+    # Parallelize IR, Bycroft and graph text/vision paths (all independent)
+    # If cached_graph exists we skip graph generation entirely
+    if cached_graph is not None:
+        ir_bycroft = await asyncio.gather(
+            asyncio.to_thread(ir_extractor.extract, full_text, paper_title),
+            asyncio.to_thread(forward_pass_extractor.extract_3d_architecture, full_text, paper_title),
+        )
+        canonical_ir, scene_graph = ir_bycroft[0]
+        bycroft_data = ir_bycroft[1]
+        text_graph = None
+        vision_graph = None
+        arch_figure = None
+    else:
+        arch_figure = _pick_architecture_figure(figures)
+        tasks = [
+            asyncio.to_thread(ir_extractor.extract, full_text, paper_title),
+            asyncio.to_thread(forward_pass_extractor.extract_3d_architecture, full_text, paper_title),
+            asyncio.to_thread(graph_extractor.extract_graph, arch_text, paper_title),
+        ]
+        vision_idx = None
+        if arch_figure:
+            tasks.append(asyncio.to_thread(figure_extractor.extract_architecture, arch_figure, paper_title))
+            vision_idx = len(tasks) - 1
+        results = await asyncio.gather(*tasks)
+        canonical_ir, scene_graph = results[0]
+        bycroft_data = results[1]
+        text_graph = results[2]
+        vision_graph = results[vision_idx] if vision_idx is not None else None
+
+        # Stage 4a: Figure-faithfulness verification for any vision graph.
+        # The trust-first rule: an unverified vision graph is NOT shown.
+        if vision_graph and len(vision_graph.nodes) > 0:
+            try:
+                verification = await asyncio.to_thread(
+                    figure_extractor.verify_figure_graph, arch_figure, vision_graph, paper_title
+                )
+                vision_graph.verification = verification
+            except Exception as e:
+                print(f"[WARN] Figure verification failed: {e}")
+                vision_graph = None
+
+        # Stage 4b: Optional text verification (text path only) to confirm
+        # semantic enrichment is supported by the source text.
+        text_verified = False
+        if text_graph and len(text_graph.nodes) > 0:
+            try:
+                text_verification = await asyncio.to_thread(
+                    graph_extractor.verify_graph, arch_text, text_graph, paper_title
+                )
+                text_verified = bool(text_verification.get("valid", False))
+            except Exception as e:
+                print(f"[WARN] Text verification failed: {e}")
+                text_verified = False
+
     graph = None
     diagram_available = False
-    
+    diagram_reason = "not_attempted"
+
     if cached_graph is not None:
         from app.models.graph import ArchitectureGraph
         graph = ArchitectureGraph(**cached_graph)
-        diagram_available = True
-    else:
-        # Prefer image-derived topology when an architecture figure is available
-        # (the figure shows the real block layout / skip connections), and fall
-        # back to the text section otherwise.
-        arch_figure = _pick_architecture_figure(figures)
-        vision_graph = (
-            figure_extractor.extract_architecture(arch_figure, paper_title)
-            if arch_figure else None
-        )
-        text_graph = graph_extractor.extract_graph(arch_text)
-
-        if vision_graph and len(vision_graph.nodes) >= 2:
-            graph = vision_graph
+        # Only honor the cached graph if it is still a verifiable rich graph.
+        # Legacy cached simple graphs fall back to auto-layout (still rendered).
+        if graph.source in ("vision", "merged") and is_verified_vision_graph(graph):
             diagram_available = True
+            diagram_reason = "cached_verified_vision"
+        elif graph.layout_mode == "figure" and not is_verified_vision_graph(graph):
+            # Stale figure-mode cache that no longer passes verification.
+            # Re-merge: keep geometry as auto-layout to avoid trusting it.
+            graph.layout_mode = "auto"
+            graph.source = "legacy"
+            diagram_available = True
+            diagram_reason = "cached_downgraded_to_auto"
+        else:
+            diagram_available = len(graph.nodes) > 0
+            diagram_reason = "cached_text_or_auto"
+    else:
+        # Verified-vision-first merge policy:
+        #   1) Verified vision graph wins, enriched with matching text semantics.
+        #   2) Otherwise the verified text graph (auto layout) is used.
+        #   3) Otherwise diagram is unavailable but explanation still proceeds.
+        if is_verified_vision_graph(vision_graph):
+            if text_verified and text_graph is not None:
+                graph = merge_graph_metadata(vision_graph, text_graph, prefer="vision")
+            else:
+                graph = vision_graph
+            diagram_available = True
+            diagram_reason = "verified_vision"
+        elif text_verified and text_graph is not None and len(text_graph.nodes) > 0:
+            graph = text_graph
+            diagram_available = True
+            diagram_reason = "verified_text"
+        else:
+            graph = None
+            diagram_available = False
+            diagram_reason = "no_verified_graph"
+
+        if diagram_available and graph is not None:
             await cache_service.store_graph(
                 db, content_hash, graph.model_dump(), True
             )
-        elif text_graph and len(text_graph.nodes) > 0:
-            # Stage 4: Verification (text path only — image nodes can't cite text)
-            verification = graph_extractor.verify_graph(arch_text, text_graph)
-            if verification.get("valid", False):
-                graph = text_graph
-                diagram_available = True
-                await cache_service.store_graph(
-                    db, content_hash, graph.model_dump(), True
-                )
-            else:
-                # Verification failed — text only
-                graph = None
-                await cache_service.store_graph(db, content_hash, None, False)
         else:
-            # Empty graph — text only
-            graph = None
             await cache_service.store_graph(db, content_hash, None, False)
+
+    # If we still have a graph but the renderer can prove it is not
+    # renderable (e.g. legacy payload with no source verification), down-
+    # grade to auto-layout so the frontend never shows a fake reconstruction.
+    if graph is not None and not should_render_reconstruction(graph):
+        graph.layout_mode = "auto"
+        graph.source = "legacy" if graph.source is None else graph.source
+        if not diagram_available:
+            diagram_available = len(graph.nodes) > 0
+
+    print(f"[PIPELINE] diagram_available={diagram_available} reason={diagram_reason} "
+          f"nodes={len(graph.nodes) if graph else 0} "
+          f"source={getattr(graph, 'source', None)} "
+          f"layout_mode={getattr(graph, 'layout_mode', None)}")
     
     # ── Done ──
     react_flow = graph_to_react_flow(graph) if graph and diagram_available else None
