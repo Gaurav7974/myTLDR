@@ -1,4 +1,5 @@
 import { ArchitectureIR, SceneGraph3D } from './architecture_ir';
+import { ArchitectureGraph } from './architecture_graph';
 
 export interface SubComponent {
   id: string;
@@ -175,6 +176,24 @@ export interface QuizQuestion {
   explanation: string;
 }
 
+export interface ParsedPage {
+  pageNumber: number;
+  markdown: string;
+  source: 'pymupdf' | 'mistral_ocr';
+}
+
+export interface ParsedFigure {
+  id: string;
+  page: number;
+  caption?: string | null;
+}
+
+export interface ParsedDocument {
+  pageCount: number;
+  pages: ParsedPage[];
+  figures?: ParsedFigure[];
+}
+
 export interface PaperData {
   metadata: PaperMetadata;
   structuredSummary?: StructuredPaperSummary;
@@ -191,6 +210,7 @@ export interface PaperData {
     knowledgeCheck?: QuizQuestion[];
   };
   markdownContent: string;
+  parsedDocument?: ParsedDocument;
   architectureNodes: ArchitectureNode3D[];
   equations: EquationBreakdown[];
   codeSnippets: {
@@ -200,6 +220,10 @@ export interface PaperData {
   }[];
   architectureIR?: ArchitectureIR;
   sceneGraph3D?: SceneGraph3D;
+  /** Figure-faithful graph payload from the backend (vision/merged/text/legacy).
+   *  When present, the visualizer uses it for the 2D diagram; when absent,
+   *  the visualizer shows an honest unavailable state (never a static mock). */
+  architectureGraph?: ArchitectureGraph;
   bycroftStages?: BycroftStage[];
   residualHighways?: { id: string; startStep: number; endStep: number; label: string; color?: string }[];
   attentionHeatmap?: AttentionHeatmapData;

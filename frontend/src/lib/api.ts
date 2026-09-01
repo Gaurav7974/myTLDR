@@ -2,7 +2,8 @@
  * Client API services for paper ingestion, SSE streaming, and LLM chat.
  */
 
-import { PaperData } from '@/types/paper';
+import { PaperData, ParsedDocument } from '@/types/paper';
+import { ArchitectureGraph } from '@/types/architecture_graph';
 import { generateDynamicPaperData } from './mockData';
 
 export interface StreamProgressEvent {
@@ -35,7 +36,7 @@ export async function processPaperStream(
     const response = await fetch(`${backendUrl}/api/stream`, {
       method: 'POST',
       body: formData,
-      signal: AbortSignal.timeout(120000),
+      signal: AbortSignal.timeout(180000),
     });
 
     if (!response.ok) {
@@ -128,16 +129,27 @@ function transformBackendPayloadToPaperData(
 
   const rawTitle = (metadata.title as string) || filename?.replace(/\.pdf$/i, '') || url?.replace(/.*\/abs\//, 'arXiv:') || 'Uploaded Research Paper';
 
+    const parsedDocument = transformParsedText(payload.parsed_text);
+
+  // Prefer backend pdf_url; otherwise construct direct arXiv PDF URL from arxivId/url
+  const arxivMatch = url?.match(/\d{4}\.\d{4,5}/)?.[0];
+  const directPdfUrl =
+    (metadata.pdf_url as string) ||
+    (metadata.arxiv_id ? `https://arxiv.org/pdf/${metadata.arxiv_id}.pdf` : undefined) ||
+    (url && url.includes('arxiv.org/pdf') ? url : undefined) ||
+    (arxivMatch ? `https://arxiv.org/pdf/${arxivMatch}.pdf` : undefined) ||
+    url;
+
   return {
     metadata: {
       id: (metadata.arxiv_id as string) || 'paper-' + Date.now(),
       title: rawTitle,
       authors: (metadata.authors as string[]) || ['Research Author et al.'],
       publishedDate: (metadata.published as string) || 'Recent',
-      arxivId: (metadata.arxiv_id as string) || url?.replace(/.*\/abs\//, ''),
+      arxivId: (metadata.arxiv_id as string) || url?.replace(/.*\/abs\//, '').replace(/\.pdf.*$/, '') || url?.match(/\d{4}\.\d{4,5}/)?.[0],
       tags: (metadata.categories as string[]) || (explanation.tags as string[]) || ['Machine Learning', 'Deep Learning', 'Neural Architecture'],
       keywords: (explanation.metadata as Record<string, unknown>)?.keywords as PaperData['metadata']['keywords'] || [],
-      pdfUrl: (metadata.pdf_url as string) || url,
+      pdfUrl: directPdfUrl,
       citationsCount: (metadata.citations as number) || 1200,
     },
     structuredSummary,
@@ -154,14 +166,102 @@ function transformBackendPayloadToPaperData(
       knowledgeCheck: explanation.knowledgeCheck as PaperData['eli5Summary']['knowledgeCheck'],
     },
     markdownContent: (explanation.markdown as string) || '',
+    parsedDocument,
     architectureNodes: (payload.architecture_nodes as PaperData['architectureNodes']) || [],
     equations: (payload.equations as PaperData['equations']) || [],
     codeSnippets: (payload.code_snippets as PaperData['codeSnippets']) || [],
     architectureIR: payload.architecture_ir as PaperData['architectureIR'],
     sceneGraph3D: payload.scene_graph_3d as PaperData['sceneGraph3D'],
+    architectureGraph: transformArchitectureGraph(payload.graph),
     bycroftStages: payload.bycroft_stages as PaperData['bycroftStages'],
     residualHighways: payload.bycroft_highways as PaperData['residualHighways'],
     attentionHeatmap: payload.attention_heatmap as PaperData['attentionHeatmap'],
     nextTokenPredictions: payload.next_token_predictions as PaperData['nextTokenPredictions'],
+  };
+}
+
+/**
+ * Map the backend `graph` payload (which the pipeline emits as
+ * `graph_to_react_flow` OR a rich `ArchitectureGraph` depending on the
+ * path) to the frontend `ArchitectureGraph` shape.
+ *
+ * The backend uses two different shapes for the SSE `graph` field:
+ *  - ``{nodes:[{id,position,data}], edges:[{id,source,target,...}]}``
+ *    (react-flow / dagre layout — legacy / text-only path)
+ *  - The rich ArchitectureGraph produced by the figure-faithful pipeline
+ *    (vision / merged path).
+ *
+ * The frontend is permissive: when the payload is the rich shape, it
+ * passes through. When it is the react-flow shape (no `nodes[0].bbox`),
+ * we treat it as auto-layout and pass it through with `layout_mode='auto'`
+ * so the diagram can still render the labels.
+ */
+function transformArchitectureGraph(raw: unknown): ArchitectureGraph | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const nodes = Array.isArray(r.nodes) ? r.nodes : [];
+  if (nodes.length === 0) return undefined;
+
+  const firstNode = nodes[0] as Record<string, unknown> | undefined;
+  const isRichShape = firstNode && (
+    'bbox' in firstNode ||
+    'description' in firstNode ||
+    'math_formula' in firstNode ||
+    'paper_term' in firstNode ||
+    'provenance' in firstNode
+  );
+
+  if (isRichShape) {
+    return r as unknown as ArchitectureGraph;
+  }
+
+  // Legacy react-flow shape: convert to ArchitectureGraph nodes/edges
+  // with labels from the react-flow `data.label` field. layout_mode=auto.
+  const outNodes = nodes.map((n) => {
+    const node = n as Record<string, unknown>;
+    const data = (node.data as Record<string, unknown>) || {};
+    return {
+      id: String(node.id),
+      label: String(data.label ?? node.id),
+      type: String(data.node_type ?? 'other'),
+    };
+  });
+  const outEdges = Array.isArray(r.edges)
+    ? (r.edges as Array<Record<string, unknown>>).map((e) => ({
+        source: String(e.source),
+        target: String(e.target),
+        label: (e.label as string) ?? null,
+      }))
+    : [];
+  return {
+    nodes: outNodes,
+    edges: outEdges,
+    version: 'legacy',
+    source: 'legacy',
+    layout_mode: 'auto',
+  };
+}
+
+function transformParsedText(raw: unknown): ParsedDocument | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const parsed = raw as Record<string, unknown>;
+  const rawPages = Array.isArray(parsed.pages) ? parsed.pages : [];
+  const pages = rawPages
+    .filter((p): p is Record<string, unknown> => !!p && typeof p === 'object')
+    .map((p) => ({
+      pageNumber: Number(p.page_number) || 0,
+      markdown: typeof p.markdown === 'string' ? p.markdown : '',
+      source: p.source === 'mistral_ocr' ? ('mistral_ocr' as const) : ('pymupdf' as const),
+    }))
+    .filter((p) => p.markdown.trim().length > 0);
+
+  if (pages.length === 0) return undefined;
+
+  return {
+    pageCount: Number(parsed.page_count) || pages.length,
+    pages,
+    figures: Array.isArray(parsed.figures)
+      ? (parsed.figures as ParsedDocument['figures'])
+      : undefined,
   };
 }
