@@ -20,8 +20,8 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ paper, onAskAI, onJumpTo
     overview: {
       one_sentence: paper.eli5Summary.oneSentenceSummary || 'Research paper sequence model architecture overview.',
       problem: paper.eli5Summary.coreProblem || 'Overcomes sequential computational bottlenecks and long-range memory degradation.',
-      solution: paper.eli5Summary.paradigmShift?.theNewWay || 'Replaces recurrence with parallel attention mechanisms.',
-      why_it_matters: paper.eli5Summary.paradigmShift?.whyItMatters || 'Enables efficient distributed training across large scale GPU clusters.'
+      solution: paper.eli5Summary.paradigmShift?.theNewWay || 'Introduces a new computational approach specific to this domain.',
+      why_it_matters: paper.eli5Summary.paradigmShift?.whyItMatters || 'Advances the state-of-the-art in its target area.'
     },
     key_specs: [
       { label: 'Encoder & Decoder Layers', value: 'N = 6', source: { page: 3, section: '3.1' } },
@@ -87,7 +87,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ paper, onAskAI, onJumpTo
         <div className="flex items-center gap-3 text-zinc-500 font-mono text-[11px] uppercase tracking-wider">
           <span>Executive Research Brief</span>
           <span>•</span>
-          <span>arXiv:{metadata.arxivId || '1706.03762'}</span>
+          <span>arXiv:{metadata.arxivId || 'PENDING'}</span>
           {metadata.publishedDate && (
             <>
               <span>•</span>

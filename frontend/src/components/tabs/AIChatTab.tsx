@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { PaperData } from '@/types/paper';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { PaperData, KeywordDefinition } from '@/types/paper';
 import { 
   Send, 
   Sparkles, 
@@ -18,11 +18,14 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { MathFormula } from './MathDeconstructedTab';
+import { InteractiveHighlightedText } from '../InteractiveHighlightedText';
 
 interface AIChatTabProps {
   paper: PaperData;
   initialPrompt?: string | null;
   onPromptHandled?: () => void;
+  onAskAI?: (prompt: string) => void;
+  onJumpToPage?: (page: number, sectionTitle?: string) => void;
 }
 
 export interface ChatCitation {
@@ -40,7 +43,17 @@ export interface ChatMessage {
 }
 
 // Formatter to render Markdown bold, inline code, and KaTeX math in AI responses
-function FormattedMessageContent({ text }: { text: string }) {
+function FormattedMessageContent({
+  text,
+  keywords,
+  onAskAI,
+  onJumpToPage,
+}: {
+  text: string;
+  keywords?: KeywordDefinition[];
+  onAskAI?: (prompt: string) => void;
+  onJumpToPage?: (page: number, sectionTitle?: string) => void;
+}) {
   const blocks = text.split('\n\n');
 
   return (
@@ -92,7 +105,15 @@ function FormattedMessageContent({ text }: { text: string }) {
                         </code>
                       );
                     }
-                    return <span key={pIdx}>{part}</span>;
+                    return (
+                      <InteractiveHighlightedText
+                        key={pIdx}
+                        text={part}
+                        keywords={keywords ?? []}
+                        onAskAI={onAskAI}
+                        onJumpToPage={onJumpToPage}
+                      />
+                    );
                   })}
                 </p>
               );
@@ -104,7 +125,7 @@ function FormattedMessageContent({ text }: { text: string }) {
   );
 }
 
-export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPromptHandled }) => {
+export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPromptHandled, onAskAI, onJumpToPage }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -142,7 +163,7 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          paper_hash: paper.metadata.arxivId || '1706.03762',
+          paper_hash: paper.metadata.arxivId || `unknown-${Date.now()}`,
           paper_title: paper.metadata.title,
           query: userText.trim(),
           history: messages.slice(-4).map((m) => ({ sender: m.sender, text: m.text })),
@@ -215,12 +236,31 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
     }
   ];
 
-  const quickPrompts = [
-    'Explain Self-Attention in 1 min',
-    'Why is recurrence eliminated?',
-    'What are the tensor shapes?',
-    'How does Positional Encoding work?'
-  ];
+  const quickPrompts = React.useMemo(() => {
+    const kws = paper.metadata.keywords || [];
+    if (kws.length >= 4) {
+      return [
+        `Explain ${kws[0].term.replace(/^#/, '')} in 1 min`,
+        `Why is ${kws[1].term.replace(/^#/, '')} needed?`,
+        `What are the tensor shapes?`,
+        `How does ${kws[2].term.replace(/^#/, '')} work?`
+      ];
+    }
+    if (kws.length > 0) {
+      return [
+        `Explain ${kws[0].term.replace(/^#/, '')} in 1 min`,
+        `Summarize ${paper.metadata.title} for a researcher`,
+        `What are the tensor shapes?`,
+        `What are the limitations?`
+      ];
+    }
+    return [
+      `Summarize ${paper.metadata.title} in 2 min`,
+      'What is the core contribution?',
+      'What are the tensor shapes?',
+      'What are the limitations?'
+    ];
+  }, [paper.metadata.keywords, paper.metadata.title]);
 
   return (
     <div className="flex flex-col h-full bg-[#FAFAFA] animate-fadeIn relative overflow-hidden">
@@ -316,7 +356,12 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
                   </div>
 
                   {/* Message Body with KaTeX Math Rendering */}
-                  <FormattedMessageContent text={msg.text} />
+                  <FormattedMessageContent
+                    text={msg.text}
+                    keywords={paper.metadata.keywords}
+                    onAskAI={onAskAI}
+                    onJumpToPage={onJumpToPage}
+                  />
 
                   {/* Verified Citations Accordion */}
                   {msg.citations && msg.citations.length > 0 && (
@@ -401,6 +446,24 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
       <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none pt-14 pb-4 px-4 md:px-6 bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA]/90 via-50% to-transparent backdrop-blur-[2px]">
         <div className="max-w-3xl mx-auto w-full space-y-2 pointer-events-auto">
           
+          {/* Paper Keyword Chips (click to send pre-filled ask) */}
+          {paper.metadata.keywords && paper.metadata.keywords.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none px-1">
+              <span className="text-[10px] font-mono uppercase font-bold text-zinc-400 shrink-0">
+                Topics:
+              </span>
+              {paper.metadata.keywords.map((kw) => (
+                <button
+                  key={kw.id}
+                  onClick={() => executeMessage(`Explain "${kw.term.replace(/^#/, '')}" in detail with its core intuition and mathematical formulation.`)}
+                  className="px-2.5 py-1 rounded-full bg-white/95 hover:bg-white border border-zinc-200/90 text-[11px] text-zinc-700 font-medium whitespace-nowrap transition-all shadow-xs hover:shadow-sm active:scale-95 shrink-0 backdrop-blur-md"
+                >
+                  #{kw.term.replace(/^#/, '')}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Quick Suggestion Chips (Floating Pills) */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none px-1">
             <span className="text-[10px] font-mono uppercase font-bold text-zinc-400 shrink-0">

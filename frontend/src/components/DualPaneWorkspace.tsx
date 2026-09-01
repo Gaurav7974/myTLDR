@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { PaperData } from '@/types/paper';
 import { SummaryTab } from './tabs/SummaryTab';
-import { Visualizer3DTab } from './tabs/Visualizer3DTab';
+import { Architecture2DTab } from './tabs/Architecture2DTab';
 import { MathDeconstructedTab, MathFormula } from './tabs/MathDeconstructedTab';
 import { CodeWalkthroughTab } from './tabs/CodeWalkthroughTab';
 import { AIChatTab } from './tabs/AIChatTab';
@@ -408,12 +408,18 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
   };
 
   const copyBibtex = () => {
-    const bibtex = `@article{vaswani2017attention,
-  title={Attention is all you need},
-  author={Vaswani, Ashish and Shazeer, Noam and Parmar, Niki and Uszkoreit, Jakob and Jones, Llion and Gomez, Aidan N and Kaiser, {\\L}ukasz and Polosukhin, Illia},
-  journal={Advances in neural information processing systems},
-  volume={30},
-  year={2017}
+    const m = paper.metadata;
+    const arxivId = m.arxivId || '';
+    const year = m.publishedDate ? new Date(m.publishedDate).getFullYear() : new Date().getFullYear();
+    const firstAuthor = (m.authors?.[0] || 'unknown').split(' ').pop()?.toLowerCase() || 'unknown';
+    const slug = (m.title || 'paper').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+    const key = `${firstAuthor}${year}${slug}`.replace(/[^a-z0-9]/g, '');
+    const authorList = (m.authors || []).join(' and ');
+    const bibtex = `@article{${key},
+  title={${m.title || 'Untitled'}},
+  author={${authorList}},
+  journal={arXiv preprint${arxivId ? ` arXiv:${arxivId}` : ''}},
+  year={${year}}
 }`;
     navigator.clipboard.writeText(bibtex);
     setCopiedBibtex(true);
@@ -635,7 +641,7 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
                     : paper.metadata.pdfUrl
                       ? `${paper.metadata.pdfUrl}#page=${pdfPage}&toolbar=1&navpanes=0&view=FitH`
                       : `https://arxiv.org/pdf/${encodeURIComponent(
-                          paper.metadata.arxivId || '1706.03762'
+                          paper.metadata.arxivId || '—'
                         )}.pdf#page=${pdfPage}&toolbar=1&navpanes=0&view=FitH`
                 }
                 className={`w-full flex-1 border-0 bg-white ${isDragging ? 'pointer-events-none' : ''}`}
@@ -964,7 +970,7 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
               onJumpToPage={handleJumpToPdfPage}
             />
           )}
-          {activeTab === 'visualizer' && <Visualizer3DTab paper={paper} onJumpToPage={handleJumpToPdfPage} />}
+          {activeTab === 'visualizer' && <Architecture2DTab paper={paper} onJumpToPage={handleJumpToPdfPage} />}
           {activeTab === 'math' && <MathDeconstructedTab paper={paper} />}
           {activeTab === 'code' && <CodeWalkthroughTab paper={paper} />}
           {activeTab === 'chat' && (
@@ -972,6 +978,8 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
               paper={paper}
               initialPrompt={pendingChatPrompt}
               onPromptHandled={() => setPendingChatPrompt(null)}
+              onAskAI={handleExecutePrompt}
+              onJumpToPage={handleJumpToPdfPage}
             />
           )}
         </div>
