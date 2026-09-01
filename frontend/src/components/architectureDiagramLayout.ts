@@ -178,10 +178,15 @@ export function resolveEdgeStyle(
     dasharray = dasharray ?? "5 3";
   } else if (name === "beam") {
     stroke = stroke ?? (isActive ? "#8b5cf6" : "#a78bfa");
-    width = width ?? (isActive ? 3 : 2.4);
+    // Override width only when the user did not explicitly set one.
+    if (!(typeof rawWidth === "number" && rawWidth > 0)) {
+      width = isActive ? 3 : 2.4;
+    }
   } else if (name === "highlight") {
     stroke = stroke ?? (isActive ? "#f59e0b" : "#fbbf24");
-    width = width ?? (isActive ? 2.6 : 1.8);
+    if (!(typeof rawWidth === "number" && rawWidth > 0)) {
+      width = isActive ? 2.6 : 1.8;
+    }
   } else if (name === "dotted") {
     stroke = stroke ?? (isActive ? "#3b82f6" : "#94a3b8");
     dasharray = dasharray ?? "1 4";
