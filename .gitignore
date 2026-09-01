@@ -18,8 +18,19 @@ build/
 *.egg-info/
 
 # Internal / planning docs (not for public repo)
-*.md
-!README.md
+docs/
+.kilo/
+.omo/
+.zcode/
+
+# Screenshots & assets (project-specific, not for repo)
+assets/
+
+# Railway deploy config (environment-specific)
+railway.toml
+
+# Test artifacts
+.playwright-mcp/
 
 # OS & Editor files
 .DS_Store

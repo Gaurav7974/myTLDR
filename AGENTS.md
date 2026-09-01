@@ -44,40 +44,37 @@ frontend/
 ### Backend
 - All LLM calls go through `services/llm.py`
 - Structured output via Groq's JSON mode
-- RAG pipeline in `services/rag_service.py`
-- Graph extraction in `services/graph_service.py` + `graph_validator.py`
-- Layout computed in `services/layout.py` + `layout_engine.py`
+- PDF text extraction: PyMuPDF for text pages, Mistral OCR for image pages (`services/text_extraction.py`)
+- RAG pipeline in `services/rag.py`
+- Architecture graph extraction in `services/graph_extraction.py`; figure-based extraction in `services/figure_extraction.py`
+- ArchitectureIR extraction/validation in `services/ir_extraction.py` + `ir_validator.py`
+- 3D forward-pass stage extraction in `services/forward_pass.py`
+- Layout: React Flow positions in `services/flow_layout.py`; 3D SceneGraph in `services/scene_layout.py`
+- Orchestration in `services/pipeline.py`; caching in `services/cache.py`
 
 ### Frontend
 - Next.js App Router
-- Currently uses mock data — backend integration is the next step
+- Parsed Text tab renders backend `parsed_text` (per-page, OCR images inlined); mock data is fallback only
 
 ## What's Done vs What's Next
 
 ### Done
-- Backend code written (NOT yet verified — no `pip install` run)
-- Frontend scaffold with mock data
+- Backend implemented and import-verified
+- Frontend connected to backend via SSE `/api/stream`
 
 ### Next
-1. Install backend deps, verify imports
-2. Connect frontend to backend
-3. End-to-end test with real papers
+1. End-to-end test with real papers and live API keys
 
 ## Environment Variables
 
 Required in `backend/.env`:
 - Groq API key
 - Database URL (Postgres or SQLite path)
-- OCR API key (external service)
-
-## Testing
-
-- `backend/test_security.py` — security tests
+- OCR API key (Mistral, powers OCR + vision + text LLM)
 
 ## Important Notes
 
 - Do NOT commit `.env` files
 - Do NOT commit `venv/` or `__pycache__/`
 - All `*.md` planning docs are gitignored except `README.md`
-- The `flashattention.pdf` in root is a test fixture
 - Do NOT mention phases or plans in public-facing docs

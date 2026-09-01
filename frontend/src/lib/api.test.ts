@@ -18,7 +18,7 @@ import { describe, it, expect } from 'vitest';
 /** Mirrors the exact logic from transformArchitectureGraph in api.ts */
 function transformArchitectureGraph(
   raw: unknown
-): ReturnType<typeof import('./api').transformArchitectureGraph> {
+): import('@/types/architecture_graph').ArchitectureGraph | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const r = raw as Record<string, unknown>;
   const nodes = Array.isArray(r.nodes) ? r.nodes : [];
