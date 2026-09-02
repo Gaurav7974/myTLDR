@@ -213,14 +213,13 @@ export default function StickerWall(){
         <form onSubmit={onSubmit} className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-5" style={{paddingLeft:16,paddingRight:16,paddingBottom:'18vh'}}>
           <div className="pointer-events-none flex flex-col items-center gap-2 text-center">
             <h2 className="select-none" style={{color:titleColor,fontSize:'clamp(32px,6vw,56px)',fontWeight:800,letterSpacing:'-0.02em',lineHeight:1,margin:0,textShadow:titleShadow}}>Feedback Wall</h2>
-            <p className="select-none" style={{color:subtitleColor,fontSize:'16px',fontWeight:500,letterSpacing:'-0.005em',lineHeight:1.45,margin:0,maxWidth:'46ch'}}>Drop a note, toss an emoji, drag anything around. Real physics, no rules. Just leave your mark on the wall.</p>
+            <p className="select-none" style={{color:subtitleColor,fontSize:'15px',fontWeight:500,letterSpacing:'-0.01em',lineHeight:1.5,margin:0,maxWidth:'48ch'}}><em style={{fontStyle:'italic',color:titleColor}}>Every idea finds its place.</em> Toss a thought — watch it fall, collide and settle among the rest.</p>
           </div>
           <div className="sticker-wall-pill pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-full p-1" style={{background:inputBg,border:`2px solid ${err? '#ef4444' : stickerBorder}`,boxShadow:stickerShadow}}>
-            <input ref={inputRef} type="text" placeholder="Leave feedback… (max 15 words)" maxLength={120} className="sticker-wall-input flex-1 bg-transparent px-4 py-2 text-sm outline-none" style={{color:inputText,fontWeight:500}} onChange={()=>err&&setErr('')} />
+            <input ref={inputRef} type="text" placeholder="Leave a feedback here" maxLength={120} className="sticker-wall-input flex-1 bg-transparent px-4 py-2 text-sm outline-none" style={{color:inputText,fontWeight:500}} onChange={()=>err&&setErr('')} />
             <button type="submit" className="sticker-wall-send flex items-center rounded-2xl px-5 py-2 text-sm tracking-wide" style={{background:accentBg,color:accentText,fontWeight:700,border:'1px solid rgba(255,255,255,0.12)'}}>Send</button>
           </div>
           {err&&<p className="pointer-events-none text-xs font-medium" style={{color:'#ef4444'}}>{err}</p>}
-          <p className="pointer-events-none text-[11px]" style={{color:subtitleColor,opacity:0.6}}>Max 15 words • Saved permanently</p>
         </form>
       </motion.div>
     </div>
