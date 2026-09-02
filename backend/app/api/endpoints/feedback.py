@@ -1,11 +1,12 @@
 """Feedback wall persistence — 15-word limit, no auth."""
 from typing import List
 from pydantic import BaseModel, field_validator
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.core.database import get_db
 from app.core.logger import get_logger
+from app.core.security import limiter
 from app.models.orm import Feedback
 
 log = get_logger(__name__)
@@ -36,7 +37,14 @@ async def list_feedback(db: AsyncSession = Depends(get_db)):
     return [{"id": str(r.id), "content": r.content, "created_at": r.created_at.isoformat() if r.created_at else ""} for r in rows]
 
 @router.post("/feedback", response_model=FeedbackOut)
-async def create_feedback(body: FeedbackIn, db: AsyncSession = Depends(get_db)):
+@limiter.limit("3/minute;10/hour")
+async def create_feedback(request: Request, body: FeedbackIn, db: AsyncSession = Depends(get_db)):
+    # dedup same content within 5 min (cheap spam guard)
+    from datetime import datetime, timedelta, timezone
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+    q = await db.execute(select(Feedback).where(Feedback.content == body.content.strip()).where(Feedback.created_at > cutoff).limit(1))
+    if q.scalars().first():
+        raise HTTPException(status_code=400, detail="duplicate feedback — already posted")
     fb = Feedback(content=body.content.strip())
     db.add(fb)
     await db.commit()

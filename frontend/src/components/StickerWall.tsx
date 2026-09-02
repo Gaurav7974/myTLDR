@@ -45,14 +45,17 @@ export default function StickerWall(){
   const worldRef=useRef<World|null>(null)
   const stickersRef=useRef<Sticker[]>([])
   const sizeRef=useRef<{w:number,h:number}>({w:0,h:0})
+  const seenIdsRef=useRef<Set<string>>(new Set())
   const measureCtxRef=useRef<CanvasRenderingContext2D|null>(null)
   const paletteRef=useRef<string[]>(PALETTE_DARK)
   const matterRef=useRef<typeof import('matter-js')|null>(null)
   const [isDark,setIsDark]=useState<boolean>(()=> typeof window!=='undefined'?document.documentElement.classList.contains('dark'):true)
   const [err,setErr]=useState('')
+  const [cooldown,setCooldown]=useState(0)
   const isDarkRef=useRef<boolean>(isDark)
   useIsomorphicLayoutEffect(()=>{isDarkRef.current=isDark;paletteRef.current=pickPalette(isDark)},[isDark])
   useEffect(()=>{const p=pickPalette(isDark);stickersRef.current.forEach((s,i)=>{s.color=p[i%p.length]})},[isDark])
+  useEffect(()=>{if(cooldown<=0)return;const id=setInterval(()=>setCooldown(c=>c>0?c-1:0),1000);return()=>clearInterval(id)},[cooldown])
   useIsomorphicLayoutEffect(()=>{
     const el=containerRef.current;if(!el)return
     const check=()=>{
@@ -75,6 +78,7 @@ export default function StickerWall(){
     let alive=true,rafId=0
     let engine:Engine|null=null,runner:Runner|null=null,world:World|null=null,walls:Body[]=[]
     let mouse:MatterMouse|null=null,mouseConstraint:MC|null=null,ro:ResizeObserver|null=null
+    let poll:ReturnType<typeof setInterval>|null=null
     let dpr=Math.min(window.devicePixelRatio||1,2)
     function buildWalls(Matter:typeof import('matter-js'),w:number,h:number):Body[]{
       const t=WALL_THICKNESS,opts={isStatic:true,render:{visible:false}} as any
@@ -142,6 +146,7 @@ export default function StickerWall(){
         if(Array.isArray(data)&&data.length){
           const pal=paletteRef.current
           data.slice(0,STICKER_CAP).forEach((it:any,i:number)=>{
+            const id=it.id||it.content;seenIdsRef.current.add(id)
             const c=pal[i%pal.length],x=randBetween(80,Math.max(100,sizeRef.current.w-80)),y=randBetween(60,Math.max(120,sizeRef.current.h-120))
             const st=makeTextSticker(Matter,it.content||it, x,y,c,false)
             Matter.Body.setVelocity(st.body,{x:randBetween(-0.5,0.5),y:randBetween(-0.5,0.5)})
@@ -149,11 +154,33 @@ export default function StickerWall(){
           })
         } else seed(Matter,sizeRef.current.w,sizeRef.current.h)
       }catch{ seed(Matter,sizeRef.current.w,sizeRef.current.h) }
+      // live poll every 10s for other users' feedback
+      poll=setInterval(async()=>{
+        try{
+          const r=await fetch(`${API_BASE}/api/feedback`)
+          if(!r.ok)return
+          const d=await r.json() as any[]
+          if(!Array.isArray(d))return
+          const pal=paletteRef.current
+          for(const it of d){
+            const id=it.id||it.content
+            if(seenIdsRef.current.has(id))continue
+            seenIdsRef.current.add(id)
+            if(stickersRef.current.length>=STICKER_CAP)break
+            const c=pal[stickersRef.current.length%pal.length],x=randBetween(80,Math.max(100,sizeRef.current.w-80)),y=-30
+            const {lines,w,h}=measureTextCard(measureCtxRef.current!,it.content)
+            const body=Matter.Bodies.rectangle(x,y,w,h,{restitution:RESTITUTION,friction:FRICTION,frictionAir:FRICTION_AIR,density:DENSITY,angle:randBetween(-0.25,0.25),render:{visible:false}} as any)
+            Matter.Body.setAngularVelocity(body,randBetween(-0.03,0.03));Matter.Body.setVelocity(body,{x:randBetween(-0.3,0.3),y:0})
+            const st:Sticker={body,kind:'text',content:it.content,w,h,color:c,lines,createdAt:performance.now()};(body as BodyWithPlugin).plugin={sticker:st}
+            Matter.Composite.add(world!,body);stickersRef.current.push(st)
+          }
+        }catch{}
+      },10000)
       ro=new ResizeObserver(resize);ro.observe(container!)
       rafId=requestAnimationFrame(drawFrame)
     })
     return()=>{
-      alive=false;cancelAnimationFrame(rafId);if(ro)ro.disconnect()
+      alive=false;cancelAnimationFrame(rafId);if(ro)ro.disconnect();if(poll)clearInterval(poll)
       const Matter=matterRef.current
       if(Matter){if(runner)Matter.Runner.stop(runner);if(world)Matter.Composite.clear(world,false,true);if(engine)Matter.Engine.clear(engine)}
       matterRef.current=null;engineRef.current=null;worldRef.current=null;stickersRef.current=[];measureCtxRef.current=null
@@ -161,12 +188,19 @@ export default function StickerWall(){
   },[])
   async function onSubmit(e:FormEvent<HTMLFormElement>){
     e.preventDefault()
+    if(cooldown>0){setErr(`Slow down — try in ${cooldown}s`);return}
     const input=inputRef.current;if(!input)return
     const v=input.value.trim();if(!v)return
     const words=v.split(/\s+/).filter(Boolean)
     if(words.length>15){setErr(`Max 15 words — you have ${words.length}`);return}
+    const last=Number(localStorage.getItem('fw_last')||0);if(Date.now()-last<15000){setErr(`Slow down — try in ${Math.ceil((15000-(Date.now()-last))/1000)}s`);return}
     setErr('')
-    try{await fetch(`${API_BASE}/api/feedback`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:v})})}catch{}
+    try{
+      const r=await fetch(`${API_BASE}/api/feedback`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:v})})
+      if(!r.ok){const er=await r.json().catch(()=>({detail:r.statusText}));throw new Error(er.detail||`Error ${r.status}`)}
+      const data=await r.json().catch(()=>({id:v}));const nid=(data as any).id||v
+      localStorage.setItem('fw_last',String(Date.now()));seenIdsRef.current.add(v);seenIdsRef.current.add(nid);setCooldown(15)
+    }catch(e:any){setErr(e.message||'Failed');return}
     const Matter=matterRef.current,world=worldRef.current,ctx=measureCtxRef.current
     if(!Matter||!world||!ctx)return
     const {w:W}=sizeRef.current;if(W===0)return
@@ -217,7 +251,7 @@ export default function StickerWall(){
           </div>
           <div className="sticker-wall-pill pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-full p-1" style={{background:inputBg,border:`2px solid ${err? '#ef4444' : stickerBorder}`,boxShadow:stickerShadow}}>
             <input ref={inputRef} type="text" placeholder="Leave a feedback here" maxLength={120} className="sticker-wall-input flex-1 bg-transparent px-4 py-2 text-sm outline-none" style={{color:inputText,fontWeight:500}} onChange={()=>err&&setErr('')} />
-            <button type="submit" className="sticker-wall-send flex items-center rounded-2xl px-5 py-2 text-sm tracking-wide" style={{background:accentBg,color:accentText,fontWeight:700,border:'1px solid rgba(255,255,255,0.12)'}}>Send</button>
+            <button type="submit" disabled={cooldown>0} className="sticker-wall-send flex items-center rounded-2xl px-5 py-2 text-sm tracking-wide" style={{background:accentBg,color:accentText,fontWeight:700,border:'1px solid rgba(255,255,255,0.12)',opacity:cooldown>0?0.6:1}}>{cooldown>0?`Wait ${cooldown}s`:'Send'}</button>
           </div>
           {err&&<p className="pointer-events-none text-xs font-medium" style={{color:'#ef4444'}}>{err}</p>}
         </form>
