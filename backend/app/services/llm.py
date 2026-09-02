@@ -5,10 +5,15 @@ endpoint, so a single client drives them.
 Kept the legacy symbol name `groq_client` so existing imports keep working.
 """
 
-import time
-import json
-import requests
+import time, threading, json, requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from app.core.config import settings
+from app.core.logger import get_logger
+log = get_logger(__name__)
+_session = requests.Session()
+_session.mount("https://", HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=Retry(total=0)))
+_sem = threading.Semaphore(4)
 
 
 class ChatClient:
@@ -46,7 +51,7 @@ class ChatClient:
                 return self._post(prov, messages, model or prov["model"],
                                   response_format, temperature)
             except Exception as e:
-                print(f"[LLM] provider '{prov['name']}' failed: {e}")
+                log.warning(f"[LLM] provider '{prov['name']}' failed: {e}")
                 last_err = e
                 continue
         raise last_err or Exception("All LLM providers failed")
@@ -63,24 +68,17 @@ class ChatClient:
 
         for attempt in range(self.max_retries):
             try:
-                resp = requests.post(
-                    prov["url"],
-                    headers={
-                        "Authorization": f"Bearer {prov['key']}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                    timeout=120,
-                )
+                with _sem:
+                    resp = _session.post(prov["url"], headers={"Authorization": f"Bearer {prov['key']}", "Content-Type": "application/json"}, json=payload, timeout=45)
                 if resp.status_code == 429:
                     wait = self.backoff_base * (attempt + 1)
-                    print(f"[RATE LIMIT] Waiting {wait}s on {prov['name']}...")
+                    log.warning(f"[RATE LIMIT] Waiting {wait}s on {prov['name']}...")
                     time.sleep(wait)
                     continue
                 if resp.status_code == 413:
                     # Request too large: shrink the trailing paper body while keeping
                     # the leading schema/instructions intact, then retry.
-                    print(f"[ERROR] Payload too large on {prov['name']}, trimming trailing text...")
+                    log.error(f"[ERROR] Payload too large on {prov['name']}, trimming trailing text...", exc_info=True)
                     self._shrink_last_message(payload)
                     continue
                 resp.raise_for_status()

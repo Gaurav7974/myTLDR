@@ -3,6 +3,8 @@
 import json
 from typing import Dict, Any, Tuple
 from app.core.config import settings
+from app.core.logger import get_logger
+log = get_logger(__name__)
 from app.services.llm import groq_client
 from app.models.architecture_ir import ArchitectureIR, SceneGraph3D
 from app.services.ir_validator import ir_validator
@@ -92,7 +94,7 @@ Extract the canonical ArchitectureIR JSON strictly matching the schema."""
             scene_graph = layout_engine.compute_scene_graph(canonical_ir)
             return canonical_ir, scene_graph
         except Exception as e:
-            print(f"[ERROR] ArchitectureIR extraction failed: {e}")
+            log.error(f"[ERROR] ArchitectureIR extraction failed: {e}", exc_info=True)
             fallback_ir = self._build_fallback_ir(paper_title)
             scene_graph = layout_engine.compute_scene_graph(fallback_ir)
             return fallback_ir, scene_graph

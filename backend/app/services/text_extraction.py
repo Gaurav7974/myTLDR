@@ -8,6 +8,8 @@ import pymupdf  # PyMuPDF
 from dataclasses import dataclass, field
 from typing import List, Optional
 from app.core.config import settings
+from app.core.logger import get_logger
+log = get_logger(__name__)
 from app.core.security import sanitize_arxiv_id, validate_and_sanitize_url
 
 
@@ -68,11 +70,11 @@ class TextExtractor:
 
         if len(ocr_candidates) == page_count:
             # No text layer anywhere — one whole-document OCR call covers all pages
-            print("[OCR] No text layer found, calling Mistral OCR on whole document...")
+            log.info("[OCR] No text layer found, calling Mistral OCR on whole document...")
             try:
                 return self._mistral_ocr_pdf(pdf_bytes)
             except Exception as e:
-                print(f"[WARN] Mistral OCR failed: {e} — returning raw text layer")
+                log.warning(f"[WARN] Mistral OCR failed: {e} — returning raw text layer")
                 return self._build_result(pages)
 
         # Hybrid: OCR only the image/scanned pages individually
@@ -85,12 +87,35 @@ class TextExtractor:
                     p.source = "mistral_ocr"
                 hybrid_figures.extend(figs)
             except Exception as e:
-                print(f"[WARN] OCR failed for page {p.page_number}: {e}")
+                log.warning(f"[WARN] OCR failed for page {p.page_number}: {e}")
         if len(ocr_candidates) > settings.OCR_MAX_PAGE_CALLS:
-            print(f"[WARN] {len(ocr_candidates)} image pages exceed OCR_MAX_PAGE_CALLS; "
-                  f"only the first {settings.OCR_MAX_PAGE_CALLS} were OCR'd")
-
-        return self._build_result(pages, hybrid_figures)
+            log.warning(f"[WARN] {len(ocr_candidates)} image pages exceed OCR_MAX_PAGE_CALLS; only the first {settings.OCR_MAX_PAGE_CALLS} were OCR'd")
+        result = self._build_result(pages, hybrid_figures)
+        if not result.figures:
+            try:
+                doc2 = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+                # Harvest embedded images with bbox (figure-accurate) before whole-page fallback
+                for i, pg in enumerate(doc2):
+                    if len(result.figures) >= 5: break
+                    for img in pg.get_images(full=True):
+                        try:
+                            xref = img[0]
+                            for inst in pg.get_drawings(): pass  # ensure bbox cache
+                            bbox = pg.get_image_bbox(img)
+                            if not bbox: continue
+                            if len(b64:=base64.b64encode(pg.get_pixmap(clip=bbox, dpi=150).tobytes("png")).decode()) > settings.MAX_INLINE_IMAGE_KB*1024: continue
+                            result.figures.append(Figure(id=f"fig-{i+1}-{xref}", page=i+1, base64=b64, caption=f"Figure {len(result.figures)+1} p{i+1}"))
+                            if len(result.figures) >= 5: break
+                        except Exception: continue
+                # If still none, render whole pages
+                if not result.figures:
+                    for i, pg in enumerate(doc2):
+                        if i >= 3: break
+                        b64 = base64.b64encode(pg.get_pixmap(dpi=120).tobytes("png")).decode()
+                        result.figures.append(Figure(id=f"page-{i+1}-render", page=i+1, base64=b64, caption=f"Page {i+1} render"))
+                doc2.close()
+            except Exception as e: log.warning(f"[WARN] pixmap fallback failed: {e}")
+        return result
 
     def _mistral_ocr_pdf(self, pdf_bytes: bytes) -> ExtractionResult:
         """Call Mistral OCR API for image-based PDFs, returning per-page text + figures."""
@@ -224,16 +249,8 @@ class TextExtractor:
 
     def _build_result(self, pages: List[PageText], figures: Optional[List[Figure]] = None) -> ExtractionResult:
         """Join per-page content into the flat text the pipeline consumes."""
-        text_parts = [
-            self._strip_images(p.markdown) if p.source == "mistral_ocr" else p.markdown
-            for p in pages
-        ]
-        return ExtractionResult(
-            text="\n\n".join(part for part in text_parts if part),
-            figures=figures or [],
-            pages=pages,
-            page_count=len(pages),
-        )
+        text_parts = [self._strip_images(p.markdown) if p.source == "mistral_ocr" else p.markdown for p in pages]
+        return ExtractionResult(text="\n\n".join(p for p in text_parts if p), figures=figures or [], pages=pages, page_count=len(pages))
     
     def _extract_figure_captions(self, markdown: str) -> dict:
         """Map each image id (referenced as `![id](id)`) to its following caption line."""
@@ -371,7 +388,7 @@ Respond ONLY with a valid JSON object matching:
                 "categories": res.get("categories") or ["Artificial Intelligence"]
             }
         except Exception as e:
-            print(f"[WARN] LLM metadata extraction failed: {e}")
+            log.warning(f"[WARN] LLM metadata extraction failed: {e}")
             lines = [l.strip() for l in first_page.split("\n") if len(l.strip()) > 5]
             guessed_title = lines[0] if lines else "Uploaded Research Paper"
             return {
@@ -384,32 +401,12 @@ Respond ONLY with a valid JSON object matching:
     
     def find_architecture_section(self, text: str) -> str:
         """Locate the architecture/method section. Fallback to first N chars."""
-        # Prefer top-level numbered sections
-        patterns = [
-            r"(?:\n)(\d+\.\s+(?:model\s+)?architecture)",
-            r"(?:\n)(\d+\.\s+method(?:s)?)",
-            r"(?:\n)(\d+\.\s+approach)",
-            r"(?:\n)(\d+\.\s+proposed)",
-            r"(?:\n)(\d+\.\s+network\s+architecture)",
-            r"(?:\n)(\d+\.\s+model\s+design)",
-            r"(?:\n)(\d+\.\s+model\s+structure)",
-            r"(?:\n)(\d+\.\s+overall\s+architecture)",
-        ]
-        
-        start = None
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                line_start = text.rfind('\n', 0, match.start()) + 1
-                start = line_start
-                break
-        
-        if start is None:
-            print("[WARN] No architecture section found, using first N chars")
+        patterns = [r"(?im)^\s*\d+\.?\s+(?:model\s+)?architecture", r"(?im)^\s*\d+\.?\s+method(?:s)?", r"(?im)^\s*\d+\.?\s+approach", r"(?im)^\s*\d+\.?\s+proposed", r"(?im)^\s*\d+\.?\s+network\s+architecture", r"(?im)^\s*\d+\.?\s+model\s+design", r"(?im)^\s*\d+\.?\s+model\s+structure", r"(?im)^\s*\d+\.?\s+overall\s+architecture"]
+        start = next((text.rfind('\n',0,m.start())+1 for p in patterns if (m:=re.search(p,text))), None)
+        if start is None or start <0:
+            log.warning("[WARN] No architecture section found, using first N chars")
             return text[:settings.MAX_SECTION_CHARS]
-        
-        # Find next top-level numbered section
-        next_section = re.search(r"\n(?=\d+\.\s+[A-Z])", text[start+200:])
+        next_section = re.search(r"\n(?=\d+\.?\s+[A-Za-z])", text[start+200:])
         if next_section:
             end = start + 200 + next_section.start()
             section = text[start:end]
@@ -420,7 +417,7 @@ Respond ONLY with a valid JSON object matching:
         if len(section) > settings.MAX_SECTION_CHARS:
             section = section[:settings.MAX_SECTION_CHARS]
         
-        print(f"Found architecture section ({len(section)} chars)")
+        log.info(f"Found architecture section ({len(section)} chars)")
         return section
     
     def normalize_text(self, text: str) -> str:

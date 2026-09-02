@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.config import settings
 from app.core.security import limiter, sanitize_arxiv_id, validate_and_sanitize_url, verify_api_key
+from app.core.logger import get_logger
+log = get_logger(__name__)
 
 router = APIRouter()
 

@@ -1,12 +1,16 @@
 """FastAPI application."""
-
+import uuid, time
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
+from app.core.logger import setup_logging, request_id_var, get_logger
 from app.api import router
 from app.core.security import limiter
+
+setup_logging()
+log = get_logger("app")
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -42,15 +46,21 @@ app.add_middleware(
 
 app.include_router(router, prefix="/api")
 
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:8]
+    request_id_var.set(rid)
+    start = time.time()
+    try:
+        resp = await call_next(request)
+        log.info(f"{request.method} {request.url.path} → {resp.status_code} {int((time.time()-start)*1000)}ms", extra={"status": resp.status_code, "duration_ms": int((time.time()-start)*1000)})
+        resp.headers["X-Request-ID"] = rid
+        return resp
+    except Exception as e:
+        log.error(f"Unhandled {request.url.path}: {e}", exc_info=True)
+        raise
 
 @app.get("/health")
 async def health():
-    return {
-        "status": "ok",
-        "app": settings.APP_NAME,
-        "security": {
-            "rate_limiting": "active (SlowAPI)",
-            "ssrf_protection": "active",
-            "api_key_auth": "enabled"
-        }
-    }
+    log.info("health check")
+    return {"status": "ok", "app": settings.APP_NAME, "security": {"rate_limiting": "active (SlowAPI)", "ssrf_protection": "active", "api_key_auth": "enabled"}}

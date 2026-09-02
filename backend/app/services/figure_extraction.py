@@ -21,6 +21,8 @@ from typing import Any, Optional
 from pydantic import ValidationError
 
 from app.core.config import settings
+from app.core.logger import get_logger
+log = get_logger(__name__)
 from app.models.graph import (
     ArchitectureGraph,
     GRAPH_PAYLOAD_VERSION,
@@ -243,7 +245,7 @@ class FigureExtractor:
         failure (no key, malformed JSON, validation error, etc.) so the
         pipeline can fall back without raising."""
         if not settings.VISION_API_KEY:
-            print("[WARN] Vision API key not configured; skipping image-based extraction")
+            log.warning("[WARN] Vision API key not configured; skipping image-based extraction")
             return None
         if not figure or not figure.base64:
             return None
@@ -274,7 +276,7 @@ class FigureExtractor:
         try:
             raw = self._call_and_parse(messages)
         except Exception as e:
-            print(f"[ERROR] Vision architecture extraction failed: {e}")
+            log.error(f"[ERROR] Vision architecture extraction failed: {e}", exc_info=True)
             return None
 
         try:
@@ -285,7 +287,7 @@ class FigureExtractor:
                 figure_page=getattr(figure, "page", None),
             )
         except (ValidationError, ValueError) as e:
-            print(f"[WARN] Vision payload failed validation: {e}")
+            log.warning(f"[WARN] Vision payload failed validation: {e}")
             return None
 
     def verify_figure_graph(
@@ -345,7 +347,7 @@ class FigureExtractor:
         try:
             raw = self._call_and_parse(messages, is_verification=True)
         except Exception as e:
-            print(f"[ERROR] Vision verification call failed: {e}")
+            log.error(f"[ERROR] Vision verification call failed: {e}", exc_info=True)
             return GraphVerification(
                 valid=False,
                 confidence=0.0,
@@ -372,7 +374,7 @@ class FigureExtractor:
                         "Content-Type": "application/json",
                     },
                     json=payload,
-                    timeout=120,
+                    timeout=45,
                 )
                 if resp.status_code == 429:
                     time.sleep(settings.LLM_RETRY_BACKOFF_BASE * (attempt + 1))

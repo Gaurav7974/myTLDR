@@ -72,8 +72,8 @@ class Settings:
     # Processing
     MAX_UPLOAD_SIZE_MB: int = 25
     MAX_SECTION_CHARS: int = 18000
-    LLM_MAX_RETRIES: int = 3
-    LLM_RETRY_BACKOFF_BASE: int = 15  # seconds
+    LLM_MAX_RETRIES: int = 2
+    LLM_RETRY_BACKOFF_BASE: int = 3  # seconds
     
     # arXiv
     ARXIV_RATE_LIMIT_SECONDS: int = 3

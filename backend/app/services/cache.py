@@ -7,13 +7,15 @@ version are loaded as ``layout_mode='auto'`` (legacy) and never
 masquerade as a verified diagram.
 """
 
-import hashlib
+import hashlib, logging
 from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.graph import GRAPH_PAYLOAD_VERSION
 from app.models.orm import PaperCache, GraphCache, ParsedTextCache
 from app.services.text_extraction import text_extractor
+from app.core.logger import get_logger
+log = get_logger(__name__)
 
 
 def compute_content_hash(text: str) -> str:
@@ -86,113 +88,83 @@ class CacheService:
         if content_hash in _IN_MEMORY_GRAPHS:
             return _downgrade_legacy_graph(_IN_MEMORY_GRAPHS[content_hash])
         try:
-            result = await db.execute(
-                select(GraphCache).where(GraphCache.content_hash == content_hash)
-            )
+            result = await db.execute(select(GraphCache).where(GraphCache.content_hash == content_hash))
             cache = result.scalar_one_or_none()
             if cache and cache.graph_json:
                 _IN_MEMORY_GRAPHS[content_hash] = cache.graph_json
                 return _downgrade_legacy_graph(cache.graph_json)
         except Exception:
-            pass
+            try: await db.rollback()
+            except Exception: pass
         return None
-    
-    async def get_explanation(self, db: AsyncSession, content_hash: str, 
-                              difficulty: str) -> dict | None:
-        """Look up cached explanation by hash + difficulty."""
+    async def get_explanation(self, db: AsyncSession, content_hash: str, difficulty: str) -> dict | None:
         key = f"{content_hash}:{difficulty}"
-        if key in _IN_MEMORY_EXPLANATIONS:
-            return _IN_MEMORY_EXPLANATIONS[key]
+        if key in _IN_MEMORY_EXPLANATIONS: return _IN_MEMORY_EXPLANATIONS[key]
         try:
-            result = await db.execute(
-                select(PaperCache).where(
-                    PaperCache.content_hash == content_hash,
-                    PaperCache.difficulty_level == difficulty
-                )
-            )
+            result = await db.execute(select(PaperCache).where(PaperCache.content_hash == content_hash, PaperCache.difficulty_level == difficulty))
             cache = result.scalar_one_or_none()
-            if cache:
-                _IN_MEMORY_EXPLANATIONS[key] = cache.explanation
-                return cache.explanation
+            if cache: _IN_MEMORY_EXPLANATIONS[key] = cache.explanation; return cache.explanation
         except Exception:
-            pass
+            try: await db.rollback()
+            except Exception: pass
         return None
     
-    async def store_graph(self, db: AsyncSession, content_hash: str,
-                          graph_json: dict | None, diagram_available: bool):
-        """Store extracted graph in cache. The payload is annotated with the
-        current ``GRAPH_PAYLOAD_VERSION`` if missing so future reads can
-        distinguish rich figures from legacy auto-layout graphs."""
+    async def store_graph(self, db: AsyncSession, content_hash: str, graph_json: dict | None, diagram_available: bool):
         payload = graph_json
         if isinstance(payload, dict):
-            payload = dict(payload)
-            payload.setdefault("version", GRAPH_PAYLOAD_VERSION)
-            # Never store a graph as figure-faithful unless it carries an
-            # explicit valid verification.
-            if payload.get("layout_mode") == "figure" and not _is_rich_figure_graph(payload):
-                payload["layout_mode"] = "auto"
-                payload["source"] = payload.get("source") or "legacy"
+            payload = dict(payload); payload.setdefault("version", GRAPH_PAYLOAD_VERSION)
+            if payload.get("layout_mode") == "figure" and not _is_rich_figure_graph(payload): payload["layout_mode"] = "auto"; payload["source"] = payload.get("source") or "legacy"
         _IN_MEMORY_GRAPHS[content_hash] = payload
-        try:
-            cache = GraphCache(
-                content_hash=content_hash,
-                graph_json=payload,
-                diagram_available=diagram_available
-            )
-            db.add(cache)
-            await db.commit()
+        try: db.add(GraphCache(content_hash=content_hash, graph_json=payload, diagram_available=diagram_available)); await db.commit(); return
         except Exception:
-            pass
+            try: await db.rollback()
+            except Exception: pass
+        try:
+            from app.core.database import async_session
+            async with async_session() as s: s.add(GraphCache(content_hash=content_hash, graph_json=payload, diagram_available=diagram_available)); await s.commit()
+        except Exception: pass
     
-    async def store_explanation(self, db: AsyncSession, content_hash: str,
-                                difficulty: str, explanation: dict | str):
-        """Store generated explanation in cache."""
+    async def store_explanation(self, db: AsyncSession, content_hash: str, difficulty: str, explanation: dict | str):
         key = f"{content_hash}:{difficulty}"
         _IN_MEMORY_EXPLANATIONS[key] = explanation
-        try:
-            cache = PaperCache(
-                content_hash=content_hash,
-                difficulty_level=difficulty,
-                explanation=explanation if isinstance(explanation, str) else str(explanation),
-                diagram_available=False
-            )
-            db.add(cache)
-            await db.commit()
+        try: db.add(PaperCache(content_hash=content_hash, difficulty_level=difficulty, explanation=explanation if isinstance(explanation, str) else str(explanation), diagram_available=False)); await db.commit(); return
         except Exception:
-            pass
+            try: await db.rollback()
+            except Exception: pass
+        try:
+            from app.core.database import async_session
+            async with async_session() as s: s.add(PaperCache(content_hash=content_hash, difficulty_level=difficulty, explanation=explanation if isinstance(explanation, str) else str(explanation), diagram_available=False)); await s.commit()
+        except Exception: pass
 
     async def get_parsed_text(self, db: AsyncSession, content_hash: str) -> dict | None:
         """Look up cached parsed text (per-page structure) by content hash."""
         if content_hash in _IN_MEMORY_PARSED_TEXT:
             return _IN_MEMORY_PARSED_TEXT[content_hash]
         try:
-            result = await db.execute(
-                select(ParsedTextCache).where(ParsedTextCache.content_hash == content_hash)
-            )
+            result = await db.execute(select(ParsedTextCache).where(ParsedTextCache.content_hash == content_hash))
             cache = result.scalar_one_or_none()
-            if cache and cache.parsed_json:
-                _IN_MEMORY_PARSED_TEXT[content_hash] = cache.parsed_json
-                return cache.parsed_json
+            if cache and cache.parsed_json: _IN_MEMORY_PARSED_TEXT[content_hash] = cache.parsed_json; return cache.parsed_json
         except Exception:
-            pass
+            try: await db.rollback()
+            except Exception: pass
         return None
 
     async def store_parsed_text(self, db: AsyncSession, content_hash: str, parsed: dict):
         """Store parsed text structure in cache (skips payloads over ~16MB)."""
         import json
         if len(json.dumps(parsed, default=str)) > 16 * 1024 * 1024:
-            print("[WARN] Parsed text payload too large to cache; skipping")
+            log.warning("[WARN] Parsed text payload too large to cache; skipping")
             return
         _IN_MEMORY_PARSED_TEXT[content_hash] = parsed
-        try:
-            cache = ParsedTextCache(
-                content_hash=content_hash,
-                parsed_json=parsed
-            )
-            db.add(cache)
-            await db.commit()
+        try: db.add(ParsedTextCache(content_hash=content_hash, parsed_json=parsed)); await db.commit(); return
         except Exception as e:
-            print(f"[WARN] Failed to cache parsed text: {e}")
+            try: await db.rollback()
+            except Exception: pass
+            log.warning(f"[WARN] Failed to cache parsed text: {e}")
+        try:
+            from app.core.database import async_session
+            async with async_session() as s: s.add(ParsedTextCache(content_hash=content_hash, parsed_json=parsed)); await s.commit()
+        except Exception as e: log.warning(f"[WARN] Own-session cache also failed: {e}")
 
 
 cache_service = CacheService()

@@ -8,7 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.config import settings
 from app.core.security import limiter, sanitize_arxiv_id, validate_and_sanitize_url, verify_api_key
+from app.core.logger import get_logger
 from app.services.pipeline import process_paper
+log = get_logger(__name__)
 
 router = APIRouter()
 
@@ -45,16 +47,17 @@ async def stream_paper(
                 detail=f"File too large (max {settings.MAX_UPLOAD_SIZE_MB}MB)"
             )
     
+    log.info(f"stream start source={source} difficulty={difficulty_level} url={sanitized_url} file={bool(file_bytes)}")
     async def event_generator():
-        async for event in process_paper(
-            source_type=source,
-            file_bytes=file_bytes,
-            url=sanitized_url,
-            difficulty=difficulty_level,
-            db=db
-        ):
-            yield f"data: {json.dumps(event)}\n\n"
-        yield "data: [DONE]\n\n"
+        try:
+            async for event in process_paper(source_type=source, file_bytes=file_bytes, url=sanitized_url, difficulty=difficulty_level, db=db):
+                log.info(f"sse stage={event.get('stage')} diagram={event.get('diagram_available')}")
+                yield f"data: {json.dumps(event)}\n\n"
+            yield "data: [DONE]\n\n"
+            log.info("stream done")
+        except Exception as e:
+            log.error(f"stream pipeline error: {e}", exc_info=True)
+            yield f"data: {json.dumps({'stage':'error','message':str(e)})}\n\n"
     
     return StreamingResponse(
         event_generator(),

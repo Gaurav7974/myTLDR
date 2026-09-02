@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.orm import PaperChunk
 from app.services.llm import groq_client
 from app.core.config import settings
+from app.core.logger import get_logger
+log = get_logger(__name__)
 
 # In-memory vector store fallback if Postgres/pgvector is temporarily offline
 _MEMORY_VECTOR_STORE: Dict[str, List[Dict[str, Any]]] = {}

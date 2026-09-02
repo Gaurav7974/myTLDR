@@ -12,6 +12,8 @@ import json
 from typing import Any
 
 from app.core.config import settings
+from app.core.logger import get_logger
+log = get_logger(__name__)
 from app.models.graph import (
     ArchitectureGraph,
     GRAPH_PAYLOAD_VERSION,
@@ -154,22 +156,21 @@ class GraphExtractor:
                 model=settings.MISTRAL_LLM_MODEL,
             )
         except Exception as e:
-            print(f"[ERROR] Graph extraction call failed: {e}")
+            log.error(f"[ERROR] Graph extraction call failed: {e}", exc_info=True)
             return None
 
         if not isinstance(data, dict):
             return None
-        # Ensure source/layout_mode/version defaults even if model omits them
-        data.setdefault("version", GRAPH_PAYLOAD_VERSION)
-        data.setdefault("source", "text")
-        data.setdefault("layout_mode", "auto")
+        data["version"] = GRAPH_PAYLOAD_VERSION
+        data["source"] = data.get("source") if data.get("source") in {"text","vision","merged","auto","legacy"} else "text"
+        data["layout_mode"] = data.get("layout_mode") if data.get("layout_mode") in {"auto","figure","legacy"} else "auto"
         if paper_title and not data.get("paper_title"):
             data["paper_title"] = paper_title
 
         try:
             graph = ArchitectureGraph(**data)
         except Exception as e:
-            print(f"[WARN] Text graph payload failed validation: {e}")
+            log.warning(f"[WARN] Text graph payload failed validation: {e}")
             return None
 
         # Tag every node with text provenance if the model did not.
@@ -202,7 +203,7 @@ class GraphExtractor:
                 model=settings.MISTRAL_LLM_MODEL,
             )
         except Exception as e:
-            print(f"[ERROR] Text verification failed: {e}")
+            log.error(f"[ERROR] Text verification failed: {e}", exc_info=True)
             return {
                 "valid": False,
                 "reason": f"Verification error: {e}",

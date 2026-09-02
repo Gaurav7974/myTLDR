@@ -7,7 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.config import settings
 from app.core.security import limiter, sanitize_arxiv_id, verify_api_key
+from app.core.logger import get_logger
 from app.services.rag import rag_service
+log = get_logger(__name__)
 
 router = APIRouter()
 
@@ -55,14 +57,9 @@ async def chat_with_paper(
         except Exception:
             clean_hash = req.paper_hash.strip()
 
-    result = await rag_service.answer_question(
-        db=db,
-        paper_hash=clean_hash,
-        paper_title=req.paper_title or "Research Paper",
-        query=req.query.strip(),
-        history=req.history,
-        difficulty=req.difficulty or "intermediate"
-    )
+    log.info(f"chat query hash={clean_hash[:8]} q={req.query[:60]}")
+    try: result = await rag_service.answer_question(db=db, paper_hash=clean_hash, paper_title=req.paper_title or "Research Paper", query=req.query.strip(), history=req.history, difficulty=req.difficulty or "intermediate")
+    except Exception as e: log.error(f"chat failed: {e}", exc_info=True); raise HTTPException(status_code=500, detail=str(e))
 
     return ChatResponse(
         answer=result["answer"],

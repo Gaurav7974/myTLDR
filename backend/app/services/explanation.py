@@ -4,6 +4,8 @@ import json
 import re
 from typing import Dict, Any
 from app.core.config import settings
+from app.core.logger import get_logger
+log = get_logger(__name__)
 from app.services.llm import groq_client
 from app.models.summary import StructuredPaperSummary
 
@@ -119,7 +121,7 @@ Generate the complete structured summary JSON according to the schema."""
         except Exception as e:
             # Do NOT fabricate a plausible-looking summary on failure — return None so the
             # caller can show an honest "summary unavailable" state instead of invented facts.
-            print(f"[ERROR] Structured explanation generation failed: {e}")
+            log.error(f"[ERROR] Structured explanation generation failed: {e}", exc_info=True)
             return None
 
     def extract_equations(self, paper_text: str) -> list:
@@ -154,7 +156,7 @@ Respond ONLY with a valid JSON object matching:
             )
             return res.get("equations", [])
         except Exception as e:
-            print(f"[WARN] Equation extraction failed: {e}")
+            log.warning(f"[WARN] Equation extraction failed: {e}")
             return []
 
     def generate_pytorch_code(self, paper_text: str, paper_title: str) -> list:
@@ -185,7 +187,7 @@ Respond ONLY with a valid JSON object matching:
             )
             return res.get("snippets", [])
         except Exception as e:
-            print(f"[WARN] PyTorch code generation failed: {e}")
+            log.warning(f"[WARN] PyTorch code generation failed: {e}")
             return []
 
 

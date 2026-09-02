@@ -85,33 +85,13 @@ export async function processPaperStream(
 
     if (finalPayload) {
       const result = transformBackendPayloadToPaperData(finalPayload, url, file?.name);
-      if (fileBlobUrl) {
-        result.metadata.fileBlobUrl = fileBlobUrl;
-        result.metadata.pdfUrl = fileBlobUrl;
-      }
+      if (fileBlobUrl) { result.metadata.fileBlobUrl = fileBlobUrl; result.metadata.pdfUrl = fileBlobUrl; }
       return result;
     }
-  } catch (err) {
-    console.warn('[Pipeline] Backend stream error, using fallback:', err);
-  }
-
-  // Graceful fallback with progressive stages
-  onProgress?.({ stage: 'extracting', message: 'Extracting paper structure and metadata...' });
-  await new Promise((r) => setTimeout(r, 600));
-
-  onProgress?.({ stage: 'explaining', message: 'Generating structured executive brief and specs...' });
-  await new Promise((r) => setTimeout(r, 600));
-
-  onProgress?.({ stage: 'diagramming', message: 'Compiling 3D scene graph & tensor matrix highways...' });
-  await new Promise((r) => setTimeout(r, 600));
-
+  } catch (err) { console.warn('[Pipeline] Backend stream error, using fallback:', err); }
   const paperTitle = file ? file.name.replace(/\.pdf$/i, '') : url || 'Research Paper';
   const paper = generateDynamicPaperData(paperTitle, url);
-  if (fileBlobUrl) {
-    paper.metadata.fileBlobUrl = fileBlobUrl;
-    paper.metadata.pdfUrl = fileBlobUrl;
-  }
-
+  if (fileBlobUrl) { paper.metadata.fileBlobUrl = fileBlobUrl; paper.metadata.pdfUrl = fileBlobUrl; setTimeout(()=>URL.revokeObjectURL(fileBlobUrl), 60000); }
   onProgress?.({ stage: 'done', message: 'Complete', data: paper });
   return paper;
 }

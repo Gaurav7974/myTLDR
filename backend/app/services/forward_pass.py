@@ -4,6 +4,8 @@ import json
 import re
 from typing import Dict, Any, List
 from app.core.config import settings
+from app.core.logger import get_logger
+log = get_logger(__name__)
 from app.services.llm import groq_client
 
 BYCROFT_EXTRACTION_SYSTEM_PROMPT = """You are a world-class AI researcher and neural network architecture visualizer.
@@ -64,7 +66,7 @@ Extract the full sequential 3D Bycroft architecture pipeline JSON adhering stric
             # Compute 3D Spatial Layout
             return self._compute_spatial_layout(raw_data)
         except Exception as e:
-            print(f"[ERROR] Bycroft 3D architecture extraction failed: {e}")
+            log.error(f"[ERROR] Bycroft 3D architecture extraction failed: {e}", exc_info=True)
             return self._generate_fallback_3d_pipeline(model_title)
 
     def _compute_spatial_layout(self, data: Dict[str, Any]) -> Dict[str, Any]:
