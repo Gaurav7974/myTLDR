@@ -170,14 +170,9 @@ export default function ArchitectureDiagram({
   const positioned = useMemo(() => {
     if (isFigureMode) {
       const m = new Map<string, PositionedNode>();
-      const layer = 0;
       nodes.forEach((n) => {
         const p = figureNodePosition(n);
-        if (p) {
-          m.set(n.id, {
-            id: n.id, x: p.x, y: p.y, layer, index: 0, source: "figure",
-          });
-        }
+        if (p) m.set(n.id, { id: n.id, x: p.x, y: p.y, w: p.w, h: p.h, layer: 0, index: 0, source: "figure" });
       });
       if (m.size > 0) return m;
       // fall through to auto if figure positions were all missing
@@ -191,14 +186,13 @@ export default function ArchitectureDiagram({
     return nodes.filter((n) => !positioned.has(n.id));
   }, [nodes, positioned]);
 
-  // Canvas dimensions
+  // Canvas dimensions — use actual w/h per bbox in figure mode
   const { canvasW, canvasH } = useMemo(() => {
     if (positioned.size === 0) return { canvasW: 800, canvasH: 400 };
-    let maxX = 0;
-    let maxY = 0;
-    positioned.forEach((p) => {
-      maxX = Math.max(maxX, p.x + NODE_W);
-      maxY = Math.max(maxY, p.y + NODE_H);
+    let maxX = 0, maxY = 0;
+    positioned.forEach((p: any) => {
+      maxX = Math.max(maxX, p.x + (p.w || NODE_W));
+      maxY = Math.max(maxY, p.y + (p.h || NODE_H));
     });
     if (isFigureMode) {
       maxX = Math.max(maxX, FIGURE_CANVAS_W);
@@ -433,95 +427,43 @@ export default function ArchitectureDiagram({
               );
             })}
 
-            {/* Nodes */}
+            {/* Nodes — shape-faithful: rect/ellipse/diamond/cylinder/parallelogram/trapezoid per original */}
             {nodes.map((node) => {
               const pos = positioned.get(node.id);
-              if (!pos) return null;  // skip nodes without layout (figure mode missing bbox)
-              // Style resolution: explicit fill/border > taxonomy > default
+              if (!pos) return null;
               const colors = getNodeColors(node.type);
               const fill = node.style?.fill || colors.bg;
               const border = node.style?.border || colors.border;
               const textColor = node.style?.text || colors.text;
               const isSelected = selectedId === node.id;
               const isHovered = hoveredId === node.id;
-              const isConnected =
-                selectedId &&
-                edges.some(
-                  (e) =>
-                    (e.source === selectedId && e.target === node.id) ||
-                    (e.target === selectedId && e.source === node.id)
-                );
+              const isConnected = selectedId && edges.some((e) => (e.source === selectedId && e.target === node.id) || (e.target === selectedId && e.source === node.id));
+              const w = (pos as any).w || NODE_W, h = (pos as any).h || NODE_H;
+              const shape = (node.shape || node.style?.shape || "rounded") as string;
+              const stroke = isSelected ? "#3b82f6" : border, sw = isSelected ? 2 : 1;
+              const dim = selectedId && !isSelected && !isConnected ? 0.35 : 1;
+
+              const shapeEl = (() => {
+                const p = { fill, stroke, strokeWidth: sw, opacity: dim, className: "transition-all duration-150" } as any;
+                if (shape === "ellipse") return <ellipse cx={w/2} cy={h/2} rx={w/2} ry={h/2} {...p} />;
+                if (shape === "diamond") return <polygon points={`${w/2},0 ${w},${h/2} ${w/2},${h} 0,${h/2}`} {...p} />;
+                if (shape === "parallelogram") { const o=w*0.15; return <polygon points={`${o},0 ${w},0 ${w-o},${h} 0,${h}`} {...p} />; }
+                if (shape === "trapezoid") { const o=w*0.2; return <polygon points={`${o},0 ${w-o},0 ${w},${h} 0,${h}`} {...p} />; }
+                if (shape === "cylinder") return <g opacity={dim}><rect width={w} height={h} rx={6} {...p} /><ellipse cx={w/2} cy={6} rx={w/2-1} ry={6} fill={fill} stroke={border} strokeWidth={1} opacity={0.6} /></g>;
+                const rx = shape === "rect" ? 2 : 8;
+                return <rect width={w} height={h} rx={rx} {...p} />;
+              })();
 
               return (
-                <g
-                  key={node.id}
-                  data-node
-                  data-node-id={node.id}
-                  data-node-type={node.type}
-                  data-source={pos.source}
-                  transform={`translate(${pos.x}, ${pos.y})`}
-                  className="cursor-pointer"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedId(isSelected ? null : node.id);
-                    onNodeClick?.(node);
-                  }}
-                  onMouseEnter={() => setHoveredId(node.id)}
-                  onMouseLeave={() => setHoveredId(null)}
-                >
-                  {(isHovered || isSelected) && (
-                    <rect
-                      x={-2}
-                      y={-2}
-                      width={NODE_W + 4}
-                      height={NODE_H + 4}
-                      rx={10}
-                      fill="none"
-                      stroke={isSelected ? "#3b82f6" : "#94a3b8"}
-                      strokeWidth={isSelected ? 2 : 1}
-                      opacity={0.5}
-                    />
-                  )}
-                  <rect
-                    width={NODE_W}
-                    height={NODE_H}
-                    rx={8}
-                    fill={fill}
-                    stroke={isSelected ? "#3b82f6" : border}
-                    strokeWidth={isSelected ? 2 : 1}
-                    opacity={selectedId && !isSelected && !isConnected ? 0.35 : 1}
-                    className="transition-all duration-150"
-                  />
-                  <rect
-                    width={3}
-                    height={NODE_H - 12}
-                    x={6}
-                    y={6}
-                    rx={1.5}
-                    fill={border}
-                    opacity={0.6}
-                  />
-                  <text
-                    x={NODE_W / 2 + 4}
-                    y={NODE_H / 2 - 2}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    className="text-[12px] font-medium pointer-events-none select-none"
-                    fill={textColor}
-                  >
-                    {node.label.length > 20
-                      ? node.label.slice(0, 20) + "…"
-                      : node.label}
+                <g key={node.id} data-node data-node-id={node.id} transform={`translate(${pos.x}, ${pos.y})`} className="cursor-pointer"
+                  onClick={(e) => { e.stopPropagation(); setSelectedId(isSelected ? null : node.id); onNodeClick?.(node); }}
+                  onMouseEnter={() => setHoveredId(node.id)} onMouseLeave={() => setHoveredId(null)}>
+                  {(isHovered || isSelected) && <rect x={-2} y={-2} width={w+4} height={h+4} rx={10} fill="none" stroke={isSelected ? "#3b82f6" : "#94a3b8"} strokeWidth={sw} opacity={0.5} />}
+                  {shapeEl}
+                  <text x={w/2} y={h/2 - 4} textAnchor="middle" dominantBaseline="middle" className="text-[11px] font-medium pointer-events-none select-none" fill={textColor} opacity={dim}>
+                    {node.label.length > 18 ? node.label.slice(0, 18) + "…" : node.label}
                   </text>
-                  <text
-                    x={NODE_W / 2 + 4}
-                    y={NODE_H / 2 + 14}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    className="text-[9px] pointer-events-none select-none uppercase tracking-wider"
-                    fill={textColor}
-                    opacity={0.5}
-                  >
+                  <text x={w/2} y={h/2 + 10} textAnchor="middle" dominantBaseline="middle" className="text-[8px] pointer-events-none select-none uppercase tracking-wider" fill={textColor} opacity={0.45}>
                     {node.type}
                   </text>
                 </g>

@@ -29,8 +29,14 @@ assets/
 # Railway deploy config (environment-specific)
 railway.toml
 
-# Test artifacts
+# Test artifacts & logs
 .playwright-mcp/
+test/
+tests/
+logs/
+backend/logs/
+backend/app/logs/
+tmp/
 
 # OS & Editor files
 .DS_Store

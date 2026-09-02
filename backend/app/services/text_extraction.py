@@ -95,25 +95,33 @@ class TextExtractor:
         if not result.figures:
             try:
                 doc2 = pymupdf.open(stream=pdf_bytes, filetype="pdf")
-                # Harvest embedded images with bbox (figure-accurate) before whole-page fallback
+                # Harvest every raster XObject, always (cap 60 safety, not 5)
                 for i, pg in enumerate(doc2):
-                    if len(result.figures) >= 5: break
+                    if len(result.figures) >= 60: break
                     for img in pg.get_images(full=True):
+                        if len(result.figures) >= 60: break
                         try:
                             xref = img[0]
-                            for inst in pg.get_drawings(): pass  # ensure bbox cache
                             bbox = pg.get_image_bbox(img)
                             if not bbox: continue
                             if len(b64:=base64.b64encode(pg.get_pixmap(clip=bbox, dpi=150).tobytes("png")).decode()) > settings.MAX_INLINE_IMAGE_KB*1024: continue
                             result.figures.append(Figure(id=f"fig-{i+1}-{xref}", page=i+1, base64=b64, caption=f"Figure {len(result.figures)+1} p{i+1}"))
-                            if len(result.figures) >= 5: break
                         except Exception: continue
-                # If still none, render whole pages — flagged as fallback
+                # General vector fallback: no raster but page has drawings/text → render crop around shape-dense region
                 if not result.figures:
                     for i, pg in enumerate(doc2):
-                        if i >= 3: break
-                        b64 = base64.b64encode(pg.get_pixmap(dpi=120).tobytes("png")).decode()
-                        result.figures.append(Figure(id=f"page-{i+1}-render", page=i+1, base64=b64, caption=f"Page {i+1} render", is_whole_page_fallback=True))
+                        if len(result.figures) >= 60: break
+                        drawings, text_len = len(pg.get_drawings()), len(pg.get_text().strip())
+                        if drawings == 0 and text_len < 200: continue
+                        # Coarse crop: shape-dense region (where drawings cluster) vs text
+                        try:
+                            # Use whole page for now; page-level classifier (step 2) will filter which page holds diagram
+                            b64 = base64.b64encode(pg.get_pixmap(dpi=120).tobytes("png")).decode()
+                            # Heuristic: high drawings + moderate text suggests diagram page
+                            is_diagram_page = drawings > 5 or (drawings > 0 and text_len < 2000)
+                            if is_diagram_page or i < 5:  # keep first 5 vector pages as candidates
+                                result.figures.append(Figure(id=f"page-{i+1}-render", page=i+1, base64=b64, caption=f"Page {i+1} render", is_whole_page_fallback=True))
+                        except Exception: continue
                 doc2.close()
             except Exception as e: log.warning(f"[WARN] pixmap fallback failed: {e}")
         return result

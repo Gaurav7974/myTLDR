@@ -22,6 +22,8 @@ export interface PositionedNode {
   id: string;
   x: number;
   y: number;
+  w: number;
+  h: number;
   layer: number;
   index: number;
   source: "auto" | "figure" | "missing";
@@ -122,6 +124,8 @@ export function computeAutoLayout(
         index: nodeIdx,
         x: PADDING + layerIdx * LAYER_GAP,
         y: PADDING + nodeIdx * (NODE_H_DEFAULT + NODE_GAP),
+        w: NODE_W_DEFAULT,
+        h: NODE_H_DEFAULT,
         source: "auto",
       });
     });
@@ -135,12 +139,9 @@ export function positionNodesFigure(
 ): Map<string, PositionedNode> {
   if (isFigureMode) {
     const m = new Map<string, PositionedNode>();
-    const layer = 0;
     nodes.forEach((n) => {
       const p = figureNodePosition(n);
-      if (p) {
-        m.set(n.id, { id: n.id, x: p.x, y: p.y, layer, index: 0, source: "figure" });
-      }
+      if (p) m.set(n.id, { id: n.id, x: p.x, y: p.y, w: p.w, h: p.h, layer: 0, index: 0, source: "figure" });
     });
     if (m.size > 0) return m;
   }

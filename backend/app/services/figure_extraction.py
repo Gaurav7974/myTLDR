@@ -239,6 +239,35 @@ def is_verified_vision_graph(graph: ArchitectureGraph | None) -> bool:
     return True
 
 
+def classify_candidates(figures, paper_title: str = "") -> list[dict]:
+    """Cheap per-candidate vision classifier: architecture_diagram | other + confidence. No new dep."""
+    if not figures or not settings.VISION_API_KEY: return []
+    out=[]
+    for fig in figures:
+        if not fig.base64: continue
+        img_url = f"data:image/png;base64,{fig.base64}" if not fig.base64.startswith("data:") else fig.base64
+        msgs=[{"role":"system","content":"You are an image classifier."},{"role":"user","content":[{"type":"text","text":"Is this image an architecture/model diagram, or something else (chart, plot, table, photo)? Respond ONLY with valid JSON: {\"label\": \"architecture_diagram\" | \"other\", \"confidence\": 0.0-1.0}"},{"type":"image_url","image_url":{"url":img_url}}]}]
+        try:
+            t0=time.time()
+            raw=FigureExtractor()._call_and_parse(msgs)  # reuse retry/timeout logic via new instance
+            # _call_and_parse expects vision prompt shape but works for classifier too
+            label, conf = raw.get("label"), float(raw.get("confidence",0.0) or 0.0)
+            if label not in ("architecture_diagram","other"): label="other"
+            out.append({"figure":fig,"label":label,"confidence":conf,"time":time.time()-t0})
+            log.info(f"classify {fig.id} p{fig.page} -> {label} {conf:.2f}")
+        except Exception as e: log.warning(f"classify {fig.id} failed: {e}"); out.append({"figure":fig,"label":"other","confidence":0.0})
+    # Log distribution
+    try: log.info(f"classify distribution: {','.join(f'{x['confidence']:.2f}' for x in out)}")
+    except Exception: pass
+    return out
+
+def pick_architecture_figure_classifier(figures, paper_title: str = ""):
+    """Replace caption keyword scoring with classifier for every paper, no exceptions."""
+    cands = classify_candidates(figures, paper_title)
+    arch = [c for c in cands if c["label"]=="architecture_diagram"]
+    if arch: return max(arch, key=lambda x: x["confidence"])["figure"]
+    return None
+
 # ── Extractor ────────────────────────────────────────────────────────
 class FigureExtractor:
     """Extracts and verifies an ArchitectureGraph from a single paper figure."""

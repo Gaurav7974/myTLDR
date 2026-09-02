@@ -15,6 +15,7 @@ from app.services.ir_extraction import ir_extractor
 from app.services.figure_extraction import (
     figure_extractor,
     is_verified_vision_graph,
+    pick_architecture_figure_classifier,
 )
 from app.services.graph_merge import (
     merge_graph_metadata,
@@ -142,8 +143,12 @@ async def process_paper(
         return
     
     yield {"stage": "explaining", "message": f"Generating explanation & architecture for {paper_title[:40]}..."}
-    # Single parallel batch: all independent LLM calls together (was sequential Group A→B, wasted 60s)
-    arch_figure = _pick_architecture_figure(figures) if cached_graph is None else None
+    arch_figure = None
+    if cached_graph is None and figures:
+        try: arch_figure = await asyncio.to_thread(pick_architecture_figure_classifier, figures, paper_title)
+        except Exception as e: log.warning(f"classifier pick failed: {e}"); arch_figure = _pick_architecture_figure(figures)
+        if not arch_figure: arch_figure = _pick_architecture_figure(figures)  # fallback to keyword
+    # Single parallel batch: all independent LLM calls together
     tasks = {}
     if not cached_explanation: tasks["expl"] = asyncio.to_thread(explanation_service.generate, full_text, difficulty)
     tasks["eq"] = asyncio.to_thread(explanation_service.extract_equations, full_text)
