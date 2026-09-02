@@ -19,22 +19,20 @@ bearer_auth = HTTPBearer(auto_error=False)
 def get_rate_limit_key(request: Request) -> str:
     """
     Extract rate limiting key:
-    If a valid API key is present, rate limit per API key.
-    Otherwise, rate limit per client IP (respecting X-Forwarded-For from Vercel).
+    If a valid API key is present, rate limit per hashed API key.
+    Otherwise, rate limit per client IP.
     """
+    import hashlib as _hash
     api_key = request.headers.get("X-API-Key")
     if not api_key:
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
             api_key = auth_header[7:].strip()
 
-    if api_key and (api_key == settings.MASTER_API_KEY or api_key in settings.API_KEYS):
-        return f"apikey:{api_key}"
-
-    # Prefer real client IP from Vercel proxy
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    if api_key and settings.MASTER_API_KEY and api_key == settings.MASTER_API_KEY:
+        return f"apikey:{_hash.sha256(api_key.encode()).hexdigest()[:12]}"
+    if api_key and api_key in settings.API_KEYS:
+        return f"apikey:{_hash.sha256(api_key.encode()).hexdigest()[:12]}"
 
     return get_remote_address(request)
 
@@ -58,7 +56,9 @@ def verify_api_key(
     if not key:
         return None
 
-    if key == settings.MASTER_API_KEY or key in settings.API_KEYS:
+    if settings.MASTER_API_KEY and key == settings.MASTER_API_KEY:
+        return key
+    if key in settings.API_KEYS:
         return key
 
     raise HTTPException(

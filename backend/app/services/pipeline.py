@@ -169,8 +169,8 @@ async def process_paper(
     if scene_graph is None:
         from app.models.architecture_ir import SceneGraph3D; scene_graph = SceneGraph3D(nodes_3d=[], edges_3d=[])
     if canonical_ir is None:
-        from app.models.architecture_ir import ArchitectureIR, ArchitectureMetadataIR
-        canonical_ir = ArchitectureIR(version="1.0", architecture=ArchitectureMetadataIR(name=paper_title, paradigm="other"), nodes=[], edges=[])
+        from app.models.architecture_ir import ArchitectureIR, ArchitectureMetadata
+        canonical_ir = ArchitectureIR(version="1.0", architecture=ArchitectureMetadata(name=paper_title, paradigm="other"), nodes=[], edges=[])
     bycroft_data = _ok("bycroft") or {}
     text_graph, vision_graph = _ok("tgraph"), _ok("vgraph")
     # Parallel verification (both independent, were sequential)
@@ -297,6 +297,9 @@ def _pick_architecture_figure(figures) -> object | None:
     best, best_score = None, 0
     for fig in figures:
         cap = (getattr(fig, "caption", None) or "").lower()
+        if not cap:
+            continue
         score = (3 if "architecture" in cap else 0) + (2 if "model" in cap else 0) + (2 if any(k in cap for k in ("overview","framework","network","pipeline","diagram","transformer","attention","block")) else 0) + (1 if "figure" in cap or "fig" in cap else 0) - (1 if getattr(fig, "page", 1) <= 1 else 0)
         if score > best_score: best, best_score = fig, score
-    return best or (sorted(figures, key=lambda f: getattr(f, "page", 99))[0] if figures and getattr(figures[0], "page", 1) > 1 else figures[0] if figures else None)
+    # Only return if any caption clears the threshold (>0); otherwise fall back to None so vision path is skipped
+    return best

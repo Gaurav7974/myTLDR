@@ -24,6 +24,17 @@ async def init_db():
 
 async def get_db() -> AsyncSession:
     async with async_session() as session:
-        try: yield session
-        except Exception as e: log.error(f"DB session error: {e}", exc_info=True); raise
-        finally: pass
+        try:
+            yield session
+        except Exception as e:
+            try:
+                await session.rollback()
+            except Exception:
+                pass
+            log.error(f"DB session error: {e}", exc_info=True)
+            raise
+        finally:
+            try:
+                await session.close()
+            except Exception:
+                pass

@@ -21,6 +21,8 @@ class ChatRequest(BaseModel):
     history: Optional[List[Dict[str, str]]] = None
     difficulty: Optional[str] = "intermediate"
 
+VALID_DIFFICULTIES = {"beginner", "intermediate", "expert"}
+
 
 class CitationItem(BaseModel):
     section_title: str
@@ -48,6 +50,8 @@ async def chat_with_paper(
     """
     if not req.query or not req.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
+    if req.difficulty and req.difficulty not in VALID_DIFFICULTIES:
+        raise HTTPException(status_code=400, detail=f"Invalid difficulty: {req.difficulty}")
 
     # Sanitize paper hash/id if formatted like arXiv ID
     clean_hash = req.paper_hash

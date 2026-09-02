@@ -406,24 +406,33 @@ class FigureExtractor:
                     continue
                 resp.raise_for_status()
                 content = resp.json()["choices"][0]["message"]["content"]
-                # Persist raw LLM output for debugging (B.6)
-                try:
-                    import os, pathlib
-                    raw_dir = pathlib.Path(__file__).parent.parent / "logs" / "vision_raw"
-                    raw_dir.mkdir(parents=True, exist_ok=True)
-                    prefix = "verify" if is_verification else "extract"
-                    (raw_dir / f"{prefix}_{int(time.time())}.json").write_text(content, encoding="utf-8")
-                    log.info(f"vision raw persisted: {prefix} {len(content)} chars")
-                except Exception: pass
+                # Debug dump only when DEBUG=true (avoid unbounded disk writes)
+                if settings.DEBUG:
+                    try:
+                        import pathlib
+                        raw_dir = pathlib.Path(__file__).parent.parent / "logs" / "vision_raw"
+                        raw_dir.mkdir(parents=True, exist_ok=True)
+                        prefix = "verify" if is_verification else "extract"
+                        (raw_dir / f"{prefix}_{int(time.time())}.json").write_text(content, encoding="utf-8")
+                    except Exception:
+                        pass
                 data = json.loads(content)
                 if not isinstance(data, dict):
                     raise ValueError(f"vision reply was not a JSON object: {type(data).__name__}")
                 return data
-            except (requests.exceptions.RequestException, ValueError, KeyError) as e:
+            except requests.exceptions.RequestException as e:
                 last_err = e
+                # Only retry transient HTTP errors, not JSON validation
+                status = getattr(getattr(e, "response", None), "status_code", None)
+                if status not in (429, 502, 503, 504) and not isinstance(e, requests.exceptions.ConnectionError):
+                    break
                 if attempt < settings.LLM_MAX_RETRIES - 1:
                     time.sleep(settings.LLM_RETRY_BACKOFF_BASE * (attempt + 1))
                     continue
+                break
+            except (ValueError, KeyError) as e:
+                # Malformed JSON / schema — do not retry
+                last_err = e
                 break
         raise RuntimeError(
             f"vision {'verification' if is_verification else 'extraction'} failed: {last_err}"

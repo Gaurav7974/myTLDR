@@ -1,5 +1,6 @@
 """SSE streaming endpoint with rate limiting and security."""
 
+import asyncio
 import json
 from typing import Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Request
@@ -11,6 +12,8 @@ from app.core.security import limiter, sanitize_arxiv_id, validate_and_sanitize_
 from app.core.logger import get_logger
 from app.services.pipeline import process_paper
 log = get_logger(__name__)
+
+VALID_DIFFICULTIES = {"beginner", "intermediate", "expert"}
 
 router = APIRouter()
 
@@ -30,22 +33,33 @@ async def stream_paper(
     Stream paper processing results via SSE.
     Rate limited by IP/API Key, protected against SSRF & malicious input.
     """
-    # Sanitize inputs
+    if difficulty_level not in VALID_DIFFICULTIES:
+        raise HTTPException(status_code=400, detail=f"Invalid difficulty_level: {difficulty_level}")
+    if source not in ("upload", "url", "arxiv"):
+        raise HTTPException(status_code=400, detail=f"Unknown source: {source}")
+
+    # Sanitize inputs — DNS validation offloaded to threadpool to avoid blocking loop
     sanitized_url = url
     if source == "arxiv" and url:
         sanitized_url = sanitize_arxiv_id(url)
     elif source == "url" and url:
-        sanitized_url = validate_and_sanitize_url(url)
+        sanitized_url = await asyncio.to_thread(validate_and_sanitize_url, url)
 
+    # Stream file with incremental cap (avoid loading 1GB into memory)
     file_bytes = None
     if file:
-        file_bytes = await file.read()
         max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
-        if len(file_bytes) > max_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large (max {settings.MAX_UPLOAD_SIZE_MB}MB)"
-            )
+        chunks = []
+        total = 0
+        while True:
+            chunk = await file.read(65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                raise HTTPException(status_code=413, detail=f"File too large (max {settings.MAX_UPLOAD_SIZE_MB}MB)")
+            chunks.append(chunk)
+        file_bytes = b"".join(chunks) if chunks else None
     
     log.info(f"stream start source={source} difficulty={difficulty_level} url={sanitized_url} file={bool(file_bytes)}")
     async def event_generator():
@@ -57,7 +71,8 @@ async def stream_paper(
             log.info("stream done")
         except Exception as e:
             log.error(f"stream pipeline error: {e}", exc_info=True)
-            yield f"data: {json.dumps({'stage':'error','message':str(e)})}\n\n"
+            # never leak internal details to client
+            yield f"data: {json.dumps({'stage':'error','message':'Processing failed. Please retry.'})}\n\n"
     
     return StreamingResponse(
         event_generator(),

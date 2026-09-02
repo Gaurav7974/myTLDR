@@ -278,32 +278,38 @@ class TextExtractor:
         return captions
     
     def download_pdf(self, url: str) -> bytes:
-        """Download PDF from URL with strict SSRF defense and byte threshold."""
+        """Download PDF from URL with SSRF-safe redirect handling and byte cap."""
         safe_url = validate_and_sanitize_url(url)
         max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
-
-        resp = requests.get(
-            safe_url,
-            timeout=30,
-            stream=True,
-            headers={"User-Agent": settings.ARXIV_USER_AGENT}
-        )
-        resp.raise_for_status()
-
-        # Check content-length header if provided
-        cl = resp.headers.get("Content-Length")
-        if cl and int(cl) > max_bytes:
-            raise ValueError(f"File exceeds maximum allowed size ({settings.MAX_UPLOAD_SIZE_MB}MB)")
-
-        # Stream chunks safely
-        content = bytearray()
-        for chunk in resp.iter_content(chunk_size=65536):
-            if chunk:
-                content.extend(chunk)
-                if len(content) > max_bytes:
-                    raise ValueError(f"File exceeds maximum allowed size ({settings.MAX_UPLOAD_SIZE_MB}MB)")
-
-        return bytes(content)
+        # Do not auto-follow redirects — validate each Location header
+        current_url = safe_url
+        for _ in range(5):  # max redirects
+            resp = requests.get(
+                current_url,
+                timeout=30,
+                stream=True,
+                allow_redirects=False,
+                headers={"User-Agent": settings.ARXIV_USER_AGENT}
+            )
+            if resp.status_code in (301, 302, 303, 307, 308):
+                loc = resp.headers.get("Location")
+                if not loc:
+                    resp.raise_for_status()
+                # Validate redirect target
+                current_url = validate_and_sanitize_url(loc)
+                continue
+            resp.raise_for_status()
+            cl = resp.headers.get("Content-Length")
+            if cl and int(cl) > max_bytes:
+                raise ValueError(f"File exceeds maximum allowed size ({settings.MAX_UPLOAD_SIZE_MB}MB)")
+            content = bytearray()
+            for chunk in resp.iter_content(chunk_size=65536):
+                if chunk:
+                    content.extend(chunk)
+                    if len(content) > max_bytes:
+                        raise ValueError(f"File exceeds maximum allowed size ({settings.MAX_UPLOAD_SIZE_MB}MB)")
+            return bytes(content)
+        raise ValueError("Too many redirects")
     
     def download_arxiv_pdf(self, arxiv_id: str) -> bytes:
         """Download PDF from arXiv with canonical ID sanitization and rate limiting."""
@@ -324,7 +330,7 @@ class TextExtractor:
         return self._parse_arxiv_xml(resp.text)
     
     def _rate_limit_arxiv(self):
-        """Enforce rate limiting for arXiv API."""
+        """Enforce rate limiting for arXiv API (sync — caller must be in to_thread)."""
         elapsed = time.time() - self._last_arxiv_call
         if elapsed < settings.ARXIV_RATE_LIMIT_SECONDS:
             time.sleep(settings.ARXIV_RATE_LIMIT_SECONDS - elapsed)

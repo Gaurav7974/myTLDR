@@ -1,5 +1,6 @@
 """Submit endpoint with rate limiting and security."""
 
+import asyncio
 from typing import Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +9,8 @@ from app.core.config import settings
 from app.core.security import limiter, sanitize_arxiv_id, validate_and_sanitize_url, verify_api_key
 from app.core.logger import get_logger
 log = get_logger(__name__)
+
+VALID_DIFFICULTIES = {"beginner", "intermediate", "expert"}
 
 router = APIRouter()
 
@@ -24,21 +27,23 @@ async def submit_paper(
     db: AsyncSession = Depends(get_db)
 ):
     """Submit a paper for validation and processing."""
-    
+    if difficulty_level not in VALID_DIFFICULTIES:
+        raise HTTPException(status_code=400, detail=f"Invalid difficulty_level: {difficulty_level}")
+
     if source == "upload":
         if not file:
             raise HTTPException(status_code=400, detail="No file provided")
-        
-        contents = await file.read()
         max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
-        if len(contents) > max_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large (max {settings.MAX_UPLOAD_SIZE_MB}MB)"
-            )
-        
+        total = 0
+        while True:
+            chunk = await file.read(65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                raise HTTPException(status_code=413, detail=f"File too large (max {settings.MAX_UPLOAD_SIZE_MB}MB)")
         return {"status": "received", "source": "upload", "filename": file.filename}
-    
+
     elif source == "arxiv":
         if not url:
             raise HTTPException(status_code=400, detail="No arXiv ID or URL provided")
@@ -48,8 +53,8 @@ async def submit_paper(
     elif source == "url":
         if not url:
             raise HTTPException(status_code=400, detail="No URL provided")
-        safe_url = validate_and_sanitize_url(url)
+        safe_url = await asyncio.to_thread(validate_and_sanitize_url, url)
         return {"status": "received", "source": "url", "url": safe_url}
-    
+
     else:
         raise HTTPException(status_code=400, detail=f"Unknown source: {source}")

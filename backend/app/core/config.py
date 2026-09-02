@@ -14,11 +14,16 @@ class Settings:
     APP_NAME: str = "AI Research Paper Platform"
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
     
-    # Security & API Keys
-    MASTER_API_KEY: str = os.getenv("MASTER_API_KEY", "mytldr_secret_key_prod_2026")
+    # Security & API Keys — fail closed in production
+    MASTER_API_KEY: str | None = os.getenv("MASTER_API_KEY") or None
     API_KEYS: Set[str] = {
         k.strip() for k in os.getenv("API_KEYS", "").split(",") if k.strip()
     }
+
+    def require_master_key(self) -> str | None:
+        if not self.MASTER_API_KEY and not self.DEBUG:
+            raise RuntimeError("MASTER_API_KEY must be set in production (DEBUG=false)")
+        return self.MASTER_API_KEY
     
     # Rate Limiting (SlowAPI format)
     RATE_LIMIT_DEFAULT: str = os.getenv("RATE_LIMIT_DEFAULT", "60/minute")

@@ -48,3 +48,10 @@ Thumbs.db
 architecture.html
 summary_reference.txt
 test.md
+
+# Local context / audit docs (not for repo)
+CONTEXT.md
+improve-codebase.md
+
+# Hardening regression tests (local verification only, not for public repo)
+backend/tests/test_hardening.py

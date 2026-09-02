@@ -24,10 +24,20 @@ def compute_content_hash(text: str) -> str:
     return hashlib.sha256(normalized.encode()).hexdigest()
 
 
-# Fast in-memory caches
-_IN_MEMORY_EXPLANATIONS = {}
-_IN_MEMORY_GRAPHS = {}
-_IN_MEMORY_PARSED_TEXT = {}
+# Bounded in-memory caches — Postgres is source of truth
+try:
+    from cachetools import LRUCache as _LRUCache  # type: ignore[import-untyped]
+except ImportError:
+    _LRUCache = None  # type: ignore[assignment]
+
+def _make_cache(maxsize: int):
+    if _LRUCache is not None:
+        return _LRUCache(maxsize=maxsize)
+    return {}
+
+_IN_MEMORY_EXPLANATIONS = _make_cache(200)
+_IN_MEMORY_GRAPHS = _make_cache(100)
+_IN_MEMORY_PARSED_TEXT = _make_cache(100)
 
 
 def _downgrade_legacy_graph(graph_json: dict | None) -> dict | None:
@@ -114,27 +124,70 @@ class CacheService:
         if isinstance(payload, dict):
             payload = dict(payload); payload.setdefault("version", GRAPH_PAYLOAD_VERSION)
             if payload.get("layout_mode") == "figure" and not _is_rich_figure_graph(payload): payload["layout_mode"] = "auto"; payload["source"] = payload.get("source") or "legacy"
-        _IN_MEMORY_GRAPHS[content_hash] = payload
-        try: db.add(GraphCache(content_hash=content_hash, graph_json=payload, diagram_available=diagram_available)); await db.commit(); return
-        except Exception:
+        # Try request-scoped session first, then own session with upsert
+        try:
+            db.add(GraphCache(content_hash=content_hash, graph_json=payload, diagram_available=diagram_available))
+            await db.commit()
+            _IN_MEMORY_GRAPHS[content_hash] = payload  # only after commit
+            return
+        except Exception as e:
             try: await db.rollback()
             except Exception: pass
+            # Unique violation → upsert path
+            log.warning(f"store_graph request session failed: {e}")
         try:
             from app.core.database import async_session
-            async with async_session() as s: s.add(GraphCache(content_hash=content_hash, graph_json=payload, diagram_available=diagram_available)); await s.commit()
-        except Exception: pass
-    
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            async with async_session() as s:
+                # Use pg upsert if available, else try add
+                try:
+                    stmt = pg_insert(GraphCache).values(content_hash=content_hash, graph_json=payload, diagram_available=diagram_available).on_conflict_do_nothing(index_elements=["content_hash"])
+                    await s.execute(stmt)
+                    await s.commit()
+                except Exception:
+                    await s.rollback()
+                    # fallback for SQLite
+                    try:
+                        s.add(GraphCache(content_hash=content_hash, graph_json=payload, diagram_available=diagram_available))
+                        await s.commit()
+                    except Exception:
+                        await s.rollback()
+                        raise
+                _IN_MEMORY_GRAPHS[content_hash] = payload
+        except Exception as e:
+            log.warning(f"store_graph own-session also failed: {e}")
+
     async def store_explanation(self, db: AsyncSession, content_hash: str, difficulty: str, explanation: dict | str):
         key = f"{content_hash}:{difficulty}"
-        _IN_MEMORY_EXPLANATIONS[key] = explanation
-        try: db.add(PaperCache(content_hash=content_hash, difficulty_level=difficulty, explanation=explanation if isinstance(explanation, str) else str(explanation), diagram_available=False)); await db.commit(); return
-        except Exception:
+        expl_str = explanation if isinstance(explanation, str) else str(explanation)
+        try:
+            db.add(PaperCache(content_hash=content_hash, difficulty_level=difficulty, explanation=expl_str, diagram_available=False))
+            await db.commit()
+            _IN_MEMORY_EXPLANATIONS[key] = explanation
+            return
+        except Exception as e:
             try: await db.rollback()
             except Exception: pass
+            log.warning(f"store_explanation request session failed: {e}")
         try:
             from app.core.database import async_session
-            async with async_session() as s: s.add(PaperCache(content_hash=content_hash, difficulty_level=difficulty, explanation=explanation if isinstance(explanation, str) else str(explanation), diagram_available=False)); await s.commit()
-        except Exception: pass
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            async with async_session() as s:
+                try:
+                    stmt = pg_insert(PaperCache).values(content_hash=content_hash, difficulty_level=difficulty, explanation=expl_str, diagram_available=False).on_conflict_do_nothing(index_elements=["content_hash", "difficulty_level"])
+                    await s.execute(stmt)
+                    await s.commit()
+                except Exception:
+                    await s.rollback()
+                    try:
+                        s.add(PaperCache(content_hash=content_hash, difficulty_level=difficulty, explanation=expl_str, diagram_available=False))
+                        await s.commit()
+                    except Exception:
+                        await s.rollback()
+                        raise
+                _IN_MEMORY_EXPLANATIONS[key] = explanation
+        except Exception as e:
+            log.warning(f"store_explanation own-session also failed: {e}")
 
     async def get_parsed_text(self, db: AsyncSession, content_hash: str) -> dict | None:
         """Look up cached parsed text (per-page structure) by content hash."""
@@ -155,15 +208,32 @@ class CacheService:
         if len(json.dumps(parsed, default=str)) > 16 * 1024 * 1024:
             log.warning("[WARN] Parsed text payload too large to cache; skipping")
             return
-        _IN_MEMORY_PARSED_TEXT[content_hash] = parsed
-        try: db.add(ParsedTextCache(content_hash=content_hash, parsed_json=parsed)); await db.commit(); return
+        try:
+            db.add(ParsedTextCache(content_hash=content_hash, parsed_json=parsed))
+            await db.commit()
+            _IN_MEMORY_PARSED_TEXT[content_hash] = parsed
+            return
         except Exception as e:
             try: await db.rollback()
             except Exception: pass
             log.warning(f"[WARN] Failed to cache parsed text: {e}")
         try:
             from app.core.database import async_session
-            async with async_session() as s: s.add(ParsedTextCache(content_hash=content_hash, parsed_json=parsed)); await s.commit()
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            async with async_session() as s:
+                try:
+                    stmt = pg_insert(ParsedTextCache).values(content_hash=content_hash, parsed_json=parsed).on_conflict_do_nothing(index_elements=["content_hash"])
+                    await s.execute(stmt)
+                    await s.commit()
+                except Exception:
+                    await s.rollback()
+                    try:
+                        s.add(ParsedTextCache(content_hash=content_hash, parsed_json=parsed))
+                        await s.commit()
+                    except Exception:
+                        await s.rollback()
+                        raise
+                _IN_MEMORY_PARSED_TEXT[content_hash] = parsed
         except Exception as e: log.warning(f"[WARN] Own-session cache also failed: {e}")
 
 
