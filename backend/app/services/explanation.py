@@ -160,24 +160,22 @@ Respond ONLY with a valid JSON object matching:
             return []
 
     def generate_pytorch_code(self, paper_text: str, paper_title: str) -> list:
-        """Generate clean, executable PyTorch module implementing the paper's architecture."""
-        trimmed_text = paper_text[:settings.MAX_SECTION_CHARS]
-        prompt = f"""Generate a clean, standalone, well-commented PyTorch module implementing the key architecture for: "{paper_title}".
----
-Paper Architecture Excerpt:
-{trimmed_text}
----
+        """Generate minimal core nn.Module (80-120 lines), no training loop."""
+        trimmed_text = paper_text[:6000]  # smaller excerpt for concise code
+        prompt = f"""Generate ONLY the core PyTorch nn.Module classes for "{paper_title}" — no training loop, no DataLoader, no Trainer.
 
-Respond ONLY with a valid JSON object matching:
+Paper excerpt:
+{trimmed_text}
+
+Respond ONLY with JSON:
 {{
-  "snippets": [
-    {{
-      "title": "model_implementation.py",
-      "language": "python",
-      "code": "import torch\\nimport torch.nn as nn\\n\\nclass ProposedModel(nn.Module):\\n    def __init__(self):\\n        super().__init__()\\n    def forward(self, x):\\n        return x"
-    }}
-  ]
-}}"""
+  "snippets": [{{
+    "title": "model.py",
+    "language": "python",
+    "code": "import torch\\nimport torch.nn as nn\\n# 80-120 lines max\\nclass Block(nn.Module): ..."
+  }}]
+}}
+Rules: 80-120 lines max, only nn.Module + forward, well-commented, runnable."""
         try:
             res = groq_client.extract_json(
                 messages=[

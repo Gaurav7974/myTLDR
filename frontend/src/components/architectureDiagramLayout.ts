@@ -115,6 +115,7 @@ export function computeAutoLayout(
   }
   const remaining = nodes.filter((n) => !visited.has(n.id)).map((n) => n.id);
   if (remaining.length > 0) layers.push(remaining);
+  // Vertical stack per original (like Kimi html right stack), not horizontal BFS
   const positioned = new Map<string, PositionedNode>();
   layers.forEach((layer, layerIdx) => {
     layer.forEach((id, nodeIdx) => {
@@ -122,8 +123,8 @@ export function computeAutoLayout(
         id,
         layer: layerIdx,
         index: nodeIdx,
-        x: PADDING + layerIdx * LAYER_GAP,
-        y: PADDING + nodeIdx * (NODE_H_DEFAULT + NODE_GAP),
+        x: PADDING + nodeIdx * (NODE_W_DEFAULT + NODE_GAP),
+        y: PADDING + layerIdx * 88,
         w: NODE_W_DEFAULT,
         h: NODE_H_DEFAULT,
         source: "auto",

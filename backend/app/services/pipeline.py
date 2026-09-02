@@ -213,8 +213,12 @@ async def process_paper(
             graph = merge_graph_metadata(vision_graph, text_graph, prefer="vision") if text_verified and text_graph else vision_graph
             diagram_available, diagram_reason = True, "verified_vision"
         elif vision_graph and len(vision_graph.nodes) > 0:
-            # Unverified vision — show with amber badge (orthogonal to gate)
-            graph, diagram_available, diagram_reason = vision_graph, True, "unverified_vision"
+            # Unverified vision — enrich with text semantics for richer info card, show amber badge
+            if text_graph and len(text_graph.nodes) > 0:
+                try: graph = merge_graph_metadata(vision_graph, text_graph, prefer="vision")
+                except Exception: graph = vision_graph
+            else: graph = vision_graph
+            diagram_available, diagram_reason = True, "unverified_vision"
         elif text_verified and text_graph and len(text_graph.nodes) > 0:
             graph, diagram_available, diagram_reason = text_graph, True, "verified_text"
         elif text_graph and len(text_graph.nodes) > 0:
