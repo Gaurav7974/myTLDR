@@ -8,6 +8,7 @@ import { PixelMosaic } from '@/components/PixelMosaic';
 import { PixelHeaderGrid } from '@/components/PixelHeaderGrid';
 import { Reveal } from '@/components/Reveal';
 import { Typewriter, TypeOnce } from '@/components/Typewriter';
+import StickerWall from '@/components/StickerWall';
 import {
   ArrowRight,
   ArrowUpRight,
@@ -581,6 +582,23 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
                 </div>
               </Reveal>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ============ FEEDBACK WALL (physics) ============ */}
+      <section id="feedback" className="border-b-2 border-ink bg-white">
+        <div className="mx-auto w-full max-w-[1400px] px-4 py-14 md:px-6 md:py-20">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h2 className="text-3xl font-bold uppercase leading-[1.02] tracking-[-0.02em] md:text-5xl">
+                LEAVE YOUR <span className="font-mono font-bold text-volt">MARK</span>
+              </h2>
+              <p className="mt-3 font-mono text-xs text-ink/60">PHYSICS WALL — DRAG, TOSS, COLLIDE.</p>
+            </div>
+          </div>
+          <div className="mt-8 overflow-hidden rounded-xl border-2 border-ink hard-shadow">
+            <StickerWall />
           </div>
         </div>
       </section>
