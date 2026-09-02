@@ -20,6 +20,7 @@ class Figure:
     page: int
     base64: Optional[str]
     caption: Optional[str] = None
+    is_whole_page_fallback: bool = False
 
 
 @dataclass
@@ -107,12 +108,12 @@ class TextExtractor:
                             result.figures.append(Figure(id=f"fig-{i+1}-{xref}", page=i+1, base64=b64, caption=f"Figure {len(result.figures)+1} p{i+1}"))
                             if len(result.figures) >= 5: break
                         except Exception: continue
-                # If still none, render whole pages
+                # If still none, render whole pages — flagged as fallback
                 if not result.figures:
                     for i, pg in enumerate(doc2):
                         if i >= 3: break
                         b64 = base64.b64encode(pg.get_pixmap(dpi=120).tobytes("png")).decode()
-                        result.figures.append(Figure(id=f"page-{i+1}-render", page=i+1, base64=b64, caption=f"Page {i+1} render"))
+                        result.figures.append(Figure(id=f"page-{i+1}-render", page=i+1, base64=b64, caption=f"Page {i+1} render", is_whole_page_fallback=True))
                 doc2.close()
             except Exception as e: log.warning(f"[WARN] pixmap fallback failed: {e}")
         return result

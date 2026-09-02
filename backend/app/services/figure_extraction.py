@@ -35,6 +35,10 @@ from app.models.graph import (
 # ── Prompts ──────────────────────────────────────────────────────────
 VISION_GRAPH_PROMPT = """You are an expert at reading neural-network architecture diagrams.
 
+Context flag: {figure_context}
+- If "CROPPED FIGURE" — image is tightly cropped to the diagram. Only include what's visibly present.
+- If "WHOLE PAGE (fallback)" — image is a full PDF page render. Locate the architecture diagram within the page, ignore headers/footers/margins/text, and extract only the diagram's components. Do NOT hallucinate nodes from surrounding text.
+
 Your job is to extract the figure-faithful visual structure of the diagram.
 
 CRITICAL Visual Rules (these are your only sources of truth):
@@ -256,23 +260,19 @@ class FigureExtractor:
             else f"data:image/jpeg;base64,{figure.base64}"
         )
 
+        is_whole = bool(getattr(figure, "is_whole_page_fallback", False))
+        figure_context = "WHOLE PAGE (fallback) — locate diagram within page" if is_whole else "CROPPED FIGURE"
+        system_prompt = VISION_GRAPH_PROMPT.replace("{figure_context}", figure_context)
         messages = [
-            {"role": "system", "content": VISION_GRAPH_PROMPT},
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            f"Paper: {paper_title}\n"
-                            "Extract the architecture graph shown in this figure as JSON."
-                        ),
-                    },
+                    {"type": "text", "text": f"Paper: {paper_title}\nFigure context: {figure_context}\nExtract the architecture graph shown in this figure as JSON."},
                     {"type": "image_url", "image_url": {"url": image_url}},
                 ],
             },
         ]
-
         try:
             raw = self._call_and_parse(messages)
         except Exception as e:
@@ -326,19 +326,14 @@ class FigureExtractor:
             "edges": [e.model_dump(mode="json", exclude_none=True) for e in graph.edges],
         }
 
+        is_whole = bool(getattr(figure, "is_whole_page_fallback", False))
+        figure_context = "WHOLE PAGE — diagram is embedded in full page, ignore margins/text" if is_whole else "CROPPED FIGURE"
         messages = [
             {"role": "system", "content": VISION_VERIFICATION_PROMPT},
             {
                 "role": "user",
                 "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            f"Paper: {paper_title}\n"
-                            "Verify this graph against the source figure.\n\n"
-                            f"Graph JSON:\n{json.dumps(graph_summary, default=str)}"
-                        ),
-                    },
+                    {"type": "text", "text": f"Paper: {paper_title}\nFigure context: {figure_context}\nVerify this graph against the source figure.\n\nGraph JSON:\n{json.dumps(graph_summary, default=str)}"},
                     {"type": "image_url", "image_url": {"url": image_url}},
                 ],
             },
@@ -381,6 +376,15 @@ class FigureExtractor:
                     continue
                 resp.raise_for_status()
                 content = resp.json()["choices"][0]["message"]["content"]
+                # Persist raw LLM output for debugging (B.6)
+                try:
+                    import os, pathlib
+                    raw_dir = pathlib.Path(__file__).parent.parent / "logs" / "vision_raw"
+                    raw_dir.mkdir(parents=True, exist_ok=True)
+                    prefix = "verify" if is_verification else "extract"
+                    (raw_dir / f"{prefix}_{int(time.time())}.json").write_text(content, encoding="utf-8")
+                    log.info(f"vision raw persisted: {prefix} {len(content)} chars")
+                except Exception: pass
                 data = json.loads(content)
                 if not isinstance(data, dict):
                     raise ValueError(f"vision reply was not a JSON object: {type(data).__name__}")

@@ -14,10 +14,19 @@ export const Architecture2DTab: React.FC<Architecture2DTabProps> = ({ paper }) =
   const graph = paper.architectureGraph;
   const hasGraph = !!(graph && (graph.nodes?.length ?? 0) > 0);
 
+  const isUnverified = hasGraph && !isVerifiedVisionGraph(graph);
   return (
     <div className="flex flex-col h-full bg-white animate-fadeIn">
       {hasGraph ? (
-        <ArchitectureDiagram graph={graph} height={720} />
+        <div className="relative flex-1">
+          {isUnverified && (
+            <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-mono font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              Unverified — may be incomplete
+            </div>
+          )}
+          <ArchitectureDiagram graph={graph} height={720} />
+        </div>
       ) : (
         // Trust-first fallback: no static Transformer mock. The
         // diagram tab shows an honest unavailable state and points

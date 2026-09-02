@@ -177,7 +177,7 @@ async def process_paper(
         if vtasks:
             vres = dict(zip(vtasks.keys(), await asyncio.gather(*vtasks.values(), return_exceptions=True)))
             if "vv" in vres and not isinstance(vres["vv"], Exception): vision_graph.verification = vres["vv"]
-            elif "vv" in vres: log.warning(f"[WARN] Figure verification failed: {vres['vv']}"); vision_graph = None
+            elif "vv" in vres: log.warning(f"[WARN] Figure verification failed: {vres['vv']}")  # keep graph for amber badge, don't hide
             if "tv" in vres and not isinstance(vres["tv"], Exception): text_verified = bool(vres["tv"].get("valid", False))
     yield {"stage": "diagramming", "message": "Finalizing diagrams..."}
 
@@ -207,6 +207,9 @@ async def process_paper(
         if is_verified_vision_graph(vision_graph):
             graph = merge_graph_metadata(vision_graph, text_graph, prefer="vision") if text_verified and text_graph else vision_graph
             diagram_available, diagram_reason = True, "verified_vision"
+        elif vision_graph and len(vision_graph.nodes) > 0:
+            # Unverified vision — show with amber badge (orthogonal to gate)
+            graph, diagram_available, diagram_reason = vision_graph, True, "unverified_vision"
         elif text_verified and text_graph and len(text_graph.nodes) > 0:
             graph, diagram_available, diagram_reason = text_graph, True, "verified_text"
         elif text_graph and len(text_graph.nodes) > 0:
