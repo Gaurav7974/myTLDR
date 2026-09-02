@@ -64,3 +64,10 @@ class PaperChunk(Base):
     # 3072-dimensional dense vector embeddings (Google gemini-embedding-001)
     embedding = Column(Vector(3072) if Vector is not None else Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class Feedback(Base):
+    __tablename__ = "feedback"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)

@@ -2,6 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, FormEvent } from 'react'
 import { motion } from 'framer-motion'
 import type { Engine, Runner, World, Body, MouseConstraint as MC, Mouse as MatterMouse } from 'matter-js'
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect
 const GRAVITY_SCALE = 0.0012
 const RESTITUTION = 0.05
@@ -48,6 +49,7 @@ export default function StickerWall(){
   const paletteRef=useRef<string[]>(PALETTE_DARK)
   const matterRef=useRef<typeof import('matter-js')|null>(null)
   const [isDark,setIsDark]=useState<boolean>(()=> typeof window!=='undefined'?document.documentElement.classList.contains('dark'):true)
+  const [err,setErr]=useState('')
   const isDarkRef=useRef<boolean>(isDark)
   useIsomorphicLayoutEffect(()=>{isDarkRef.current=isDark;paletteRef.current=pickPalette(isDark)},[isDark])
   useEffect(()=>{const p=pickPalette(isDark);stickersRef.current.forEach((s,i)=>{s.color=p[i%p.length]})},[isDark])
@@ -125,7 +127,7 @@ export default function StickerWall(){
       }
       rafId=requestAnimationFrame(drawFrame)
     }
-    import('matter-js').then((Matter)=>{
+    import('matter-js').then(async (Matter)=>{
       if(!alive)return
       matterRef.current=Matter
       engine=Matter.Engine.create({gravity:{x:0,y:1,scale:GRAVITY_SCALE}});engine.timing.timeScale=0.6;world=engine.world;engineRef.current=engine;worldRef.current=world
@@ -134,7 +136,19 @@ export default function StickerWall(){
       mouse=Matter.Mouse.create(canvas!);mouse.pixelRatio=dpr
       mouseConstraint=Matter.MouseConstraint.create(engine,{mouse,constraint:{stiffness:0.2,damping:0.1,render:{visible:false}} as any})
       Matter.Composite.add(world,mouseConstraint)
-      seed(Matter,sizeRef.current.w,sizeRef.current.h)
+      try{
+        const res=await fetch(`${API_BASE}/api/feedback`)
+        const data=res.ok?await res.json():[]
+        if(Array.isArray(data)&&data.length){
+          const pal=paletteRef.current
+          data.slice(0,STICKER_CAP).forEach((it:any,i:number)=>{
+            const c=pal[i%pal.length],x=randBetween(80,Math.max(100,sizeRef.current.w-80)),y=randBetween(60,Math.max(120,sizeRef.current.h-120))
+            const st=makeTextSticker(Matter,it.content||it, x,y,c,false)
+            Matter.Body.setVelocity(st.body,{x:randBetween(-0.5,0.5),y:randBetween(-0.5,0.5)})
+            Matter.Composite.add(world!,st.body);stickersRef.current.push(st)
+          })
+        } else seed(Matter,sizeRef.current.w,sizeRef.current.h)
+      }catch{ seed(Matter,sizeRef.current.w,sizeRef.current.h) }
       ro=new ResizeObserver(resize);ro.observe(container!)
       rafId=requestAnimationFrame(drawFrame)
     })
@@ -145,10 +159,14 @@ export default function StickerWall(){
       matterRef.current=null;engineRef.current=null;worldRef.current=null;stickersRef.current=[];measureCtxRef.current=null
     }
   },[])
-  function onSubmit(e:FormEvent<HTMLFormElement>){
+  async function onSubmit(e:FormEvent<HTMLFormElement>){
     e.preventDefault()
     const input=inputRef.current;if(!input)return
     const v=input.value.trim();if(!v)return
+    const words=v.split(/\s+/).filter(Boolean)
+    if(words.length>15){setErr(`Max 15 words — you have ${words.length}`);return}
+    setErr('')
+    try{await fetch(`${API_BASE}/api/feedback`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:v})})}catch{}
     const Matter=matterRef.current,world=worldRef.current,ctx=measureCtxRef.current
     if(!Matter||!world||!ctx)return
     const {w:W}=sizeRef.current;if(W===0)return
@@ -197,10 +215,12 @@ export default function StickerWall(){
             <h2 className="select-none" style={{color:titleColor,fontSize:'clamp(32px,6vw,56px)',fontWeight:800,letterSpacing:'-0.02em',lineHeight:1,margin:0,textShadow:titleShadow}}>Feedback Wall</h2>
             <p className="select-none" style={{color:subtitleColor,fontSize:'16px',fontWeight:500,letterSpacing:'-0.005em',lineHeight:1.45,margin:0,maxWidth:'46ch'}}>Drop a note, toss an emoji, drag anything around. Real physics, no rules. Just leave your mark on the wall.</p>
           </div>
-          <div className="sticker-wall-pill pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-full p-1" style={{background:inputBg,border:`2px solid ${stickerBorder}`,boxShadow:stickerShadow}}>
-            <input ref={inputRef} type="text" placeholder="Leave feedback…" maxLength={80} className="sticker-wall-input flex-1 bg-transparent px-4 py-2 text-sm outline-none" style={{color:inputText,fontWeight:500}} />
+          <div className="sticker-wall-pill pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-full p-1" style={{background:inputBg,border:`2px solid ${err? '#ef4444' : stickerBorder}`,boxShadow:stickerShadow}}>
+            <input ref={inputRef} type="text" placeholder="Leave feedback… (max 15 words)" maxLength={120} className="sticker-wall-input flex-1 bg-transparent px-4 py-2 text-sm outline-none" style={{color:inputText,fontWeight:500}} onChange={()=>err&&setErr('')} />
             <button type="submit" className="sticker-wall-send flex items-center rounded-2xl px-5 py-2 text-sm tracking-wide" style={{background:accentBg,color:accentText,fontWeight:700,border:'1px solid rgba(255,255,255,0.12)'}}>Send</button>
           </div>
+          {err&&<p className="pointer-events-none text-xs font-medium" style={{color:'#ef4444'}}>{err}</p>}
+          <p className="pointer-events-none text-[11px]" style={{color:subtitleColor,opacity:0.6}}>Max 15 words • Saved permanently</p>
         </form>
       </motion.div>
     </div>
