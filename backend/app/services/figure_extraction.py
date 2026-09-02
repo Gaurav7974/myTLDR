@@ -126,8 +126,12 @@ Output valid JSON:
 {
   "valid": true or false,
   "confidence": 0.0-1.0,
-  "hallucinations": ["list of node/edge ids that are not visibly in the figure"],
-  "missing_elements": ["list of major visible components the graph should include"],
+  "hallucinations": [
+    {"element": "node or edge id", "severity": "structural|cosmetic", "reason": "why hallucinated"}
+  ],
+  "missing_elements": [
+    {"element": "major visible component label", "severity": "structural|cosmetic", "reason": "why missing, e.g. style vs structure"}
+  ],
   "node_verification": [
     {"node_id": "id", "label": "label", "status": "match|hallucinated|ambiguous", "note": "short reason"}
   ],
@@ -136,11 +140,11 @@ Output valid JSON:
   ],
   "reason": "one-sentence summary"
 }
+Severity rules:
+- structural = missing/hallucinated node, missing edge between distinct components, wrong topology, extra block that changes dataflow. Must set valid=false.
+- cosmetic = style mismatch (dashed vs solid, color, line width, arrowhead shape, font), label casing/punctuation, truncated text. Do NOT set valid=false for cosmetic alone; set valid=true and confidence 0.7-0.95.
 
-Be CONSERVATIVE: if a graph has even one clearly hallucinated node or is
-missing a major figure element, set valid=false. Empty confidence below
-0.5 should also set valid=false. The downstream renderer will only use the
-graph when valid=true AND confidence is high.
+Be CONSERVATIVE only for structural. The downstream renderer shows structural failures as invalid, cosmetic as amber "Unverified — style mismatches" but still renders.
 """
 
 
@@ -192,32 +196,29 @@ def _parse_vision_payload(raw: dict[str, Any], paper_title: str = "",
 
 
 def _parse_verification_payload(raw: dict[str, Any]) -> GraphVerification:
-    """Coerce a vision verifier JSON payload into a GraphVerification.
-
-    Defensive against hallucinated/non-JSON content.
-    """
     if not isinstance(raw, dict):
         return GraphVerification(valid=False, reason="verification payload was not a JSON object")
-    # `valid` MUST be a literal boolean; coerce non-boolean values to False
-    # so a hallucinated "valid: yes" (string) is treated as invalid.
-    raw_valid = raw.get("valid", False)
-    valid = raw_valid is True
+    raw_valid, valid = raw.get("valid", False), raw.get("valid", False) is True
+    def _structural(items):
+        out=[]
+        for it in (items or []):
+            if isinstance(it, dict):
+                if it.get("severity") == "structural": out.append(str(it.get("element") or it.get("reason") or it))
+                # cosmetic ignored for gate
+            elif isinstance(it, str) and it.strip(): out.append(it)
+        return out
     try:
         return GraphVerification(
             valid=valid,
             confidence=float(raw.get("confidence", 0.0) or 0.0),
-            hallucinations=list(raw.get("hallucinations") or []),
-            missing_elements=list(raw.get("missing_elements") or []),
+            hallucinations=_structural(raw.get("hallucinations")),
+            missing_elements=_structural(raw.get("missing_elements")),
             node_verification=list(raw.get("node_verification") or []),
             edge_verification=list(raw.get("edge_verification") or []),
             reason=str(raw.get("reason") or "") or None,
         )
     except (ValidationError, ValueError, TypeError) as e:
-        return GraphVerification(
-            valid=False,
-            confidence=0.0,
-            reason=f"verification payload failed to parse: {e}",
-        )
+        return GraphVerification(valid=False, confidence=0.0, reason=f"verification payload failed to parse: {e}")
 
 
 def is_verified_vision_graph(graph: ArchitectureGraph | None) -> bool:
