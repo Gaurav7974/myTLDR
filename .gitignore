@@ -57,3 +57,7 @@ backend/tests/test_hardening.py
 
 # Local platform testing artifacts
 platfrom testing/
+
+# Next.js dev-generated agent instruction files (recreated by next dev)
+frontend/AGENTS.md
+frontend/CLAUDE.md
