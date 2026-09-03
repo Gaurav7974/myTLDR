@@ -49,9 +49,11 @@ architecture.html
 summary_reference.txt
 test.md
 
-# Local context / audit docs (not for repo)
-CONTEXT.md
+# Local audit docs (not for public repo)
 improve-codebase.md
 
 # Hardening regression tests (local verification only, not for public repo)
 backend/tests/test_hardening.py
+
+# Local platform testing artifacts
+platfrom testing/
