@@ -606,18 +606,16 @@ export async function computeElkLayout(
     return { nodes: new Map(), edges: new Map(), groups: [] };
   }
 
+  // 1. Standardized, professional block dimensions matching D2 specifications
   const nodeDims = new Map<string, { w: number; h: number }>();
   nodes.forEach((n) => {
-    let w = NODE_W_DEFAULT;
-    let h = NODE_H_DEFAULT;
-    if (n.bbox && typeof n.bbox.w === "number" && typeof n.bbox.h === "number") {
-      w = Math.max(60, n.bbox.w * FIGURE_CANVAS_W);
-      h = Math.max(28, n.bbox.h * FIGURE_CANVAS_H);
-    }
+    const labelLen = (n.label || "").length;
+    const w = Math.max(180, Math.min(240, Math.round(labelLen * 8.5 + 44)));
+    const h = 48;
     nodeDims.set(n.id, { w, h });
   });
 
-  // Map nodes to groups if defined
+  // 2. Map nodes to groups if defined
   const nodeToGroup = new Map<string, string>();
   const groupDefs = new Map<string, GraphGroup>();
   if (Array.isArray(groups)) {
@@ -639,8 +637,13 @@ export async function computeElkLayout(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const groupBuckets = new Map<string, any[]>();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const groupEdgeBuckets = new Map<string, any[]>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const topLevelChildren: any[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const topLevelEdges: any[] = [];
 
+  // 3. Place nodes into groups or top-level children
   nodes.forEach((n) => {
     const dims = nodeDims.get(n.id) || { w: NODE_W_DEFAULT, h: NODE_H_DEFAULT };
     const elkNode = {
@@ -657,23 +660,39 @@ export async function computeElkLayout(
     }
   });
 
+  // 4. Lowest Common Ancestor (LCA) edge scoping
+  edges.forEach((e, i) => {
+    const srcG = nodeToGroup.get(e.source);
+    const tgtG = nodeToGroup.get(e.target);
+    const isIntraGroup = srcG && tgtG && srcG === tgtG;
+    const elkEdge = {
+      id: `e${i}`,
+      sources: [e.source],
+      targets: [e.target],
+    };
+
+    if (isIntraGroup && srcG) {
+      if (!groupEdgeBuckets.has(srcG)) groupEdgeBuckets.set(srcG, []);
+      groupEdgeBuckets.get(srcG)!.push(elkEdge);
+    } else {
+      topLevelEdges.push(elkEdge);
+    }
+  });
+
+  // 5. Build container nodes
   groupBuckets.forEach((members, gId) => {
     topLevelChildren.push({
       id: gId,
       layoutOptions: {
-        "elk.padding": "[top=36,left=20,bottom=20,right=20]",
-        "elk.spacing.nodeNode": "28",
-        "elk.layered.spacing.nodeNodeBetweenLayers": "50",
+        "elk.padding": "[top=40,left=24,bottom=24,right=24]",
+        "elk.spacing.nodeNode": "24",
+        "elk.layered.spacing.nodeNodeBetweenLayers": "48",
+        "elk.direction": "DOWN",
       },
       children: members,
+      edges: groupEdgeBuckets.get(gId) || [],
     });
   });
-
-  const elkEdges = edges.map((e, i) => ({
-    id: `e${i}`,
-    sources: [e.source],
-    targets: [e.target],
-  }));
 
   const graph = {
     id: "root",
@@ -683,14 +702,15 @@ export async function computeElkLayout(
       "elk.edgeRouting": "ORTHOGONAL",
       "elk.hierarchyHandling": "INCLUDE_CHILDREN",
       "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "70",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "56",
       "elk.spacing.nodeNode": "36",
       "elk.spacing.edgeNode": "24",
       "elk.spacing.edgeEdge": "18",
       "elk.layered.spacing.edgeNodeBetweenLayers": "24",
+      "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
     },
     children: topLevelChildren,
-    edges: elkEdges,
+    edges: topLevelEdges,
   };
 
   try {
@@ -767,13 +787,19 @@ export async function computeElkLayout(
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function collectAllEdges(n: any): any[] {
+    function collectAllEdges(n: any, currentContainerId = "root"): any[] {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const list: any[] = [];
-      if (Array.isArray(n.edges)) list.push(...n.edges);
+      const thisContainerId = (n.id && n.id !== "root") ? n.id : currentContainerId;
+      if (Array.isArray(n.edges)) {
+        for (const e of n.edges) {
+          e._owningContainer = thisContainerId;
+          list.push(e);
+        }
+      }
       if (Array.isArray(n.children)) {
         for (const child of n.children) {
-          list.push(...collectAllEdges(child));
+          list.push(...collectAllEdges(child, child.id));
         }
       }
       return list;
@@ -783,7 +809,8 @@ export async function computeElkLayout(
     const edgeRoutes = new Map<string, RoutedEdgePath>();
 
     for (const e of allElkEdges) {
-      const offset = containerOffsets.get(e.container || "root") || { x: 0, y: 0 };
+      const owningContainer = e._owningContainer || e.container || "root";
+      const offset = containerOffsets.get(owningContainer) || { x: 0, y: 0 };
       const totalOffsetX = offset.x + offsetX;
       const totalOffsetY = offset.y + offsetY;
 

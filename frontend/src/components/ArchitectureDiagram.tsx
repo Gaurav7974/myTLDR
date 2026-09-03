@@ -217,9 +217,13 @@ export default function ArchitectureDiagram({
     );
   }, [nodes]);
 
-  const isFigureMode =
-    (layoutMode === "figure" && shouldRenderReconstruction(graph as ArchitectureGraph | undefined)) ||
-    hasFigureBboxes;
+  const isFigureAvailable = useMemo(() => {
+    return hasFigureBboxes && shouldRenderReconstruction(graph as ArchitectureGraph | undefined);
+  }, [hasFigureBboxes, graph]);
+
+  // Default to Structured (ELK) for clean D2-style containerized layout, with paper figure toggle when available
+  const [layoutView, setLayoutView] = useState<"elk" | "figure">("elk");
+  const isEffectiveFigureMode = isFigureAvailable && layoutView === "figure";
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -229,23 +233,28 @@ export default function ArchitectureDiagram({
   const panStart = useRef({ x: 0, y: 0 });
 
   const initialPositioned = useMemo(() => {
-    if (isFigureMode) {
+    if (isEffectiveFigureMode) {
       const fig = positionNodesFigure(nodes, true);
       if (fig.size > 0) return fig;
     }
     return computeAutoLayout(nodes, edges);
-  }, [isFigureMode, nodes, edges]);
+  }, [isEffectiveFigureMode, nodes, edges]);
 
   const [positioned, setPositioned] = useState<Map<string, PositionedNode>>(initialPositioned);
   const [elkRoutedEdges, setElkRoutedEdges] = useState<Map<string, RoutedEdgePath> | null>(null);
   const [elkGroups, setElkGroups] = useState<PositionedGroup[] | null>(null);
 
   useEffect(() => {
-    setPositioned(initialPositioned);
-    setElkRoutedEdges(null);
-    setElkGroups(null);
+    if (isEffectiveFigureMode) {
+      const fig = positionNodesFigure(nodes, true);
+      setPositioned(fig.size > 0 ? fig : computeAutoLayout(nodes, edges));
+      setElkRoutedEdges(null);
+      setElkGroups(null);
+      return;
+    }
+
     let cancelled = false;
-    if (!isFigureMode && nodes.length > 0) {
+    if (nodes.length > 0) {
       computeElkLayout(nodes, edges, groups).then((elkResult) => {
         if (!cancelled && elkResult && elkResult.nodes && elkResult.nodes.size > 0) {
           setPositioned(elkResult.nodes);
@@ -256,8 +265,10 @@ export default function ArchitectureDiagram({
         }
       });
     }
-    return () => { cancelled = true; };
-  }, [isFigureMode, nodes, edges, groups, initialPositioned]);
+    return () => {
+      cancelled = true;
+    };
+  }, [isEffectiveFigureMode, nodes, edges, groups]);
 
   // Mark nodes that have no layout as "missing" so the renderer can draw
   // them safely (or hide them).
@@ -267,12 +278,12 @@ export default function ArchitectureDiagram({
 
   // Group rectangles — compute tight bounds around member nodes
   const positionedGroups = useMemo(() => {
-    if (!isFigureMode && elkGroups && elkGroups.length > 0) {
+    if (!isEffectiveFigureMode && elkGroups && elkGroups.length > 0) {
       return elkGroups;
     }
     if (groups.length === 0) return [];
     return positionGroupsFigure(groups, positioned, nodes as unknown as NormalizedNode[]);
-  }, [groups, positioned, nodes, elkGroups, isFigureMode]);
+  }, [groups, positioned, nodes, elkGroups, isEffectiveFigureMode]);
 
   // Canvas dimensions and bounding box
   const { minX, minY, maxX, maxY, canvasW, canvasH } = useMemo(() => {
@@ -305,7 +316,7 @@ export default function ArchitectureDiagram({
       canvasW: Math.max(800, contentMaxX + PADDING),
       canvasH: Math.max(600, contentMaxY + PADDING),
     };
-  }, [positioned, positionedGroups, isFigureMode]);
+  }, [positioned, positionedGroups, isEffectiveFigureMode]);
 
   // Edge paths — cleanly routed between node boundary ports
   const edgePaths = useMemo(() => {
@@ -317,7 +328,7 @@ export default function ArchitectureDiagram({
 
         const elkKey = `${e.source}->${e.target}`;
         const elkEdge = elkRoutedEdges?.get(elkKey) || elkRoutedEdges?.get(`e${idx}`);
-        if (elkEdge && !isFigureMode) {
+        if (elkEdge && !isEffectiveFigureMode) {
           return { ...e, ...elkEdge };
         }
 
@@ -325,7 +336,7 @@ export default function ArchitectureDiagram({
         return { ...e, ...routed };
       })
       .filter(Boolean) as (DiagramEdge & { path: string; midX: number; midY: number })[];
-  }, [edges, positioned, canvasW, elkRoutedEdges, isFigureMode]);
+  }, [edges, positioned, canvasW, elkRoutedEdges, isEffectiveFigureMode]);
 
   const selectedNode = selectedId ? nodes.find((n) => n.id === selectedId) : null;
   const selectedMeta = selectedId ? positioned.get(selectedId) : null;
@@ -471,17 +482,35 @@ export default function ArchitectureDiagram({
           </button>
         </div>
 
-        {/* Mode badge */}
-        {isFigureMode && (
-          <div className="absolute top-3 left-3 z-20 px-2 py-1 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-semibold uppercase tracking-wider">
-            Figure-faithful
-          </div>
-        )}
-        {layoutMode === "auto" && !isFigureMode && source === "legacy" && isAvailable && (
-          <div className="absolute top-3 left-3 z-20 px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-semibold uppercase tracking-wider">
-            Auto-layout (legacy graph)
-          </div>
-        )}
+        {/* Layout Mode Toggle & Badges */}
+        <div className="absolute top-3 left-3 z-20 flex items-center gap-1 p-1 bg-white/95 backdrop-blur-xs border border-zinc-200 rounded-lg shadow-2xs text-[11px]">
+          <button
+            onClick={() => setLayoutView("elk")}
+            className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1.5 font-medium ${
+              layoutView === "elk"
+                ? "bg-blue-600 text-white font-semibold shadow-2xs"
+                : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
+            }`}
+            title="Clean, hierarchical architecture layout with orthogonal arrows (D2 / ELK)"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            Structured Layout (ELK)
+          </button>
+          {isFigureAvailable && (
+            <button
+              onClick={() => setLayoutView("figure")}
+              className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1.5 font-medium ${
+                layoutView === "figure"
+                  ? "bg-emerald-600 text-white font-semibold shadow-2xs"
+                  : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100"
+              }`}
+              title="Spatial layout matching where bounding boxes were detected in the paper figure"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Paper Figure (Spatial)
+            </button>
+          )}
+        </div>
 
         {/* SVG Canvas */}
         <svg
@@ -691,7 +720,7 @@ export default function ArchitectureDiagram({
         )}
 
         {/* Figure-mode nodes with missing bbox warning */}
-        {isFigureMode && nodesWithMissingLayout.length > 0 && (
+        {isEffectiveFigureMode && nodesWithMissingLayout.length > 0 && (
           <div className="absolute bottom-3 left-3 z-20 px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[10px]">
             {nodesWithMissingLayout.length} node(s) without extracted bbox
           </div>
@@ -906,7 +935,7 @@ export default function ArchitectureDiagram({
                 <div className="text-[11px] font-mono text-zinc-600 space-y-1">
                   <div className="flex justify-between">
                     <span className="text-zinc-400">Extraction Source:</span>
-                    <span className="font-semibold text-zinc-700">{selectedNode.provenance?.source || (isFigureMode ? 'Figure Vision' : 'Graph Pipeline')}</span>
+                    <span className="font-semibold text-zinc-700">{selectedNode.provenance?.source || (isEffectiveFigureMode ? 'Figure Vision' : 'Graph Pipeline')}</span>
                   </div>
                   {(selectedNode.provenance?.figure_page || selectedNode.provenance?.page) && (
                     <div className="flex justify-between">
@@ -943,9 +972,9 @@ export default function ArchitectureDiagram({
               </h3>
               <div className="flex items-center gap-1.5 mt-2">
                 <span className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded border ${
-                  isFigureMode ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200'
+                  isEffectiveFigureMode ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200'
                 }`}>
-                  {isFigureMode ? '✓ Figure-Faithful Reconstruction' : 'Auto Synthesized Graph'}
+                  {isEffectiveFigureMode ? '✓ Figure-Faithful Reconstruction' : 'Structured Layout (ELK)'}
                 </span>
               </div>
             </div>

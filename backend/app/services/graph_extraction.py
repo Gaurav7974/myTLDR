@@ -59,11 +59,18 @@ Output valid JSON matching this schema:
   "source": "text",
   "layout_mode": "auto",
   "paper_title": "{paper_title}",
+  "groups": [
+    {{
+      "id": "group_id",
+      "label": "High-level Module name (e.g. Encoder, Decoder, Backbone, Residual Block, Head)"
+    }}
+  ],
   "nodes": [
     {{
       "id": "unique_id",
       "label": "Human Readable Name",
       "type": "node_type",
+      "group_id": "optional group_id if this node belongs to a high-level module",
       "description": "1-2 sentence paraphrase (cited)",
       "how_it_works": "short procedural note (cited)",
       "math_formula": "LaTeX or empty",
