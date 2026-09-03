@@ -61,3 +61,6 @@ platfrom testing/
 # Next.js dev-generated agent instruction files (recreated by next dev)
 frontend/AGENTS.md
 frontend/CLAUDE.md
+
+# Root-level stray icon (app icon lives in frontend/app/icon.png)
+icon.png
