@@ -35,7 +35,7 @@ export const Architecture2DTab: React.FC<Architecture2DTabProps> = ({ paper }) =
               Unverified — may be incomplete
             </div>
           )}
-          <ArchitectureDiagram graph={graph} height={720} />
+          <ArchitectureDiagram graph={graph} height={720} paperTitle={paper.metadata?.title} />
         </div>
       ) : (
         // Trust-first fallback: no static Transformer mock. The

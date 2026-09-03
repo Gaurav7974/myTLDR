@@ -134,8 +134,97 @@ Extracted graph:
 ---"""
 
 
+ENRICH_NODES_PROMPT = """You are an expert AI researcher analyzing a paper's architecture components.
+
+Paper: {paper_title}
+
+Paper Text Excerpt:
+{text}
+
+Given these extracted components from the paper's architecture diagram:
+{nodes_json}
+
+For each component, extract its specific role and equations from the paper text above:
+1. "description": 1-2 sentence precise explanation of what this component does in this paper's architecture based on the text.
+2. "how_it_works": A short procedural note describing the tensor transformation or operational flow through this component.
+3. "math_formula": The exact LaTeX mathematical formula or tensor equation used in the paper describing this component (e.g. F(x) + x, Wx + b, softmax(QK^T/sqrt(d))V, etc.), or null if none.
+4. "paper_term": The exact notation or phrase used in the paper for this component (e.g. "F(x)", "residual mapping", "query projection").
+
+Output valid JSON matching this schema:
+{{
+  "nodes": [
+    {{
+      "id": "node_id",
+      "description": "1-2 sentence paper-specific explanation",
+      "how_it_works": "short procedural note",
+      "math_formula": "LaTeX formula or null",
+      "paper_term": "paper notation or term"
+    }}
+  ]
+}}
+"""
+
+
 class GraphExtractor:
-    """Extracts and verifies architecture graphs from paper text."""
+    """Extracts, verifies, and dynamically enriches architecture graphs from paper text."""
+
+    def enrich_nodes(
+        self, graph: ArchitectureGraph, paper_text: str, paper_title: str = ""
+    ) -> ArchitectureGraph:
+        """Dynamically enrich nodes with description, how_it_works, and math_formula from the paper text.
+
+        Never modifies geometry or topology (nodes/edges/bbox remain intact).
+        Only populates missing semantic descriptions and formulas using the paper text.
+        """
+        if not graph or not graph.nodes or not paper_text:
+            return graph
+
+        nodes_to_enrich = [
+            {"id": n.id, "label": n.label, "type": n.type, "group_id": n.group_id}
+            for n in graph.nodes
+            if not n.description or not n.math_formula or not n.how_it_works
+        ]
+
+        if not nodes_to_enrich:
+            return graph
+
+        prompt = ENRICH_NODES_PROMPT.format(
+            paper_title=paper_title or "Research Paper",
+            text=paper_text[:settings.MAX_SECTION_CHARS],
+            nodes_json=json.dumps(nodes_to_enrich, indent=2),
+        )
+
+        try:
+            enriched_data = groq_client.extract_json(
+                messages=[{"role": "user", "content": prompt}],
+                model=settings.MISTRAL_LLM_MODEL,
+            )
+        except Exception as e:
+            log.warning(f"[WARN] Dynamic node enrichment failed: {e}")
+            return graph
+
+        if not isinstance(enriched_data, dict) or "nodes" not in enriched_data:
+            return graph
+
+        enriched_map = {
+            item.get("id"): item
+            for item in enriched_data.get("nodes", [])
+            if isinstance(item, dict) and item.get("id")
+        }
+
+        for node in graph.nodes:
+            match = enriched_map.get(node.id)
+            if match:
+                if not node.description and match.get("description"):
+                    node.description = str(match["description"])
+                if not node.how_it_works and match.get("how_it_works"):
+                    node.how_it_works = str(match["how_it_works"])
+                if not node.math_formula and match.get("math_formula"):
+                    node.math_formula = str(match["math_formula"])
+                if not node.paper_term and match.get("paper_term"):
+                    node.paper_term = str(match["paper_term"])
+
+        return graph
 
     def extract_graph(
         self, architecture_text: str, paper_title: str = ""

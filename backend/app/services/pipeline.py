@@ -246,6 +246,17 @@ async def process_paper(
         else: graph, diagram_available, diagram_reason = None, False, "no_verified_graph"
 
         if diagram_available and graph is not None:
+            # Dynamically enrich nodes with authentic paper descriptions, formulas, and notations
+            try:
+                graph = await asyncio.to_thread(
+                    graph_extractor.enrich_nodes,
+                    graph,
+                    arch_text or full_text,
+                    paper_title,
+                )
+            except Exception as e:
+                log.warning(f"[WARN] Dynamic node enrichment skipped: {e}")
+
             await cache_service.store_graph(
                 db, content_hash, graph.model_dump(), True
             )

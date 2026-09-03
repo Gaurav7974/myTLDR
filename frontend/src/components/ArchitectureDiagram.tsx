@@ -1,6 +1,19 @@
 "use client";
 
 import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import katex from "katex";
+import {
+  Layers,
+  Cpu,
+  ArrowRight,
+  ArrowLeft,
+  Sparkles,
+  X,
+  ChevronRight,
+  FileCode2,
+  CheckCircle2,
+  Box,
+} from "lucide-react";
 import {
   ArchitectureGraph,
   GraphBoundingBox,
@@ -24,6 +37,7 @@ import {
   type PositionedNode,
   type PositionedGroup,
   type RoutedEdgePath,
+  type NormalizedNode,
 } from "./architectureDiagramLayout";
 import { wrapToWidth } from "./diagramNormalizer";
 
@@ -88,6 +102,7 @@ export interface ArchitectureDiagramProps {
    *  When `layout_mode === 'auto'`, the BFS layout is used as a fallback. */
   graph?: ArchitectureGraph;
   height?: number;
+  paperTitle?: string;
   /** Optional callback when the user clicks a node — useful for tests. */
   onNodeClick?: (node: DiagramNode) => void;
 }
@@ -128,13 +143,42 @@ function getNodeColors(type: string) {
 // ./architectureDiagramLayout so they can be unit-tested in isolation
 // without React or a DOM.
 
-// ── Math rendering (safe text + KaTeX for short LaTeX) ──────────────
-function MathText({ value, maxLen = 240 }: { value: string; maxLen?: number }) {
-  const safe = value.length > maxLen ? value.slice(0, maxLen) + "…" : value;
-  // Render Unicode math directly; for LaTeX-style, fall back to monospace text
-  // (KaTeX requires DOM measurement we don't have here; safe to keep as text
-  // to avoid overflow). The sidebar always shows the full text.
-  return <span style={{ fontFamily: "ui-monospace, monospace" }}>{safe}</span>;
+// ── Math rendering (Safe KaTeX rendering with fallback) ──────────────
+function MathText({ value, displayMode = false }: { value: string; displayMode?: boolean }) {
+  const rendered = useMemo(() => {
+    if (!value) return null;
+    try {
+      return katex.renderToString(value, {
+        displayMode,
+        throwOnError: false,
+      });
+    } catch {
+      return null;
+    }
+  }, [value, displayMode]);
+
+  if (!rendered) {
+    return <span className="font-mono text-xs text-zinc-700 break-all">{value}</span>;
+  }
+  return <span className="katex-rendered inline-block" dangerouslySetInnerHTML={{ __html: rendered }} />;
+}
+
+interface ComponentDetails {
+  role: string;
+  mathFormula?: string;
+  category: string;
+  tensorFlow?: string;
+}
+
+function getComponentDetails(node: DiagramNode): ComponentDetails {
+  return {
+    role:
+      node.description ||
+      `Architectural component of type ${node.type || 'layer'} in the paper model pipeline.`,
+    mathFormula: node.math_formula || undefined,
+    category: (node.type || "COMPONENT").toUpperCase(),
+    tensorFlow: node.how_it_works || undefined,
+  };
 }
 
 // ── Component ──────────────────────────────────────────────────────
@@ -143,6 +187,7 @@ export default function ArchitectureDiagram({
   edges: edgesProp,
   graph,
   height = 600,
+  paperTitle,
   onNodeClick,
 }: ArchitectureDiagramProps) {
   // Unify the two APIs: a `graph` prop or flat `nodes`/`edges` props.
@@ -284,6 +329,21 @@ export default function ArchitectureDiagram({
 
   const selectedNode = selectedId ? nodes.find((n) => n.id === selectedId) : null;
   const selectedMeta = selectedId ? positioned.get(selectedId) : null;
+
+  const componentDetails = useMemo(() => {
+    if (!selectedNode) return null;
+    return getComponentDetails(selectedNode);
+  }, [selectedNode]);
+
+  const inboundEdges = useMemo(() => {
+    if (!selectedNode) return [];
+    return edges.filter((e) => e.target === selectedNode.id);
+  }, [selectedNode, edges]);
+
+  const outboundEdges = useMemo(() => {
+    if (!selectedNode) return [];
+    return edges.filter((e) => e.source === selectedNode.id);
+  }, [selectedNode, edges]);
 
   // Auto-fit diagram cleanly within viewport
   const fitToView = useCallback(() => {
@@ -640,87 +700,91 @@ export default function ArchitectureDiagram({
 
       {/* ── Inspector Sidebar ──────────────────────────────────── */}
       <div
-        className="w-[320px] border-l border-zinc-200 bg-white flex flex-col shrink-0 transition-all duration-300"
-        style={{ minHeight: height }}
+        className="w-[350px] border-l border-zinc-200 bg-white flex flex-col shrink-0 overflow-hidden shadow-xs"
+        style={{ height: height }}
       >
         {selectedNode ? (
-          <>
-            {/* Header */}
-            <div className="p-4 border-b border-zinc-100">
-              <div className="flex items-center gap-2 mb-1">
-                <span
-                  className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded"
-                  style={{
-                    backgroundColor: getNodeColors(selectedNode.type).bg,
-                    color: getNodeColors(selectedNode.type).text,
-                    border: `1px solid ${getNodeColors(selectedNode.type).border}`,
-                  }}
-                >
-                  {selectedNode.type}
-                </span>
-                {selectedNode.paper_term && (
-                  <span className="text-[9px] italic text-zinc-500 truncate">
-                    {selectedNode.paper_term}
+          <div className="flex flex-col h-full overflow-hidden">
+            {/* Sticky Header */}
+            <div className="p-4 border-b border-zinc-200 bg-zinc-50/80 backdrop-blur-xs shrink-0">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border shadow-2xs"
+                    style={{
+                      backgroundColor: getNodeColors(selectedNode.type).bg,
+                      color: getNodeColors(selectedNode.type).text,
+                      borderColor: getNodeColors(selectedNode.type).border,
+                    }}
+                  >
+                    {componentDetails?.category || selectedNode.type.toUpperCase()}
                   </span>
-                )}
+                  {selectedNode.confidence !== undefined && (
+                    <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      {(selectedNode.confidence * 100).toFixed(0)}% verified
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setSelectedId(null)}
+                  className="p-1 rounded text-zinc-400 hover:text-zinc-700 hover:bg-zinc-200/60 transition-colors"
+                  title="Close component details (Return to overview)"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <h3 className="text-base font-bold text-zinc-900 mt-2">
+
+              <h3 className="text-base font-bold text-zinc-900 leading-snug">
                 {selectedNode.label}
               </h3>
-              {selectedNode.confidence !== undefined && (
-                <div className="mt-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-400">
-                      Confidence
-                    </span>
-                    <span className="text-[10px] font-mono text-zinc-500">
-                      {(selectedNode.confidence * 100).toFixed(0)}%
-                    </span>
-                  </div>
-                  <div className="h-1.5 bg-zinc-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-zinc-800 rounded-full transition-all duration-300"
-                      style={{ width: `${Math.min(100, Math.max(0, selectedNode.confidence * 100))}%` }}
-                    />
-                  </div>
-                </div>
+              {selectedNode.paper_term && (
+                <p className="text-[11px] font-mono text-zinc-500 mt-0.5">
+                  Paper notation: {selectedNode.paper_term}
+                </p>
               )}
             </div>
 
-            {/* Content */}
+            {/* Scrollable Body */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* Description (What it does) */}
-              {selectedNode.description && (
-                <div>
-                  <h4 className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
-                    What it does
+              {/* Function & Role Card */}
+              <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-200/80 space-y-1.5">
+                <div className="flex items-center gap-1.5 text-zinc-500">
+                  <Cpu className="w-3.5 h-3.5 text-zinc-600" />
+                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-600">
+                    Architectural Role
                   </h4>
-                  <p className="text-sm text-zinc-700 leading-relaxed">
-                    {selectedNode.description}
-                  </p>
                 </div>
-              )}
+                <p className="text-xs text-zinc-700 leading-relaxed">
+                  {componentDetails?.role || selectedNode.description}
+                </p>
+              </div>
 
-              {/* How it works (paper-specific usage) */}
+              {/* How it works (paper-specific procedural flow) */}
               {selectedNode.how_it_works && (
-                <div>
-                  <h4 className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
-                    How it is used in this paper
+                <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-200/80 space-y-1.5">
+                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-600">
+                    How it Works in this Paper
                   </h4>
-                  <p className="text-sm text-zinc-700 leading-relaxed">
+                  <p className="text-xs text-zinc-700 leading-relaxed">
                     {selectedNode.how_it_works}
                   </p>
                 </div>
               )}
 
-              {/* Math formula */}
+              {/* Mathematical Formulation (KaTeX) */}
               {selectedNode.math_formula && (
-                <div>
-                  <h4 className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
-                    Mathematical model
-                  </h4>
-                  <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-100 text-sm text-zinc-800 overflow-x-auto">
-                    <MathText value={selectedNode.math_formula} />
+                <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-200/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-zinc-500">
+                      <FileCode2 className="w-3.5 h-3.5 text-zinc-600" />
+                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-600">
+                        Mathematical Model
+                      </h4>
+                    </div>
+                    <span className="text-[9px] font-mono text-zinc-400">KaTeX</span>
+                  </div>
+                  <div className="p-2.5 bg-white rounded border border-zinc-200/60 text-center overflow-x-auto text-sm text-zinc-900 shadow-2xs">
+                    <MathText value={selectedNode.math_formula} displayMode={true} />
                   </div>
                 </div>
               )}
@@ -729,7 +793,7 @@ export default function ArchitectureDiagram({
               {(selectedNode.parameters || selectedNode.flops) && (
                 <div className="grid grid-cols-2 gap-2">
                   {selectedNode.parameters && (
-                    <div className="p-2.5 bg-zinc-50 rounded-lg border border-zinc-100">
+                    <div className="p-2.5 bg-zinc-50 rounded-lg border border-zinc-200/80">
                       <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-400 block">
                         Parameters
                       </span>
@@ -739,7 +803,7 @@ export default function ArchitectureDiagram({
                     </div>
                   )}
                   {selectedNode.flops && (
-                    <div className="p-2.5 bg-zinc-50 rounded-lg border border-zinc-100">
+                    <div className="p-2.5 bg-zinc-50 rounded-lg border border-zinc-200/80">
                       <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-400 block">
                         FLOPs
                       </span>
@@ -751,131 +815,207 @@ export default function ArchitectureDiagram({
                 </div>
               )}
 
-              {/* Connections */}
-              <div>
-                <h4 className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-2">
-                  Connections
-                </h4>
-                <div className="space-y-1.5">
-                  {edges
-                    .filter((e) => e.source === selectedNode.id || e.target === selectedNode.id)
-                    .map((e, i) => {
-                      const isSource = e.source === selectedNode.id;
-                      const otherId = isSource ? e.target : e.source;
-                      const other = nodes.find((n) => n.id === otherId);
-                      const edgeType = (e.type || "").replace(/_/g, " ");
+              {/* Connections (Inbound & Outbound) */}
+              <div className="space-y-3">
+                {/* Inbound Inputs */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-1">
+                      <ArrowLeft className="w-3 h-3 text-emerald-600" />
+                      Inbound Inputs ({inboundEdges.length})
+                    </h4>
+                  </div>
+                  <div className="space-y-1.5">
+                    {inboundEdges.map((e, i) => {
+                      const other = nodes.find((n) => n.id === e.source);
+                      const isResidual = e.type === 'residual_skip' || (e.style?.name === 'dashed') || (e.style?.name === 'residual');
                       return (
                         <button
                           key={i}
-                          onClick={() => setSelectedId(otherId)}
-                          className="w-full text-left p-2 rounded-md bg-zinc-50 hover:bg-zinc-100 border border-zinc-100 flex items-center gap-2 transition-colors"
+                          onClick={() => setSelectedId(e.source)}
+                          className="w-full text-left p-2 rounded-md bg-zinc-50 hover:bg-zinc-100/80 border border-zinc-200/80 flex items-center justify-between gap-2 transition-all hover:border-zinc-300"
                         >
-                          <span className="text-[10px] font-mono text-zinc-400">
-                            {isSource ? "→ OUT" : "← IN"}
-                          </span>
-                          <span className="text-xs font-medium text-zinc-700 truncate flex-1">
-                            {other?.label || otherId}
-                          </span>
-                          {edgeType && (
-                            <span className="text-[9px] font-mono text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded shrink-0">
-                              {edgeType}
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-1 rounded border border-emerald-200">
+                              ← IN
                             </span>
-                          )}
+                            <span className="text-xs font-semibold text-zinc-800 truncate">
+                              {other?.label || e.source}
+                            </span>
+                          </div>
+                          <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${
+                            isResidual ? 'bg-amber-50 text-amber-700 border-amber-200 font-semibold' : 'bg-zinc-100 text-zinc-500 border-zinc-200'
+                          }`}>
+                            {isResidual ? 'shortcut' : (e.type || 'data flow').replace(/_/g, ' ')}
+                          </span>
                         </button>
                       );
                     })}
-                  {edges.filter(
-                    (e) => e.source === selectedNode.id || e.target === selectedNode.id
-                  ).length === 0 && (
-                    <p className="text-xs text-zinc-400 italic">No connections</p>
+                    {inboundEdges.length === 0 && (
+                      <p className="text-[11px] font-mono text-zinc-400 italic pl-1">Primary model input (no preceding layer)</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Outbound Outputs */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-1">
+                      <ArrowRight className="w-3 h-3 text-blue-600" />
+                      Outbound Outputs ({outboundEdges.length})
+                    </h4>
+                  </div>
+                  <div className="space-y-1.5">
+                    {outboundEdges.map((e, i) => {
+                      const other = nodes.find((n) => n.id === e.target);
+                      const isResidual = e.type === 'residual_skip' || (e.style?.name === 'dashed') || (e.style?.name === 'residual');
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => setSelectedId(e.target)}
+                          className="w-full text-left p-2 rounded-md bg-zinc-50 hover:bg-zinc-100/80 border border-zinc-200/80 flex items-center justify-between gap-2 transition-all hover:border-zinc-300"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-50 px-1 rounded border border-blue-200">
+                              → OUT
+                            </span>
+                            <span className="text-xs font-semibold text-zinc-800 truncate">
+                              {other?.label || e.target}
+                            </span>
+                          </div>
+                          <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${
+                            isResidual ? 'bg-amber-50 text-amber-700 border-amber-200 font-semibold' : 'bg-zinc-100 text-zinc-500 border-zinc-200'
+                          }`}>
+                            {isResidual ? 'shortcut' : (e.type || 'data flow').replace(/_/g, ' ')}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {outboundEdges.length === 0 && (
+                      <p className="text-[11px] font-mono text-zinc-400 italic pl-1">Final model output (terminal node)</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Provenance & Page Grounding */}
+              <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-200/80 space-y-1.5">
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                  Paper Grounding & Provenance
+                </h4>
+                <div className="text-[11px] font-mono text-zinc-600 space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">Extraction Source:</span>
+                    <span className="font-semibold text-zinc-700">{selectedNode.provenance?.source || (isFigureMode ? 'Figure Vision' : 'Graph Pipeline')}</span>
+                  </div>
+                  {(selectedNode.provenance?.figure_page || selectedNode.provenance?.page) && (
+                    <div className="flex justify-between">
+                      <span className="text-zinc-400">Original Page:</span>
+                      <span className="font-semibold text-zinc-700">Page {selectedNode.provenance.figure_page || selectedNode.provenance.page}</span>
+                    </div>
+                  )}
+                  {selectedNode.provenance?.figure_id && (
+                    <div className="flex justify-between">
+                      <span className="text-zinc-400">Paper Diagram:</span>
+                      <span className="font-semibold text-zinc-700">{selectedNode.provenance.figure_id}</span>
+                    </div>
+                  )}
+                  {selectedNode.provenance?.section && (
+                    <div className="flex justify-between">
+                      <span className="text-zinc-400">Section:</span>
+                      <span className="font-semibold text-zinc-700 truncate max-w-[180px]">{selectedNode.provenance.section}</span>
+                    </div>
                   )}
                 </div>
               </div>
+            </div>
+          </div>
+        ) : (
+          /* Default Architecture Overview Card (When No Component is Selected) */
+          <div className="flex flex-col h-full overflow-hidden">
+            {/* Header */}
+            <div className="p-4 border-b border-zinc-200 bg-zinc-50/80 backdrop-blur-xs shrink-0">
+              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-500">
+                ARCHITECTURE OVERVIEW
+              </span>
+              <h3 className="text-base font-bold text-zinc-900 mt-1 truncate" title={paperTitle || 'Model Architecture'}>
+                {paperTitle || (graph?.figure_id ? `Architecture Diagram (${graph.figure_id})` : 'Neural Network Architecture')}
+              </h3>
+              <div className="flex items-center gap-1.5 mt-2">
+                <span className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded border ${
+                  isFigureMode ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200'
+                }`}>
+                  {isFigureMode ? '✓ Figure-Faithful Reconstruction' : 'Auto Synthesized Graph'}
+                </span>
+              </div>
+            </div>
 
-              {/* Provenance (figure / page / section / citation / confidence) */}
-              {selectedNode.provenance && (
-                <div className="pt-2 border-t border-zinc-100">
-                  <h4 className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
-                    Provenance
-                  </h4>
-                  <dl className="text-[11px] text-zinc-600 space-y-1">
-                    {selectedNode.provenance.source && (
-                      <div className="flex justify-between gap-2">
-                        <dt className="text-zinc-400">Source</dt>
-                        <dd className="font-mono">{selectedNode.provenance.source}</dd>
-                      </div>
-                    )}
-                    {selectedNode.provenance.section && (
-                      <div className="flex justify-between gap-2">
-                        <dt className="text-zinc-400">Section</dt>
-                        <dd className="font-mono truncate">{selectedNode.provenance.section}</dd>
-                      </div>
-                    )}
-                    {selectedNode.provenance.page && (
-                      <div className="flex justify-between gap-2">
-                        <dt className="text-zinc-400">Text page</dt>
-                        <dd className="font-mono">{selectedNode.provenance.page}</dd>
-                      </div>
-                    )}
-                    {selectedNode.provenance.figure_id && (
-                      <div className="flex justify-between gap-2">
-                        <dt className="text-zinc-400">Figure</dt>
-                        <dd className="font-mono">{selectedNode.provenance.figure_id}</dd>
-                      </div>
-                    )}
-                    {selectedNode.provenance.figure_page && (
-                      <div className="flex justify-between gap-2">
-                        <dt className="text-zinc-400">Figure page</dt>
-                        <dd className="font-mono">{selectedNode.provenance.figure_page}</dd>
-                      </div>
-                    )}
-                    {selectedNode.confidence !== undefined && (
-                      <div className="flex justify-between gap-2">
-                        <dt className="text-zinc-400">Confidence</dt>
-                        <dd className="font-mono">{(selectedNode.confidence * 100).toFixed(0)}%</dd>
-                      </div>
-                    )}
-                    {selectedNode.provenance.citation && (
-                      <div className="mt-2">
-                        <dt className="text-zinc-400 mb-0.5">Citation</dt>
-                        <dd className="text-zinc-700 italic leading-relaxed">
-                          &ldquo;{selectedNode.provenance.citation}&rdquo;
-                        </dd>
-                      </div>
-                    )}
-                  </dl>
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Stat summary grid */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="p-2.5 bg-zinc-50 rounded-lg border border-zinc-200/80 text-center">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 block">Nodes</span>
+                  <span className="text-sm font-mono font-bold text-zinc-900 mt-0.5 block">{nodes.length}</span>
                 </div>
-              )}
-
-              {/* Position */}
-              {selectedMeta && (
-                <div className="pt-2 border-t border-zinc-100">
-                  <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-300">
-                    {selectedMeta.source === "figure"
-                      ? `Figure pos (${(selectedNode.bbox?.x ?? 0).toFixed(2)}, ${(selectedNode.bbox?.y ?? 0).toFixed(2)})`
-                      : `Layer ${selectedMeta.layer + 1} · Position ${selectedMeta.index + 1}`}
+                <div className="p-2.5 bg-zinc-50 rounded-lg border border-zinc-200/80 text-center">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 block">Edges</span>
+                  <span className="text-sm font-mono font-bold text-zinc-900 mt-0.5 block">{edges.length}</span>
+                </div>
+                <div className="p-2.5 bg-zinc-50 rounded-lg border border-zinc-200/80 text-center">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 block">Modules</span>
+                  <span className="text-sm font-mono font-bold text-zinc-900 mt-0.5 block">
+                    {groups.length > 0 ? groups.length : '1'}
                   </span>
                 </div>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="flex-1 flex items-center justify-center p-6">
-            <div className="text-center">
-              <div className="w-12 h-12 rounded-full bg-zinc-50 border border-zinc-100 flex items-center justify-center mx-auto mb-3">
-                <svg className="w-5 h-5 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
-                </svg>
               </div>
-              <p className="text-sm font-medium text-zinc-500">Select a component</p>
-              <p className="text-xs text-zinc-300 mt-1 leading-relaxed">
-                Click any block in the diagram to inspect its function, formulas, connections, and provenance.
-              </p>
-              {isFigureMode && (
-                <p className="text-[10px] text-emerald-600 mt-2">
-                  Figure-faithful mode active.
+
+              {/* Component Directory */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                    Component Directory ({nodes.length})
+                  </h4>
+                  <span className="text-[9px] font-mono text-zinc-400">click to inspect</span>
+                </div>
+                <div className="space-y-1.5">
+                  {nodes.map((node) => {
+                    const nodeEdgesCount = edges.filter((e) => e.source === node.id || e.target === node.id).length;
+                    const colors = getNodeColors(node.type);
+                    return (
+                      <button
+                        key={node.id}
+                        onClick={() => setSelectedId(node.id)}
+                        className="w-full text-left p-2.5 rounded-lg bg-zinc-50 hover:bg-zinc-100 border border-zinc-200/80 flex items-center justify-between gap-2 transition-all hover:border-zinc-300 group"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{ backgroundColor: colors.border }}
+                          />
+                          <span className="text-xs font-semibold text-zinc-800 truncate group-hover:text-blue-600 transition-colors">
+                            {node.label}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[9px] font-mono text-zinc-400 bg-white px-1.5 py-0.5 rounded border border-zinc-200/60">
+                            {nodeEdgesCount} conn
+                          </span>
+                          <ChevronRight className="w-3.5 h-3.5 text-zinc-400 group-hover:translate-x-0.5 transition-transform" />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Instructions Tip */}
+              <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-200/80 text-xs text-zinc-500 leading-relaxed flex items-start gap-2">
+                <Sparkles className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-zinc-600">
+                  Click any component in the diagram or directory to inspect its tensor equations, connections, and paper provenance.
                 </p>
-              )}
+              </div>
             </div>
           </div>
         )}
