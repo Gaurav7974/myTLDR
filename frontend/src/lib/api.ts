@@ -4,7 +4,6 @@
 
 import { PaperData, ParsedDocument } from '@/types/paper';
 import { ArchitectureGraph } from '@/types/architecture_graph';
-import { generateDynamicPaperData } from './mockData';
 
 export interface StreamProgressEvent {
   stage: 'extracting' | 'explaining' | 'diagramming' | 'done' | 'error';
@@ -51,6 +50,7 @@ export async function processPaperStream(
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
     let finalPayload: Record<string, unknown> | null = null;
+    let backendError: string | null = null;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -71,6 +71,8 @@ export async function processPaperStream(
           const parsed = JSON.parse(dataStr);
           if (parsed.stage === 'done') {
             finalPayload = parsed as Record<string, unknown>;
+          } else if (parsed.stage === 'error') {
+            backendError = parsed.message || 'Processing failed. Please retry.';
           }
           onProgress?.({
             stage: parsed.stage,
@@ -83,17 +85,21 @@ export async function processPaperStream(
       }
     }
 
+    if (backendError) {
+      throw new Error(backendError);
+    }
     if (finalPayload) {
       const result = transformBackendPayloadToPaperData(finalPayload, url, file?.name);
       if (fileBlobUrl) { result.metadata.fileBlobUrl = fileBlobUrl; result.metadata.pdfUrl = fileBlobUrl; }
       return result;
     }
-  } catch (err) { console.warn('[Pipeline] Backend stream error, using fallback:', err); }
-  const paperTitle = file ? file.name.replace(/\.pdf$/i, '') : url || 'Research Paper';
-  const paper = generateDynamicPaperData(paperTitle, url);
-  if (fileBlobUrl) { paper.metadata.fileBlobUrl = fileBlobUrl; paper.metadata.pdfUrl = fileBlobUrl; setTimeout(()=>URL.revokeObjectURL(fileBlobUrl), 60000); }
-  onProgress?.({ stage: 'done', message: 'Complete', data: paper });
-  return paper;
+    // Stream ended without a done event (backend crashed mid-pipeline) —
+    // surface a real error instead of silently substituting mock data.
+    throw new Error('The processing stream ended before results were ready. Please retry.');
+  } catch (err) {
+    console.warn('[Pipeline] Backend stream error:', err);
+    throw err instanceof Error ? err : new Error('Could not reach the processing backend.');
+  }
 }
 
 function transformBackendPayloadToPaperData(
@@ -162,20 +168,15 @@ function transformBackendPayloadToPaperData(
 }
 
 /**
- * Map the backend `graph` payload (which the pipeline emits as
- * `graph_to_react_flow` OR a rich `ArchitectureGraph` depending on the
- * path) to the frontend `ArchitectureGraph` shape.
+ * Map the backend `graph` payload (rich ArchitectureGraph, or the legacy
+ * react-flow/dagre shape on older deployments) to the frontend shape.
  *
- * The backend uses two different shapes for the SSE `graph` field:
- *  - ``{nodes:[{id,position,data}], edges:[{id,source,target,...}]}``
- *    (react-flow / dagre layout — legacy / text-only path)
- *  - The rich ArchitectureGraph produced by the figure-faithful pipeline
- *    (vision / merged path).
- *
- * The frontend is permissive: when the payload is the rich shape, it
- * passes through. When it is the react-flow shape (no `nodes[0].bbox`),
- * we treat it as auto-layout and pass it through with `layout_mode='auto'`
- * so the diagram can still render the labels.
+ * The backend emits the rich ArchitectureGraph model dump (nodes with
+ * label/bbox/provenance, edges with path_points, plus layout_mode/source/
+ * verification). The discriminator is the react-flow marker: react-flow
+ * nodes ALWAYS carry a `position` field; rich nodes never do. Anything
+ * without `position` passes through unchanged, so a rich node without
+ * bbox/description still keeps its label and auto-layouts on the client.
  */
 function transformArchitectureGraph(raw: unknown): ArchitectureGraph | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -184,15 +185,9 @@ function transformArchitectureGraph(raw: unknown): ArchitectureGraph | undefined
   if (nodes.length === 0) return undefined;
 
   const firstNode = nodes[0] as Record<string, unknown> | undefined;
-  const isRichShape = firstNode && (
-    'bbox' in firstNode ||
-    'description' in firstNode ||
-    'math_formula' in firstNode ||
-    'paper_term' in firstNode ||
-    'provenance' in firstNode
-  );
+  const isReactFlowShape = !!firstNode && 'position' in firstNode;
 
-  if (isRichShape) {
+  if (!isReactFlowShape) {
     return r as unknown as ArchitectureGraph;
   }
 

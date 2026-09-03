@@ -42,13 +42,20 @@ class ChatClient:
 
     def call(self, messages: list, model: str = None,
              response_format: dict = None, temperature: float = 0.1) -> str:
-        """Call the chat endpoint, trying each configured provider in order."""
+        """Call the chat endpoint, trying each configured provider in order.
+
+        `model` is a hint (callers pass settings.MISTRAL_LLM_MODEL). It is only
+        forwarded to the provider that owns that model name; failover providers
+        keep their own configured model, otherwise Groq would receive
+        "mistral-small-latest" and return 404.
+        """
         if not self.providers:
             raise Exception("No LLM provider configured (set OCR_KEY or GROQ_API_KEY)")
         last_err = None
         for prov in self.providers:
+            use_model = model if model == prov["model"] else prov["model"]
             try:
-                return self._post(prov, messages, model or prov["model"],
+                return self._post(prov, messages, use_model,
                                   response_format, temperature)
             except Exception as e:
                 log.warning(f"[LLM] provider '{prov['name']}' failed: {e}")

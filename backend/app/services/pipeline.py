@@ -21,7 +21,6 @@ from app.services.graph_merge import (
     merge_graph_metadata,
     should_render_reconstruction,
 )
-from app.services.flow_layout import graph_to_react_flow
 from app.services.cache import cache_service, compute_content_hash
 from app.services.rag import rag_service
 
@@ -132,11 +131,15 @@ async def process_paper(
             if graph.source is None:
                 graph.source = "legacy"
         diagram_available = graph is not None and len(graph.nodes) > 0
-        react_flow = graph_to_react_flow(graph) if graph and diagram_available else None
+        # Emit the rich ArchitectureGraph dict — the frontend renders figure-
+        # faithful mode from bbox/layout_mode and falls back to auto-layout
+        # otherwise. Converting to react-flow here would strip bbox/groups/
+        # verification and downgrade cached figure diagrams to auto-layout.
+        graph_payload = graph.model_dump() if graph and diagram_available else None
         yield {
             "stage": "done",
             "explanation": cached_explanation,
-            "graph": react_flow,
+            "graph": graph_payload,
             "diagram_available": diagram_available,
             "summary_available": cached_explanation is not None,
             "metadata": metadata,
@@ -261,12 +264,15 @@ async def process_paper(
           f"layout_mode={getattr(graph, 'layout_mode', None)}")
     
     # ── Done ──
-    react_flow = graph_to_react_flow(graph) if graph and diagram_available else None
+    # Rich graph payload (bbox/groups/verification preserved); the frontend's
+    # transformArchitectureGraph passes it through and its renderer picks
+    # figure mode vs auto-layout from layout_mode + verification.
+    graph_payload = graph.model_dump() if graph and diagram_available else None
     
     yield {
         "stage": "done",
         "explanation": explanation,
-        "graph": react_flow,
+        "graph": graph_payload,
         "architecture_ir": canonical_ir.model_dump(),
         "scene_graph_3d": scene_graph.model_dump(),
         "bycroft_stages": bycroft_data.get("stages", []),

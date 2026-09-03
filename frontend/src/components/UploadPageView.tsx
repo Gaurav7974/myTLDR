@@ -160,6 +160,7 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
   const [url, setUrl] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressStatus, setProgressStatus] = useState<string>('');
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [difficulty, setDifficulty] = useState<'beginner' | 'intermediate' | 'expert'>('intermediate');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -197,6 +198,7 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
     if (!url.trim() || isProcessing) return;
 
     setIsProcessing(true);
+    setSubmitError(null);
     setProgressStatus('Initializing ingestion pipeline...');
 
     try {
@@ -211,9 +213,9 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
         }
       );
       onSelectPaper(paper);
-    } catch {
-      const fallback = generateDynamicPaperData(detectedArxiv?.title || url, url);
-      onSelectPaper(fallback);
+    } catch (err) {
+      // Surface the failure — never substitute mock content for a real paper.
+      setSubmitError(err instanceof Error ? err.message : 'Processing failed. Please retry.');
     } finally {
       setIsProcessing(false);
     }
@@ -223,6 +225,7 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
     // One ingestion at a time: ignore file drops while a URL parse is running.
     if (isProcessing) return;
     setIsProcessing(true);
+    setSubmitError(null);
     setProgressStatus(`Extracting ${file.name} via OCR...`);
 
     try {
@@ -237,9 +240,8 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
         }
       );
       onSelectPaper(paper);
-    } catch {
-      const fallback = generateDynamicPaperData(file.name.replace(/\.pdf$/i, ''), 'custom-upload');
-      onSelectPaper(fallback);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Processing failed. Please retry.');
     } finally {
       setIsProcessing(false);
     }
@@ -422,6 +424,19 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
                 <p className="font-mono text-xs font-bold tracking-[0.06em] text-white">
                   <Sparkles className="mr-2 inline h-3.5 w-3.5 animate-spin" />
                   {progressStatus || 'Deconstructing paper...'}
+                </p>
+              </div>
+            )}
+
+            {/* Submission error — honest failure, never mock content */}
+            {submitError && !isProcessing && (
+              <div className="border-2 border-ink bg-red-50 px-4 py-3 animate-fadeIn" role="alert">
+                <p className="font-mono text-xs font-bold tracking-[0.06em] text-red-800">
+                  <span className="mr-2">✕</span>
+                  {submitError}
+                </p>
+                <p className="mt-1 font-mono text-[11px] text-red-600">
+                  Check the paper source and try again. Nothing was generated for this request.
                 </p>
               </div>
             )}

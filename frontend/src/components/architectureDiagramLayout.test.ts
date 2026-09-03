@@ -131,13 +131,13 @@ describe('computeAutoLayout', () => {
     expect(result.get('n4')!.layer).toBe(2);
   });
 
-  it('x increases with layer', () => {
+  it('y increases with layer (vertical stack layout)', () => {
     const nodes = [makeNode('n1'), makeNode('n2')];
     const edges = [{ source: 'n1', target: 'n2' }];
     const result = computeAutoLayout(nodes, edges);
-    const n1x = result.get('n1')!.x;
-    const n2x = result.get('n2')!.x;
-    expect(n2x).toBeGreaterThan(n1x);
+    const n1y = result.get('n1')!.y;
+    const n2y = result.get('n2')!.y;
+    expect(n2y).toBeGreaterThan(n1y);
   });
 
   it('marks source as auto', () => {

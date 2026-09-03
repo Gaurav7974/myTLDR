@@ -25,15 +25,9 @@ function transformArchitectureGraph(
   if (nodes.length === 0) return undefined;
 
   const firstNode = nodes[0] as Record<string, unknown> | undefined;
-  const isRichShape = firstNode && (
-    'bbox' in firstNode ||
-    'description' in firstNode ||
-    'math_formula' in firstNode ||
-    'paper_term' in firstNode ||
-    'provenance' in firstNode
-  );
+  const isReactFlowShape = !!firstNode && 'position' in firstNode;
 
-  if (isRichShape) {
+  if (!isReactFlowShape) {
     return r as unknown as import('@/types/architecture_graph').ArchitectureGraph;
   }
 
@@ -198,7 +192,10 @@ describe('transformArchitectureGraph — legacy shape conversion', () => {
 
   it('handles edges without labels', () => {
     const legacy = {
-      nodes: [{ id: 'a', data: { label: 'A' } }, { id: 'b', data: { label: 'B' } }],
+      nodes: [
+        { id: 'a', position: { x: 0, y: 0 }, data: { label: 'A' } },
+        { id: 'b', position: { x: 100, y: 0 }, data: { label: 'B' } },
+      ],
       edges: [{ source: 'a', target: 'b' }],
     };
     const result = transformArchitectureGraph(legacy)!;
@@ -207,7 +204,10 @@ describe('transformArchitectureGraph — legacy shape conversion', () => {
 
   it('converts edges even when edge ids are numeric', () => {
     const legacy = {
-      nodes: [{ id: 'a', data: { label: 'A' } }, { id: 'b', data: { label: 'B' } }],
+      nodes: [
+        { id: 'a', position: { x: 0, y: 0 }, data: { label: 'A' } },
+        { id: 'b', position: { x: 100, y: 0 }, data: { label: 'B' } },
+      ],
       edges: [{ id: 1, source: 'a', target: 'b' }],
     };
     const result = transformArchitectureGraph(legacy)!;
@@ -217,16 +217,16 @@ describe('transformArchitectureGraph — legacy shape conversion', () => {
 });
 
 describe('transformArchitectureGraph — mixed / edge cases', () => {
-  it('treats a graph with no detectable rich fields as legacy', () => {
-    // Nodes with only id + label (no bbox, description, etc.) — legacy
+  it('passes through a graph with plain nodes (no position marker) unchanged', () => {
+    // Nodes with only id + label (no bbox and no react-flow `position`) —
+    // treated as rich shape so labels survive; client auto-layouts it.
     const graph = {
       nodes: [{ id: 'n1', label: 'Encoder' }],
       edges: [],
     };
     const result = transformArchitectureGraph(graph)!;
-    expect(result.source).toBe('legacy');
-    expect(result.layout_mode).toBe('auto');
-    expect(result.nodes[0].type).toBe('other');
+    expect(result.nodes[0].label).toBe('Encoder');
+    expect(result.layout_mode).toBeUndefined();
   });
 
   it('handles nodes array that is not an array', () => {
@@ -236,18 +236,18 @@ describe('transformArchitectureGraph — mixed / edge cases', () => {
 
   it('handles missing edges field', () => {
     const legacy = {
-      nodes: [{ id: 'a', data: { label: 'A' } }],
+      nodes: [{ id: 'a', position: { x: 0, y: 0 }, data: { label: 'A' } }],
     };
     const result = transformArchitectureGraph(legacy)!;
     expect(result.edges).toEqual([]);
   });
 
   it('handles edges field that is not an array', () => {
-    const graph = {
-      nodes: [{ id: 'a', data: { label: 'A' } }],
+    const legacy = {
+      nodes: [{ id: 'a', position: { x: 0, y: 0 }, data: { label: 'A' } }],
       edges: 'not-an-array',
     };
-    const result = transformArchitectureGraph(graph)!;
+    const result = transformArchitectureGraph(legacy)!;
     expect(result.edges).toEqual([]);
   });
 });
