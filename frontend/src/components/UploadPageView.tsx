@@ -220,6 +220,8 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
   };
 
   const handleFileProcess = async (file: File) => {
+    // One ingestion at a time: ignore file drops while a URL parse is running.
+    if (isProcessing) return;
     setIsProcessing(true);
     setProgressStatus(`Extracting ${file.name} via OCR...`);
 
@@ -363,6 +365,7 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
               onDrop={(e) => {
                 e.preventDefault();
                 setIsDraggingOver(false);
+                if (isProcessing) return;
                 const file = e.dataTransfer.files?.[0];
                 if (file) handleFileProcess(file);
               }}
@@ -379,12 +382,14 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="Paste an arXiv link, e.g. arxiv.org/abs/1706.03762"
                 aria-label="Paper URL or arXiv ID"
-                className="min-w-0 flex-1 bg-transparent px-4 py-3.5 font-mono text-sm text-ink outline-none placeholder:text-fog"
+                disabled={isProcessing}
+                className="min-w-0 flex-1 bg-transparent px-4 py-3.5 font-mono text-sm text-ink outline-none placeholder:text-fog disabled:opacity-50"
               />
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 border-l-2 border-ink px-3.5 font-mono text-[11px] font-bold tracking-[0.08em] text-ink/70 transition-colors hover:bg-band hover:text-ink"
+                disabled={isProcessing}
+                className="flex items-center gap-1.5 border-l-2 border-ink px-3.5 font-mono text-[11px] font-bold tracking-[0.08em] text-ink/70 transition-colors hover:bg-band hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
                 title="Attach a PDF or Markdown file"
               >
                 <Paperclip className="h-4 w-4" />

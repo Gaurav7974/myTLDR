@@ -65,6 +65,24 @@ export const CodeWalkthroughTab: React.FC<CodeWalkthroughTabProps> = ({ paper })
     setTimeout(() => setCopiedIdx(null), 2000);
   };
 
+  // Honest empty state: the backend needs_code gate refused instead of
+  // inventing code. Never render a placeholder module.
+  if (!codeSnippets || codeSnippets.length === 0) {
+    return (
+      <div className="p-6 md:p-8 animate-fadeIn max-w-2xl mx-auto pb-36">
+        <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center space-y-3">
+          <div className="w-10 h-10 rounded-md bg-zinc-100 text-zinc-500 flex items-center justify-center mx-auto">
+            <Code className="w-5 h-5" />
+          </div>
+          <h4 className="font-bold text-zinc-950 text-sm font-mono uppercase">No reference code for this paper</h4>
+          <p className="text-xs text-zinc-600 leading-relaxed">
+            {paper.codeNote || 'The extraction found no implementable architecture to turn into code.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 md:p-8 space-y-6 animate-fadeIn max-w-4xl mx-auto pb-36 font-sans">
       
@@ -75,8 +93,8 @@ export const CodeWalkthroughTab: React.FC<CodeWalkthroughTabProps> = ({ paper })
             <Code className="w-4 h-4" />
           </div>
           <div>
-            <h4 className="font-bold text-zinc-950 text-xs font-mono uppercase">PyTorch Implementation</h4>
-            <p className="text-[11px] text-zinc-500">Executable reference tensor implementation with architectural annotations</p>
+            <h4 className="font-bold text-zinc-950 text-xs font-mono uppercase">PyTorch Reference</h4>
+            <p className="text-[11px] text-zinc-500">AI-generated from the paper&apos;s architecture — verify before running</p>
           </div>
         </div>
 
@@ -153,13 +171,13 @@ export const CodeWalkthroughTab: React.FC<CodeWalkthroughTabProps> = ({ paper })
               </table>
             </div>
 
-            {/* Architectural Callout Banner */}
-            <div className="p-3.5 bg-zinc-900/60 border-t border-zinc-800/80 flex items-center justify-between text-[11px] text-zinc-400 font-mono">
-              <div className="flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-zinc-500" />
-                <span>Matches Equation 1: Attention(Q, K, V) = softmax(QK^T / √d_k)V</span>
+            {/* Provenance Banner */}
+            <div className="p-3.5 bg-zinc-900/60 border-t border-zinc-800/80 flex items-center justify-between gap-3 text-[11px] text-zinc-400 font-mono">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Layers className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                <span className="truncate">Reference code grounded in this paper&apos;s architecture</span>
               </div>
-              <span className="text-zinc-500">O(N²) Complexity</span>
+              <span className="text-zinc-500 shrink-0">Verify before running</span>
             </div>
 
           </div>

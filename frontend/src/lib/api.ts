@@ -150,6 +150,7 @@ function transformBackendPayloadToPaperData(
     architectureNodes: (payload.architecture_nodes as PaperData['architectureNodes']) || [],
     equations: (payload.equations as PaperData['equations']) || [],
     codeSnippets: (payload.code_snippets as PaperData['codeSnippets']) || [],
+    codeNote: (payload.code_note as string) || null,
     architectureIR: payload.architecture_ir as PaperData['architectureIR'],
     sceneGraph3D: payload.scene_graph_3d as PaperData['sceneGraph3D'],
     architectureGraph: transformArchitectureGraph(payload.graph),

@@ -6,12 +6,9 @@ import {
   Send, 
   Sparkles, 
   Bot, 
-  CornerDownLeft, 
-  BookOpen, 
-  ChevronDown, 
-  ChevronUp, 
-  Copy, 
-  Check, 
+  CornerDownLeft,
+  Copy,
+  Check,
   Code2,
   HelpCircle,
   Zap,
@@ -40,6 +37,25 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   citations?: ChatCitation[];
+}
+
+// Locate the paper page holding a citation's topic by matching distinctive
+// words against the parsed document. RAG chunks carry no page numbers, so
+// this client-side match is what makes source pills hyperlink to the paper.
+// Exported for unit testing.
+export function findCitationPage(cit: ChatCitation, paper: PaperData): number | null {
+  const pages = paper.parsedDocument?.pages;
+  if (!pages?.length) return null;
+  const tokens = cit.content.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 4).slice(0, 12);
+  if (!tokens.length) return null;
+  let best: number | null = null;
+  let bestHits = 0;
+  for (const p of pages) {
+    const text = p.markdown.toLowerCase();
+    const hits = tokens.filter(t => text.includes(t)).length;
+    if (hits > bestHits) { bestHits = hits; best = p.pageNumber; }
+  }
+  return bestHits >= 2 ? best : null;
 }
 
 // Formatter to render Markdown bold, inline code, and KaTeX math in AI responses
@@ -129,7 +145,6 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [expandedCitationMsgId, setExpandedCitationMsgId] = useState<string | null>(null);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -324,35 +339,27 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
                   </div>
                 </div>
               ) : (
-                /* AI MESSAGE: Editorial Clean Flow */
-                <div className="p-5 rounded-2xl bg-white border border-zinc-200/90 shadow-sm space-y-3.5 text-left">
+                /* AI MESSAGE: chat flow, minimal chrome */
+                <div className="py-1 space-y-2.5 text-left max-w-3xl">
                   
-                  {/* Message Header */}
-                  <div className="flex items-center justify-between border-b border-zinc-100 pb-2.5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-lg bg-zinc-950 text-white flex items-center justify-center shadow-2xs">
-                        <Bot className="w-3.5 h-3.5" />
-                      </div>
-                      <span className="font-bold text-xs text-zinc-950 font-mono">myTLDR AI</span>
-                      <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded-md bg-zinc-100 text-zinc-600 border border-zinc-200">
-                        Grounded RAG
-                      </span>
+                  {/* Slim message header */}
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 rounded-md bg-zinc-950 text-white flex items-center justify-center">
+                      <Bot className="w-3 h-3" />
                     </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono text-zinc-400">{msg.timestamp}</span>
-                      <button
-                        onClick={() => copyMessage(msg.id, msg.text)}
-                        className="p-1 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
-                        title="Copy response"
-                      >
-                        {copiedMsgId === msg.id ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
+                    <span className="font-bold text-[11px] text-zinc-900 font-mono">myTLDR AI</span>
+                    <span className="text-[10px] font-mono text-zinc-400">{msg.timestamp}</span>
+                    <button
+                      onClick={() => copyMessage(msg.id, msg.text)}
+                      className="p-0.5 rounded text-zinc-300 hover:text-zinc-700 transition-colors"
+                      title="Copy response"
+                    >
+                      {copiedMsgId === msg.id ? (
+                        <Check className="w-3 h-3 text-emerald-600" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                    </button>
                   </div>
 
                   {/* Message Body with KaTeX Math Rendering */}
@@ -363,44 +370,28 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
                     onJumpToPage={onJumpToPage}
                   />
 
-                  {/* Verified Citations Accordion */}
+                  {/* Source pills — click jumps to the paper page holding the topic */}
                   {msg.citations && msg.citations.length > 0 && (
-                    <div className="pt-2 border-t border-zinc-100">
-                      <button
-                        onClick={() => setExpandedCitationMsgId(expandedCitationMsgId === msg.id ? null : msg.id)}
-                        className="flex items-center justify-between w-full p-2 rounded-lg bg-zinc-50 hover:bg-zinc-100 border border-zinc-200/80 text-[11px] font-mono text-zinc-600 transition-all"
-                      >
-                        <span className="flex items-center gap-1.5 font-semibold text-zinc-800">
-                          <BookOpen className="w-3.5 h-3.5 text-zinc-600" />
-                          <span>{msg.citations.length} Grounded Paper Citations</span>
-                        </span>
-                        {expandedCitationMsgId === msg.id ? (
-                          <ChevronUp className="w-3.5 h-3.5 text-zinc-500" />
+                    <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                      <span className="text-zinc-400 font-mono text-[10px]">Sources:</span>
+                      {msg.citations.map((cit, citIdx) => {
+                        const page = findCitationPage(cit, paper);
+                        const pill = "px-2 py-0.5 rounded-full bg-zinc-100 border border-zinc-200 text-[11px] text-zinc-600 font-medium max-w-[220px] truncate transition-colors";
+                        return page != null && onJumpToPage ? (
+                          <button
+                            key={citIdx}
+                            onClick={() => onJumpToPage(page, cit.section_title)}
+                            title={`Open page ${page} in the paper`}
+                            className={`${pill} hover:bg-zinc-200 cursor-pointer`}
+                          >
+                            § {cit.section_title}
+                          </button>
                         ) : (
-                          <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
-                        )}
-                      </button>
-
-                      {expandedCitationMsgId === msg.id && (
-                        <div className="space-y-2 pt-2 animate-fadeIn">
-                          {msg.citations.map((cit, citIdx) => (
-                            <div
-                              key={citIdx}
-                              className="p-3 rounded-lg bg-zinc-50/80 border border-zinc-200/80 text-xs space-y-1.5"
-                            >
-                              <div className="flex items-center justify-between text-zinc-800 font-semibold font-mono text-[11px]">
-                                <span>{cit.section_title}</span>
-                                <span className="text-[10px] text-zinc-500 bg-white px-1.5 py-0.5 rounded border border-zinc-200">
-                                  {(cit.similarity * 100).toFixed(0)}% match
-                                </span>
-                              </div>
-                              <p className="text-zinc-600 italic font-serif leading-relaxed">
-                                &ldquo;{cit.content}&rdquo;
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                          <span key={citIdx} title="Page not located" className={`${pill} cursor-default`}>
+                            § {cit.section_title}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
 
@@ -428,12 +419,10 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
 
           {/* Loading Indicator */}
           {isLoading && (
-            <div className="p-4 rounded-2xl bg-white border border-zinc-200 shadow-sm flex items-center gap-3 w-fit animate-pulse">
-              <div className="w-6 h-6 rounded-lg bg-zinc-950 text-white flex items-center justify-center">
-                <Sparkles className="w-3.5 h-3.5 animate-spin" />
-              </div>
-              <span className="text-xs text-zinc-600 font-mono">
-                Synthesizing grounded response & KaTeX math...
+            <div className="flex items-center gap-2 py-2 animate-pulse">
+              <Sparkles className="w-3.5 h-3.5 text-zinc-400 animate-spin" />
+              <span className="text-[11px] text-zinc-500 font-mono">
+                Synthesizing grounded response…
               </span>
             </div>
           )}

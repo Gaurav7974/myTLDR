@@ -53,6 +53,8 @@ class TextExtractor:
 
     def extract_from_pdf_bytes(self, pdf_bytes: bytes) -> ExtractionResult:
         """Extract text per page. PyMuPDF for text pages, Mistral OCR for image pages."""
+        if not pdf_bytes or not pdf_bytes.lstrip()[:5] == b"%PDF-":
+            raise ValueError("Uploaded file is not a valid PDF (missing %PDF header)")
         doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
         pages: List[PageText] = [
             PageText(page_number=i + 1, markdown=page.get_text(), source="pymupdf")

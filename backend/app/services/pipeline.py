@@ -155,7 +155,7 @@ async def process_paper(
     tasks = {}
     if not cached_explanation: tasks["expl"] = asyncio.to_thread(explanation_service.generate, full_text, difficulty)
     tasks["eq"] = asyncio.to_thread(explanation_service.extract_equations, full_text)
-    tasks["code"] = asyncio.to_thread(explanation_service.generate_pytorch_code, full_text, paper_title)
+    tasks["code"] = asyncio.to_thread(explanation_service.generate_pytorch_code, full_text, paper_title, arch_text)
     tasks["ir"] = asyncio.to_thread(ir_extractor.extract, full_text, paper_title)
     tasks["bycroft"] = asyncio.to_thread(forward_pass_extractor.extract_3d_architecture, full_text, paper_title)
     if cached_graph is None and not arch_section_missing: tasks["tgraph"] = asyncio.to_thread(graph_extractor.extract_graph, arch_text, paper_title)
@@ -166,7 +166,12 @@ async def process_paper(
     if explanation and not cached_explanation:
         try: await cache_service.store_explanation(db, content_hash, difficulty, explanation)
         except Exception: pass
-    equations, code_snippets = _ok("eq") or [], _ok("code") or []
+    equations, code_snippets, code_note = _ok("eq") or [], [], None
+    code_res = _ok("code") or {}
+    if isinstance(code_res, dict):
+        code_snippets = code_res.get("snippets", []) or []
+        if not code_res.get("needs_code", True):
+            code_note = code_res.get("reason") or "This paper has no implementable architecture to show as code."
     canonical_ir, scene_graph = _ok("ir") or (None, None)
     if isinstance(canonical_ir, tuple): canonical_ir, scene_graph = canonical_ir
     if scene_graph is None:
@@ -273,6 +278,7 @@ async def process_paper(
         "next_token_predictions": bycroft_data.get("nextTokenPredictions", []),
         "equations": equations,
         "code_snippets": code_snippets,
+        "code_note": code_note,
         "architecture_nodes": [n.model_dump() for n in canonical_ir.nodes] if hasattr(canonical_ir, "nodes") else [],
         "diagram_available": diagram_available,
         "summary_available": explanation is not None,

@@ -2016,35 +2016,9 @@ export function generateDynamicPaperData(title: string, arxivId?: string, text?:
       pdfUrl: extractedArxivId ? `https://arxiv.org/pdf/${extractedArxivId}.pdf` : undefined,
       citationsCount: 1200,
       tags: ['Neural Architecture', 'Deep Learning', 'Optimization', 'Tensor Computation'],
-      keywords: [
-        {
-          id: 'arch-opt',
-          term: 'Architecture Optimization',
-          category: 'architecture',
-          definition: 'Structural refinement of neural network layers to minimize computational latency and memory consumption.',
-          simpleExplanation: 'Restructuring layers so the model runs faster and fits into hardware memory.',
-          formula: '\\min_{\\theta} \\mathcal{L}(\\theta) \\quad \\text{s.t.} \\quad \\text{Latency} \\le T',
-          relatedSection: 'Section 3: Methodology (Page 3)'
-        },
-        {
-          id: 'tensor-comp',
-          term: 'Tensor Computation',
-          category: 'mechanism',
-          definition: 'Multi-dimensional array transformations executing parallel matrix operations across GPU tensor cores.',
-          simpleExplanation: 'Processing large blocks of numbers simultaneously across thousands of GPU cores.',
-          formula: 'Y = \\sigma(X W + b)',
-          relatedSection: 'Section 4: Computational Flow (Page 4)'
-        },
-        {
-          id: 'residual-fusion',
-          term: 'Residual Fusion',
-          category: 'core',
-          definition: 'Direct additive skip connections linking earlier representations directly to downstream layers.',
-          simpleExplanation: 'Highway cables that pass raw input data directly to later stages, preventing vanishing gradients.',
-          formula: 'x_{l+1} = x_l + \\mathcal{F}(x_l)',
-          relatedSection: 'Section 3.2: Residual Connections (Page 3)'
-        }
-      ]
+      // No invented keywords: the real pipeline never produces them for
+      // uploads, and fake terms with fabricated page refs misinform.
+      keywords: [],
     },
     structuredSummary: {
       overview: {

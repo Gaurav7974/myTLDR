@@ -218,6 +218,9 @@ export interface PaperData {
     language: string;
     code: string;
   }[];
+  /** Honest refusal reason when the paper has no implementable architecture
+   *  (backend needs_code gate). Shown instead of invented code. */
+  codeNote?: string | null;
   architectureIR?: ArchitectureIR;
   sceneGraph3D?: SceneGraph3D;
   /** Figure-faithful graph payload from the backend (vision/merged/text/legacy).
