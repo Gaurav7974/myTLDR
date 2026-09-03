@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { PaperData } from '@/types/paper';
 import { TRANSFORMER_PAPER_DATA, MAMBA_PAPER_DATA, generateDynamicPaperData } from '@/lib/mockData';
 import { processPaperStream } from '@/lib/api';
@@ -8,7 +9,12 @@ import { PixelMosaic } from '@/components/PixelMosaic';
 import { PixelHeaderGrid } from '@/components/PixelHeaderGrid';
 import { Reveal } from '@/components/Reveal';
 import { Typewriter, TypeOnce } from '@/components/Typewriter';
-import StickerWall from '@/components/StickerWall';
+// Physics wall is canvas-only with theme-dependent first render — keep it
+// client-side so SSR HTML never mismatches (was: hydration error).
+const StickerWall = dynamic(() => import('@/components/StickerWall'), {
+  ssr: false,
+  loading: () => <div className="flex min-h-[520px] w-full items-center justify-center" />,
+});
 import {
   ArrowRight,
   ArrowUpRight,

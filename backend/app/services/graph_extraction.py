@@ -145,9 +145,12 @@ class GraphExtractor:
         Returns a text-source graph (layout_mode='auto') carrying optional
         semantic enrichment. Returns None on any failure.
         """
+        # Use dynamic ceiling from config (Fix #3) instead of flat 18000 cap
+        safe_text = settings.dynamic_section_limit(len(architecture_text))
+
         prompt = GRAPH_EXTRACTION_PROMPT.format(
             paper_title=paper_title or "Unknown",
-            text=architecture_text[:settings.MAX_SECTION_CHARS],
+            text=safe_text,
         )
 
         try:

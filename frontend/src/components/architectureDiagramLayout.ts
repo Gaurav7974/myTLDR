@@ -47,6 +47,19 @@ export interface NormalizedEdge {
   [k: string]: any;
 }
 
+let elkInstance: any | null = null;
+let elkPromise: Promise<any> | null = null;
+
+async function getElk(): Promise<any | null> {
+  if (elkInstance) return elkInstance;
+  if (elkPromise) return elkPromise;
+  elkPromise = import("elkjs/lib/elk.bundled.js").then((mod: any) => {
+    elkInstance = new mod.default();
+    return elkInstance;
+  }).catch(() => null);
+  return elkPromise;
+}
+
 /** Convert a normalized bbox to figure-canvas pixel coordinates. */
 export function figureNodePosition(node: NormalizedNode): {
   x: number; y: number; w: number; h: number;
@@ -251,4 +264,72 @@ export function pathPointsToSvgPath(points: GraphPoint[]): string {
   if (points.length < 2) return "";
   const segments = points.map((p) => `${p.x * FIGURE_CANVAS_W},${p.y * FIGURE_CANVAS_H}`);
   return `M ${segments.join(" L ")}`;
+}
+
+/** Run ELK layered layout on the graph, return positioned nodes. */
+export async function computeElkLayout(
+  nodes: NormalizedNode[],
+  edges: NormalizedEdge[]
+): Promise<Map<string, PositionedNode>> {
+  const elk = await getElk();
+  if (!elk) return new Map();
+  if (nodes.length === 0) return new Map();
+
+  const nodeDims = new Map<string, { w: number; h: number }>();
+  const children = nodes.map((n) => {
+    let w = NODE_W_DEFAULT;
+    let h = NODE_H_DEFAULT;
+    if (n.bbox && typeof n.bbox.w === "number" && typeof n.bbox.h === "number") {
+      w = Math.max(60, n.bbox.w * FIGURE_CANVAS_W);
+      h = Math.max(28, n.bbox.h * FIGURE_CANVAS_H);
+    }
+    nodeDims.set(n.id, { w, h });
+    return {
+      id: n.id,
+      width: w,
+      height: h,
+    };
+  });
+
+  const elkEdges = edges.map((e, i) => ({
+    id: `e${i}`,
+    sources: [e.source],
+    targets: [e.target],
+  }));
+
+  const graph = {
+    id: "root",
+    layoutOptions: {
+      "elk.algorithm": "layered",
+      "elk.direction": "DOWN",
+      "elk.edgeRouting": "ORTHOGONAL",
+      "elk.spacing.nodeNode": "40",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "80",
+    },
+    children,
+    edges: elkEdges,
+  };
+
+  try {
+    const result = await elk.layout(graph);
+    const positioned = new Map<string, PositionedNode>();
+    const children = result.children ?? [];
+    for (const child of children) {
+      if (!child.id || typeof child.x !== "number" || typeof child.y !== "number") continue;
+      const dims = nodeDims.get(child.id) ?? { w: NODE_W_DEFAULT, h: NODE_H_DEFAULT };
+      positioned.set(child.id, {
+        id: child.id,
+        x: child.x,
+        y: child.y,
+        w: dims.w,
+        h: dims.h,
+        layer: 0,
+        index: 0,
+        source: "auto",
+      });
+    }
+    return positioned;
+  } catch {
+    return new Map();
+  }
 }

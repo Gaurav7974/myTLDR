@@ -11,11 +11,13 @@ import {
 import {
   FIGURE_CANVAS_W,
   FIGURE_CANVAS_H,
-  NODE_W_DEFAULT as NODE_W,
-  NODE_H_DEFAULT as NODE_H,
   PADDING,
+  NODE_W_DEFAULT,
+  NODE_H_DEFAULT,
   figureNodePosition,
   computeAutoLayout,
+  computeElkLayout,
+  positionNodesFigure,
   resolveEdgeStyle as resolveEdgeStyleImpl,
   type PositionedNode,
 } from "./architectureDiagramLayout";
@@ -85,7 +87,7 @@ export interface ArchitectureDiagramProps {
   onNodeClick?: (node: DiagramNode) => void;
 }
 
-// ── Constants (NODE_W, NODE_H, PADDING, FIGURE_CANVAS_W/H are imported
+// ── Constants (NODE_W_DEFAULT, NODE_H_DEFAULT, PADDING, FIGURE_CANVAS_W/H are imported
 //    from ./architectureDiagramLayout; LAYER_GAP/NODE_GAP are auto-layout
 //    constants and live with computeAutoLayout there.)
 
@@ -115,7 +117,7 @@ function getNodeColors(type: string) {
 // ── Edge style + layout helpers (imported) ─────────────────────────
 // resolveEdgeStyle, computeAutoLayout, figureNodePosition,
 // positionGroupsFigure, pathPointsToSvgPath, FIGURE_CANVAS_W, FIGURE_CANVAS_H,
-// NODE_W, NODE_H, PADDING, and PositionedNode all come from
+// NODE_W_DEFAULT, NODE_H_DEFAULT, PADDING, and PositionedNode all come from
 // ./architectureDiagramLayout so they can be unit-tested in isolation
 // without React or a DOM.
 
@@ -166,19 +168,28 @@ export default function ArchitectureDiagram({
   const [isPanning, setIsPanning] = useState(false);
   const panStart = useRef({ x: 0, y: 0 });
 
-  // Compute layout: figure-coordinates when verified, BFS fallback otherwise
-  const positioned = useMemo(() => {
+  const initialPositioned = useMemo(() => {
     if (isFigureMode) {
-      const m = new Map<string, PositionedNode>();
-      nodes.forEach((n) => {
-        const p = figureNodePosition(n);
-        if (p) m.set(n.id, { id: n.id, x: p.x, y: p.y, w: p.w, h: p.h, layer: 0, index: 0, source: "figure" });
-      });
-      if (m.size > 0) return m;
-      // fall through to auto if figure positions were all missing
+      const fig = positionNodesFigure(nodes, true);
+      if (fig.size > 0) return fig;
     }
     return computeAutoLayout(nodes, edges);
   }, [isFigureMode, nodes, edges]);
+
+  const [positioned, setPositioned] = useState<Map<string, PositionedNode>>(initialPositioned);
+
+  useEffect(() => {
+    setPositioned(initialPositioned);
+    let cancelled = false;
+    if (!isFigureMode && nodes.length > 0) {
+      computeElkLayout(nodes, edges).then((elkPos) => {
+        if (!cancelled && elkPos.size > 0) {
+          setPositioned(elkPos);
+        }
+      });
+    }
+    return () => { cancelled = true; };
+  }, [isFigureMode, nodes, edges, initialPositioned]);
 
   // Mark nodes that have no layout as "missing" so the renderer can draw
   // them safely (or hide them).
@@ -191,8 +202,8 @@ export default function ArchitectureDiagram({
     if (positioned.size === 0) return { canvasW: 800, canvasH: 400 };
     let maxX = 0, maxY = 0;
     positioned.forEach((p: any) => {
-      maxX = Math.max(maxX, p.x + (p.w || NODE_W));
-      maxY = Math.max(maxY, p.y + (p.h || NODE_H));
+      maxX = Math.max(maxX, p.x + (p.w || NODE_W_DEFAULT));
+      maxY = Math.max(maxY, p.y + (p.h || NODE_H_DEFAULT));
     });
     if (isFigureMode) {
       maxX = Math.max(maxX, FIGURE_CANVAS_W);
@@ -235,10 +246,10 @@ export default function ArchitectureDiagram({
           return { ...e, path, midX, midY };
         }
         // Bezier fallback
-        const sx = src.x + NODE_W;
-        const sy = src.y + NODE_H / 2;
+        const sx = src.x + NODE_W_DEFAULT;
+        const sy = src.y + NODE_H_DEFAULT / 2;
         const tx = tgt.x;
-        const ty = tgt.y + NODE_H / 2;
+        const ty = tgt.y + NODE_H_DEFAULT / 2;
         const dx = tx - sx;
         const controlOffset = Math.max(40, dx * 0.4);
         const path = `M ${sx} ${sy} C ${sx + controlOffset} ${sy}, ${tx - controlOffset} ${ty}, ${tx} ${ty}`;
@@ -438,7 +449,7 @@ export default function ArchitectureDiagram({
               const isSelected = selectedId === node.id;
               const isHovered = hoveredId === node.id;
               const isConnected = selectedId && edges.some((e) => (e.source === selectedId && e.target === node.id) || (e.target === selectedId && e.source === node.id));
-              const w = (pos as any).w || NODE_W, h = (pos as any).h || NODE_H;
+              const w = (pos as any).w || NODE_W_DEFAULT, h = (pos as any).h || NODE_H_DEFAULT;
               const shape = (node.shape || node.style?.shape || "rounded") as string;
               const stroke = isSelected ? "#3b82f6" : border, sw = isSelected ? 2 : 1;
               const dim = selectedId && !isSelected && !isConnected ? 0.35 : 1;
@@ -524,6 +535,24 @@ export default function ArchitectureDiagram({
               <h3 className="text-base font-bold text-zinc-900 mt-2">
                 {selectedNode.label}
               </h3>
+              {selectedNode.confidence !== undefined && (
+                <div className="mt-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-400">
+                      Confidence
+                    </span>
+                    <span className="text-[10px] font-mono text-zinc-500">
+                      {(selectedNode.confidence * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-zinc-800 rounded-full transition-all duration-300"
+                      style={{ width: `${Math.min(100, Math.max(0, selectedNode.confidence * 100))}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Content */}
@@ -602,6 +631,7 @@ export default function ArchitectureDiagram({
                       const isSource = e.source === selectedNode.id;
                       const otherId = isSource ? e.target : e.source;
                       const other = nodes.find((n) => n.id === otherId);
+                      const edgeType = (e.type || "").replace(/_/g, " ");
                       return (
                         <button
                           key={i}
@@ -611,12 +641,12 @@ export default function ArchitectureDiagram({
                           <span className="text-[10px] font-mono text-zinc-400">
                             {isSource ? "→ OUT" : "← IN"}
                           </span>
-                          <span className="text-xs font-medium text-zinc-700 truncate">
+                          <span className="text-xs font-medium text-zinc-700 truncate flex-1">
                             {other?.label || otherId}
                           </span>
-                          {e.label && (
-                            <span className="text-[9px] text-zinc-400 ml-auto shrink-0">
-                              {e.label}
+                          {edgeType && (
+                            <span className="text-[9px] font-mono text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded shrink-0">
+                              {edgeType}
                             </span>
                           )}
                         </button>

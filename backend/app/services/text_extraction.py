@@ -414,26 +414,137 @@ Respond ONLY with a valid JSON object matching:
                 "categories": ["Machine Learning"]
             }
     
-    def find_architecture_section(self, text: str) -> str:
-        """Locate the architecture/method section. Fallback to first N chars."""
-        patterns = [r"(?im)^\s*\d+\.?\s+(?:model\s+)?architecture", r"(?im)^\s*\d+\.?\s+method(?:s)?", r"(?im)^\s*\d+\.?\s+approach", r"(?im)^\s*\d+\.?\s+proposed", r"(?im)^\s*\d+\.?\s+network\s+architecture", r"(?im)^\s*\d+\.?\s+model\s+design", r"(?im)^\s*\d+\.?\s+model\s+structure", r"(?im)^\s*\d+\.?\s+overall\s+architecture"]
-        start = next((text.rfind('\n',0,m.start())+1 for p in patterns if (m:=re.search(p,text))), None)
-        if start is None or start <0:
-            log.warning("[WARN] No architecture section found, using first N chars")
-            return text[:settings.MAX_SECTION_CHARS]
-        next_section = re.search(r"\n(?=\d+\.?\s+[A-Za-z])", text[start+200:])
-        if next_section:
-            end = start + 200 + next_section.start()
+    # ── LLM-based architecture section detection (Fix #2) ──────────
+    ARCH_SECTION_PROMPT = """You are an expert research-paper parser. Given the full text of a paper, locate the architecture / method / model section that describes the model's components, layers, blocks, and their connections.
+
+Instructions:
+- Read the full paper text below and identify the contiguous span that is the architecture/method description (headings like "Architecture", "Model", "Method", "Approach", "Proposed Method", "Network Architecture", "Model Design", etc., plus subsections).
+- Return the VERBATIM text of that section (copy exactly from the source, do not paraphrase or invent). If the section is long, return its full contiguous text up to {ceiling} characters; do not truncate mid-sentence unless you must hit the ceiling.
+- If the paper has NO clearly identifiable architecture/method section (e.g. survey, dataset paper, or the section is missing/ambiguous), set found=false.
+- Confidence: 0.0-1.0 — how confidently you located a real architecture section.
+
+Output strictly valid JSON:
+{{"found": true|false, "section_text": "verbatim excerpt or empty string", "confidence": 0.0-1.0, "reason": "one-sentence justification, include the heading you matched if found"}}
+
+Full paper text (truncated to {max_chars} chars for this call):
+---
+{text}
+---"""
+
+    def find_architecture_section(self, text: str) -> str | None:
+        """LLM-based architecture/method section locator (Fix #2).
+
+        Returns the verbatim section text on success, or None if the LLM cannot
+        confidently locate a section. Callers must treat None as an explicit
+        failure state (diagram/explanation unavailable) — NOT as a silent
+        fallback to arbitrary intro text.
+        """
+        if not text or len(text.strip()) < 100:
+            log.warning("[ARCH_SECTION] Input too short, no architecture section")
+            return None
+
+        # Truncate to what the locator LLM can ingest (keep head + method area)
+        locator_input = text[: settings.ARCH_SECTION_LLM_MAX_CHARS]
+        ceiling = settings.SECTION_CHAR_CEILING
+
+        prompt = self.ARCH_SECTION_PROMPT.format(
+            ceiling=ceiling,
+            max_chars=settings.ARCH_SECTION_LLM_MAX_CHARS,
+            text=locator_input,
+        )
+
+        # Import lazily to avoid circular deps at module load
+        try:
+            from app.services.llm import groq_client
+        except Exception as e:
+            log.error(f"[ARCH_SECTION] LLM client unavailable: {e}")
+            return self._find_architecture_section_regex_fallback(text, reason="llm_unavailable")
+
+        try:
+            data = groq_client.extract_json(
+                messages=[
+                    {"role": "system", "content": "You are a precise research-paper section locator. Return only valid JSON."},
+                    {"role": "user", "content": prompt},
+                ],
+                model=settings.MISTRAL_LLM_MODEL,
+            )
+        except Exception as e:
+            log.warning(f"[ARCH_SECTION] LLM call failed: {e} — no fallback to arbitrary text")
+            return self._find_architecture_section_regex_fallback(text, reason=f"llm_error: {e}")
+
+        found = bool(data.get("found", False))
+        confidence = float(data.get("confidence", 0.0) or 0.0)
+        section_text = (data.get("section_text") or "").strip()
+        reason = data.get("reason") or ""
+
+        # Explicit failure checks
+        if not found:
+            log.warning(f"[ARCH_SECTION] LLM could not locate architecture section: {reason}")
+            return None
+        if confidence < 0.5:
+            log.warning(f"[ARCH_SECTION] Low confidence {confidence:.2f}: {reason} — treating as not found")
+            return None
+        if len(section_text) < 200:
+            log.warning(f"[ARCH_SECTION] Section too short ({len(section_text)} chars), confidence {confidence:.2f}: {reason}")
+            return None
+        # Verify extracted text actually appears in source (anti-hallucination)
+        # Check that a 60-char sample from the LLM output exists in the source
+        sample = section_text[:60].strip()
+        if sample and sample not in text and sample[:40] not in text:
+            log.warning(f"[ARCH_SECTION] LLM section_text not found verbatim in source — possible hallucination: {reason}")
+            return None
+
+        # Dynamic sizing (Fix #3): cap to ceiling, otherwise keep actual length
+        if len(section_text) > ceiling:
+            log.info(f"[ARCH_SECTION] Truncating {len(section_text)} -> {ceiling} chars (ceiling)")
+            section_text = section_text[:ceiling]
+
+        log.info(f"[ARCH_SECTION] Found section ({len(section_text)} chars, conf={confidence:.2f}): {reason[:120]}")
+        return section_text
+
+    def find_architecture_section_or_fallback(self, text: str) -> str | None:
+        """Compatibility wrapper that preserves old call sites expecting a string.
+
+        New code should call find_architecture_section() directly and handle None.
+        This wrapper is kept for tests that assert a string is returned.
+        """
+        result = self.find_architecture_section(text)
+        if result is not None:
+            return result
+        # Do NOT silently return first N chars — surface None
+        return None
+
+    def _find_architecture_section_regex_fallback(self, text: str, reason: str = "") -> str | None:
+        """Legacy regex locator — used ONLY for diagnostics, never as silent success.
+
+        Returns None to force explicit failure propagation. Logs what regex would
+        have returned so operators can compare LLM vs regex on real papers.
+        """
+        patterns = [
+            r"(?im)^\s*\d+\.?\s+(?:model\s+)?architecture",
+            r"(?im)^\s*\d+\.?\s+method(?:s)?",
+            r"(?im)^\s*\d+\.?\s+approach",
+            r"(?im)^\s*\d+\.?\s+proposed",
+            r"(?im)^\s*\d+\.?\s+network\s+architecture",
+            r"(?im)^\s*\d+\.?\s+model\s+design",
+            r"(?im)^\s*\d+\.?\s+model\s+structure",
+            r"(?im)^\s*\d+\.?\s+overall\s+architecture",
+        ]
+        start = next((text.rfind('\n', 0, m.start()) + 1 for p in patterns if (m := re.search(p, text))), None)
+        if start is None or start < 0:
+            log.warning(f"[ARCH_SECTION] Regex fallback also found nothing (LLM reason: {reason})")
+            return None
+        nxt = re.search(r"\n(?=\d+\.?\s+[A-Za-z])", text[start + 200 :])
+        if nxt:
+            end = start + 200 + nxt.start()
             section = text[start:end]
         else:
-            section = text[start:start + settings.MAX_SECTION_CHARS]
-        
-        # Hard cap
-        if len(section) > settings.MAX_SECTION_CHARS:
-            section = section[:settings.MAX_SECTION_CHARS]
-        
-        log.info(f"Found architecture section ({len(section)} chars)")
-        return section
+            section = text[start : start + settings.SECTION_CHAR_CEILING]
+        if len(section) > settings.SECTION_CHAR_CEILING:
+            section = section[: settings.SECTION_CHAR_CEILING]
+        log.info(f"[ARCH_SECTION] Regex fallback would have returned {len(section)} chars (LLM reason: {reason}) — NOT used, surfacing failure")
+        # Important: still return None — do not let regex substitute for LLM failure
+        return None
     
     def normalize_text(self, text: str) -> str:
         """Normalize text for content hashing."""

@@ -234,7 +234,27 @@ def is_verified_vision_graph(graph: ArchitectureGraph | None) -> bool:
         return False
     if v.confidence < VISION_CONFIDENCE_THRESHOLD:
         return False
-    if v.hallucinations:
+    # Check for structural hallucinations via node_verification/edge_verification
+    # which carry explicit ``status: "hallucinated" | "valid" | "partial"`` per
+    # the verification prompt policy.  Cosmetic‑severity items (style mismatches,
+    # label casing) are ignored for the figure‑mode gate per the prompt's stated
+    # policy — they must not suppress figure mode.
+    has_structural_hallucination = False
+    for nv in v.node_verification or []:
+        if str(nv.get("status") or "").lower() == "hallucinated":
+            has_structural_hallucination = True
+            break
+    if not has_structural_hallucination:
+        for ev in v.edge_verification or []:
+            if str(ev.get("status") or "").lower() == "hallucinated":
+                has_structural_hallucination = True
+                break
+    # Fallback: also inspect the top‑level hallucinations list (already filtered
+    # by _parse_verification_payload._structural to structural items only).  If
+    # any item remains, treat as structural suppression.
+    if not has_structural_hallucination and v.hallucinations:
+        has_structural_hallucination = True
+    if has_structural_hallucination:
         return False
     return True
 

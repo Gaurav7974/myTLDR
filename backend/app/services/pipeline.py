@@ -78,6 +78,9 @@ async def process_paper(
     # ── Content hash & cache check ──
     content_hash = compute_content_hash(full_text)
     arch_text = text_extractor.find_architecture_section(full_text)
+    arch_section_missing = arch_text is None
+    if arch_section_missing:
+        log.warning("[PIPELINE] No architecture section located — text graph extraction will be skipped, diagram may be vision-only")
 
     # ── Parsed text for the frontend reader (per-page, images inlined) ──
     cached_parsed = await cache_service.get_parsed_text(db, content_hash)
@@ -155,7 +158,7 @@ async def process_paper(
     tasks["code"] = asyncio.to_thread(explanation_service.generate_pytorch_code, full_text, paper_title)
     tasks["ir"] = asyncio.to_thread(ir_extractor.extract, full_text, paper_title)
     tasks["bycroft"] = asyncio.to_thread(forward_pass_extractor.extract_3d_architecture, full_text, paper_title)
-    if cached_graph is None: tasks["tgraph"] = asyncio.to_thread(graph_extractor.extract_graph, arch_text, paper_title)
+    if cached_graph is None and not arch_section_missing: tasks["tgraph"] = asyncio.to_thread(graph_extractor.extract_graph, arch_text, paper_title)
     if arch_figure: tasks["vgraph"] = asyncio.to_thread(figure_extractor.extract_architecture, arch_figure, paper_title)
     results = dict(zip(tasks.keys(), await asyncio.gather(*tasks.values(), return_exceptions=True)))
     def _ok(k): v=results.get(k); return None if isinstance(v, Exception) else v
@@ -209,7 +212,10 @@ async def process_paper(
             diagram_available = len(graph.nodes) > 0
             diagram_reason = "cached_text_or_auto"
     else:
-        if is_verified_vision_graph(vision_graph):
+        # Explicit failure propagation (Fix #2): no architecture section + no vision = no diagram
+        if arch_section_missing and not vision_graph:
+            graph, diagram_available, diagram_reason = None, False, "no_architecture_section"
+        elif is_verified_vision_graph(vision_graph):
             graph = merge_graph_metadata(vision_graph, text_graph, prefer="vision") if text_verified and text_graph else vision_graph
             diagram_available, diagram_reason = True, "verified_vision"
         elif vision_graph and len(vision_graph.nodes) > 0:
@@ -224,6 +230,8 @@ async def process_paper(
         elif text_graph and len(text_graph.nodes) > 0:
             text_graph.layout_mode, text_graph.source = "auto", "text"
             graph, diagram_available, diagram_reason = text_graph, True, "text_auto_fallback"
+        elif arch_section_missing:
+            graph, diagram_available, diagram_reason = None, False, "no_architecture_section"
         else: graph, diagram_available, diagram_reason = None, False, "no_verified_graph"
 
         if diagram_available and graph is not None:

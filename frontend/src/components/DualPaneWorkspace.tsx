@@ -28,6 +28,30 @@ import {
   Sparkles
 } from 'lucide-react';
 
+// Tracks the Tailwind `lg` breakpoint (1024px). The draggable pane-split
+// widths are desktop-only: inline `style` widths ignore breakpoints, so they
+// must be omitted below `lg` or the panes stay squeezed at 50% on mobile.
+function useDesktop(breakpoint = 1024) {
+  const [isDesktop, setIsDesktop] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= breakpoint : true
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width: ${breakpoint}px)`);
+    const sync = () => setIsDesktop(window.innerWidth >= breakpoint);
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    sync();
+    // `resize` is a fallback for environments where matchMedia
+    // change events are unreliable (older WebKit, CDP emulation).
+    window.addEventListener('resize', sync);
+    mq.addEventListener('change', onChange);
+    return () => {
+      window.removeEventListener('resize', sync);
+      mq.removeEventListener('change', onChange);
+    };
+  }, [breakpoint]);
+  return isDesktop;
+}
+
 // Helper to highlight search keywords
 function HighlightQuery({ text, query }: { text: string; query: string }) {
   if (!query || !query.trim() || !text) return <>{text}</>;
@@ -291,6 +315,7 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const isDesktop = useDesktop();
 
   // Computed: effective split (0% when expanded — workspace takes full width)
   const effectiveSplit = isExpanded ? 0 : splitPercent;
@@ -515,7 +540,7 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
           LEFT PANE: Paper Document / PDF Viewer
           ========================================================================= */}
         <div
-          style={{ width: `${effectiveSplit}%` }}
+          style={isDesktop ? { width: `${effectiveSplit}%` } : undefined}
           className={`w-full lg:h-full flex-col bg-[#FFFFFF] border-r border-zinc-200/80 overflow-hidden shrink-0 ${
             isDragging ? 'transition-none' : 'transition-[width] duration-300 ease-in-out'
           } ${mobileTab === 'paper' ? 'flex flex-1' : 'hidden lg:flex'}`}
@@ -850,14 +875,14 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
           RIGHT PANE: Knowledge, Visualizer, Tabs & Docked LLM Chat
           ========================================================================= */}
       <div
-        style={{ width: `calc(100% - ${effectiveSplit}%)` }}
+        style={isDesktop ? { width: `calc(100% - ${effectiveSplit}%)` } : undefined}
         className={`w-full lg:h-full flex-col bg-[#FFFFFF] overflow-hidden relative ${
           isDragging ? 'transition-none' : 'transition-[width] duration-300 ease-in-out'
         } ${mobileTab === 'workspace' ? 'flex flex-1' : 'hidden lg:flex'}`}
       >
         {/* TOP TAB BAR ("TAB 1 TAB 2 TAB 3" + Clean Quick Actions on Right) */}
-        <div className="flex items-center justify-between border-b border-zinc-200/80 bg-[#FAFAFA] px-3 overflow-x-auto shrink-0 scrollbar-none">
-          <div className="flex items-center">
+        <div className="flex items-center justify-between border-b border-zinc-200/80 bg-[#FAFAFA] px-3 overflow-hidden shrink-0 scrollbar-none">
+          <div className="flex flex-1 min-w-0 items-center overflow-x-auto scrollbar-none max-lg:[mask-image:linear-gradient(to_right,black_calc(100%-1.5rem),transparent)]">
             <button
               onClick={() => handleTabClick('summary')}
               className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
@@ -984,13 +1009,11 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
           )}
         </div>
 
-        {/* =========================================================================
-            BOTTOM DOCKED "SOFT BLUR AREA" WITH "LLM CHAT BOX"
-            Frosted Glassmorphism blur allowing text behind to show beautifully
-            ========================================================================= */}
-        {/* Floating Bottom Chat Dock with Frosted Gradient Scrim */}
+        {/* Floating Bottom Chat Dock — one glass layer done properly: the
+            scrim fades scrolled content underneath, the form alone carries
+            the frost. Pills stay solid (nested blurs compound into mud). */}
         {activeTab !== 'chat' && (
-          <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none pt-14 pb-4 px-4 md:px-6 bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA]/90 via-50% to-transparent backdrop-blur-[2px]">
+          <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none pt-14 pb-4 px-4 md:px-6 bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA]/80 to-transparent">
             <div className="max-w-2xl mx-auto w-full space-y-2 pointer-events-auto">
               
               {/* Quick Suggested Prompt Pills (Floating Capsules) */}
@@ -1002,15 +1025,15 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
                   <button
                     key={idx}
                     onClick={() => handleExecutePrompt(suggestion)}
-                    className="px-2.5 py-1 rounded-full bg-white/95 hover:bg-white border border-zinc-200/90 text-[11px] text-zinc-700 font-medium whitespace-nowrap transition-all shadow-xs hover:shadow-sm active:scale-95 shrink-0 backdrop-blur-md"
+                    className="px-2.5 py-1 rounded-full bg-white hover:bg-zinc-50 border border-zinc-200 text-[11px] text-zinc-700 font-medium whitespace-nowrap transition-all shadow-xs hover:shadow-sm active:scale-95 shrink-0"
                   >
                     {suggestion}
                   </button>
                 ))}
               </div>
 
-              {/* LLM Chat Input Form - Elevated Floating Island Capsule */}
-              <form onSubmit={handleChatSubmit} className="relative flex items-center bg-white/95 backdrop-blur-xl border border-zinc-200/90 shadow-xl shadow-zinc-950/8 rounded-2xl p-1.5 transition-all focus-within:border-zinc-950/70 focus-within:ring-2 focus-within:ring-zinc-950/10 focus-within:shadow-2xl">
+              {/* LLM Chat Input Form - the single frosted island */}
+              <form onSubmit={handleChatSubmit} className="relative flex items-center bg-white/85 backdrop-blur-xl border border-zinc-200 shadow-xl shadow-zinc-950/8 rounded-2xl p-1.5 transition-all focus-within:border-zinc-950/70 focus-within:ring-2 focus-within:ring-zinc-950/10 focus-within:shadow-2xl">
                 <input
                   type="text"
                   value={chatInput}
