@@ -13,12 +13,15 @@ async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit
 
 async def init_db():
     """Create pgvector extension and all tables."""
-    async with engine.begin() as conn:
-        try:
+    # Extension first, in its own transaction: if it fails (e.g. no DDL
+    # permission), the abort must not poison table creation below.
+    try:
+        async with engine.begin() as conn:
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-        except Exception:
-            # If dialect doesn't support extension (e.g. SQLite test), ignore
-            pass
+    except Exception as e:
+        # If dialect doesn't support extension (e.g. SQLite test), ignore
+        log.warning(f"vector extension setup skipped: {e}")
+    async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
