@@ -60,9 +60,10 @@ class Settings:
     # Optional Groq fallback for the TEXT path only (Groq is text-only: no vision/OCR).
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     GROQ_API_URL: str = "https://api.groq.com/openai/v1/chat/completions"
-    GROQ_EXTRACT_MODEL: str = os.getenv("GROQ_EXTRACT_MODEL", "llama-3.3-70b-versatile")
-    GROQ_EVAL_MODEL: str = os.getenv("GROQ_EVAL_MODEL", "llama-3.3-70b-versatile")
-    GROQ_EXPLAIN_MODEL: str = os.getenv("GROQ_EXPLAIN_MODEL", "llama-3.3-70b-versatile")
+    # llama-3.3-70b-versatile was decommissioned by Groq (404); gpt-oss-120b is the live flagship fallback.
+    GROQ_EXTRACT_MODEL: str = os.getenv("GROQ_EXTRACT_MODEL", "openai/gpt-oss-120b")
+    GROQ_EVAL_MODEL: str = os.getenv("GROQ_EVAL_MODEL", "openai/gpt-oss-120b")
+    GROQ_EXPLAIN_MODEL: str = os.getenv("GROQ_EXPLAIN_MODEL", "openai/gpt-oss-120b")
     LLM_FALLBACK_MODEL: str = os.getenv("LLM_FALLBACK_MODEL", GROQ_EXTRACT_MODEL)
     LLM_FALLBACK_ENABLED: bool = os.getenv("LLM_FALLBACK_ENABLED", "true").lower() == "true"
     

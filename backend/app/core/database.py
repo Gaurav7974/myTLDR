@@ -12,9 +12,14 @@ async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit
 
 
 async def init_db():
-    """Create pgvector extension and all tables."""
-    # Extension first, in its own transaction: if it fails (e.g. no DDL
-    # permission), the abort must not poison table creation below.
+    """Create pgvector extension and all tables.
+
+    Tables are created one by one in savepoints: a table whose DDL cannot
+    run here (e.g. paper_chunks needs the pgvector extension, which this
+    database image lacks) is skipped with a warning instead of aborting
+    every other table. Endpoints already degrade gracefully when a table
+    is absent; a missing table must never take the app down.
+    """
     try:
         async with engine.begin() as conn:
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
@@ -22,7 +27,12 @@ async def init_db():
         # If dialect doesn't support extension (e.g. SQLite test), ignore
         log.warning(f"vector extension setup skipped: {e}")
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        for table in Base.metadata.sorted_tables:
+            try:
+                async with conn.begin_nested():
+                    await conn.run_sync(table.create, checkfirst=True)
+            except Exception as e:
+                log.warning(f"table {table.name} setup skipped: {type(e).__name__}: {e}")
 
 
 async def get_db() -> AsyncSession:
