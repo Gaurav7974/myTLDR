@@ -320,15 +320,10 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
   // Computed: effective split (0% when expanded — workspace takes full width)
   const effectiveSplit = isExpanded ? 0 : splitPercent;
 
-  // Tab click handler with auto-expand/collapse
+  // Tab click handler — preserve user's split position across all tabs
   const handleTabClick = useCallback((tab: typeof activeTab) => {
     setActiveTab(tab);
-    if (tab === 'visualizer') {
-      if (!isExpanded) setIsExpanded(true);
-    } else {
-      if (isExpanded) setIsExpanded(false);
-    }
-  }, [isExpanded]);
+  }, []);
 
   // Toggle expand/collapse manually
   const toggleExpand = useCallback(() => {
@@ -905,7 +900,6 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
             >
               <Layers className="w-3.5 h-3.5" />
               <span>Architecture</span>
-              {isExpanded && <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>}
             </button>
 
             <button

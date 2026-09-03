@@ -77,6 +77,7 @@ class Settings:
     
     # Processing
     MAX_UPLOAD_SIZE_MB: int = 25
+    MAX_PDF_PAGES: int = 30  # Maximum page limit for uploaded/linked papers to prevent OCR starvation
     MAX_SECTION_CHARS: int = 18000  # legacy flat cap — retained for compat, use SECTION_CHAR_CEILING for new paths
     # LLM-based architecture section detection: how much of the paper to send to the locator
     ARCH_SECTION_LLM_MAX_CHARS: int = 50000
@@ -84,7 +85,7 @@ class Settings:
     # Minus prompt overhead (~4k tokens) and JSON schema, safe usable ~28k tokens ≈ 40000 chars.
     # Groq llama-3.3-70b has 128k tokens, so this ceiling is conservative for both.
     SECTION_CHAR_CEILING: int = 40000
-    LLM_MAX_RETRIES: int = 2
+    LLM_MAX_RETRIES: int = 4
     LLM_RETRY_BACKOFF_BASE: int = 3  # seconds
 
     @property

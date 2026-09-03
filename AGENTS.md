@@ -14,7 +14,7 @@ AI Research Paper Platform — users upload a paper (PDF/arXiv/URL) and get:
 
 - **Backend:** FastAPI (Python)
 - **Frontend:** Next.js
-- **LLM:** Groq (structured/JSON output mode)
+- **LLM:** Mistral `mistral-small-latest` primary (structured JSON mode) + Groq `llama-3.3-70b-versatile` optional text-only fallback
 - **DB:** Postgres (SQLite for local dev)
 - **Graph layout:** dagre / ELK.js
 - **Diagram render:** React Flow or raw SVG
@@ -42,8 +42,8 @@ frontend/
 ## Key Conventions
 
 ### Backend
-- All LLM calls go through `services/llm.py`
-- Structured output via Groq's JSON mode
+- All LLM calls go through `services/llm.py` (Mistral primary `mistral-small-latest` with `response_format: json_object`; Groq is text-only failover)
+- Structured output via Mistral JSON mode (Groq fallback also JSON mode)
 - PDF text extraction: PyMuPDF for text pages, Mistral OCR for image pages (`services/text_extraction.py`)
 - RAG pipeline in `services/rag.py`
 - Architecture graph extraction in `services/graph_extraction.py`; figure-based extraction in `services/figure_extraction.py`
@@ -68,9 +68,9 @@ frontend/
 ## Environment Variables
 
 Required in `backend/.env`:
-- Groq API key
+- Mistral API key (`OCR_KEY` / `MISTRAL_API_KEY`) — powers OCR + vision + text LLM (primary)
+- Groq API key (`GROQ_API_KEY`) — optional text-only fallback
 - Database URL (Postgres or SQLite path)
-- OCR API key (Mistral, powers OCR + vision + text LLM)
 
 ## Important Notes
 

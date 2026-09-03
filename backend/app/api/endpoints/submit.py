@@ -35,6 +35,7 @@ async def submit_paper(
             raise HTTPException(status_code=400, detail="No file provided")
         max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
         total = 0
+        chunks = []
         while True:
             chunk = await file.read(65536)
             if not chunk:
@@ -42,6 +43,25 @@ async def submit_paper(
             total += len(chunk)
             if total > max_bytes:
                 raise HTTPException(status_code=413, detail=f"File too large (max {settings.MAX_UPLOAD_SIZE_MB}MB)")
+            chunks.append(chunk)
+
+        file_bytes = b"".join(chunks)
+        if file_bytes.lstrip()[:5] == b"%PDF-":
+            try:
+                import pymupdf
+                doc = pymupdf.open(stream=file_bytes, filetype="pdf")
+                p_count = len(doc)
+                doc.close()
+                if p_count > settings.MAX_PDF_PAGES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Paper has {p_count} pages, which exceeds the {settings.MAX_PDF_PAGES}-page limit. Please provide a paper with {settings.MAX_PDF_PAGES} pages or fewer."
+                    )
+            except HTTPException:
+                raise
+            except Exception as e:
+                log.warning(f"Could not inspect PDF page count in submit: {e}")
+
         return {"status": "received", "source": "upload", "filename": file.filename}
 
     elif source == "arxiv":

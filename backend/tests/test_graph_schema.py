@@ -27,6 +27,15 @@ def test_legacy_payload_still_validates():
     assert len(g.edges) == 1
 
 
+def test_shape_coercion_default_to_rounded():
+    node = GraphNode(id="n1", label="N1", type="attention", style=GraphNodeStyle(shape="default"))
+    assert node.style.shape == "rounded"
+    node2 = GraphNode(id="n2", label="N2", type="attention", shape="box")
+    assert node2.shape == "rect"
+    node3 = GraphNode(id="n3", label="N3", type="attention", shape="circle")
+    assert node3.shape == "ellipse"
+
+
 def test_rich_payload_validates_with_all_fields():
     g = ArchitectureGraph(
         version=GRAPH_PAYLOAD_VERSION,

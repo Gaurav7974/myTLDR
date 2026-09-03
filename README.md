@@ -283,7 +283,7 @@ frontend/
 |-------|-----------|
 | Backend | FastAPI + Pydantic v2 + SQLAlchemy (async) |
 | Frontend | Next.js 16 + React 19 + Tailwind 4 |
-| LLM | Groq (text extraction) + Mistral (vision + OCR + fallback) |
+| LLM | Mistral `mistral-small-latest` (text extraction + vision + OCR, JSON mode) + Groq `llama-3.3-70b-versatile` optional text fallback |
 | OCR | Mistral OCR |
 | Database | PostgreSQL 16 + pgvector |
 | Diagrams | Custom SVG renderer (figure coordinates) + 3D scene graph |

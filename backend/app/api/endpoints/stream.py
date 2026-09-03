@@ -71,8 +71,9 @@ async def stream_paper(
             log.info("stream done")
         except Exception as e:
             log.error(f"stream pipeline error: {e}", exc_info=True)
-            # never leak internal details to client
-            yield f"data: {json.dumps({'stage':'error','message':'Processing failed. Please retry.'})}\n\n"
+            # never leak internal details to client, but surface clean validation messages
+            msg = str(e) if isinstance(e, ValueError) else 'Processing failed. Please retry.'
+            yield f"data: {json.dumps({'stage':'error','message': msg})}\n\n"
     
     return StreamingResponse(
         event_generator(),

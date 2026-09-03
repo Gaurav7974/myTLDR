@@ -96,6 +96,22 @@ class GraphProvenance(BaseModel):
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
+def _normalize_node_shape(val: Any) -> str:
+    if val is None or val == "":
+        return "rounded"
+    if not isinstance(val, str):
+        return "rounded"
+    s = val.strip().lower()
+    valid_shapes = {"rect", "rounded", "ellipse", "diamond", "cylinder", "parallelogram", "trapezoid", "custom"}
+    if s in valid_shapes:
+        return s
+    if s in ("box", "square", "rectangle"):
+        return "rect"
+    if s in ("circle", "oval"):
+        return "ellipse"
+    return "rounded"
+
+
 class GraphNodeStyle(BaseModel):
     """Visual style overrides for a node. All fields optional; renderer falls
     back to taxonomy colors and rounded-rect shape when missing."""
@@ -104,6 +120,11 @@ class GraphNodeStyle(BaseModel):
     text: Optional[str] = None
     shape: NodeShape = "rounded"
     raw: Optional[dict[str, Any]] = None  # raw style data from extractor
+
+    @field_validator("shape", mode="before")
+    @classmethod
+    def _coerce_shape(cls, value: Any) -> str:
+        return _normalize_node_shape(value)
 
 
 class GraphEdgeStyle(BaseModel):
@@ -153,6 +174,13 @@ class GraphNode(BaseModel):
     # ── Confidence & provenance ──
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     provenance: Optional[GraphProvenance] = None
+
+    @field_validator("shape", mode="before")
+    @classmethod
+    def _coerce_shape(cls, value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        return _normalize_node_shape(value)
 
     @field_validator("type", mode="before")
     @classmethod

@@ -31,10 +31,14 @@ class FeedbackOut(BaseModel):
 
 @router.get("/feedback", response_model=List[FeedbackOut])
 async def list_feedback(db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Feedback).order_by(desc(Feedback.created_at)).limit(100))
-    rows = res.scalars().all()
-    log.info(f"list feedback {len(rows)}")
-    return [{"id": str(r.id), "content": r.content, "created_at": r.created_at.isoformat() if r.created_at else ""} for r in rows]
+    try:
+        res = await db.execute(select(Feedback).order_by(desc(Feedback.created_at)).limit(100))
+        rows = res.scalars().all()
+        log.info(f"list feedback {len(rows)}")
+        return [{"id": str(r.id), "content": r.content, "created_at": r.created_at.isoformat() if r.created_at else ""} for r in rows]
+    except Exception as e:
+        log.warning(f"list_feedback skipped (db offline): {e}")
+        return []
 
 @router.post("/feedback", response_model=FeedbackOut)
 @limiter.limit("3/minute;10/hour")

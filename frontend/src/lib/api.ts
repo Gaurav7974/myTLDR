@@ -35,7 +35,7 @@ export async function processPaperStream(
     const response = await fetch(`${backendUrl}/api/stream`, {
       method: 'POST',
       body: formData,
-      signal: AbortSignal.timeout(180000),
+      signal: AbortSignal.timeout(600000),
     });
 
     if (!response.ok) {
@@ -60,12 +60,16 @@ export async function processPaperStream(
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
+      let isDone = false;
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed || !trimmed.startsWith('data:')) continue;
         const dataStr = trimmed.slice(5).trim();
 
-        if (dataStr === '[DONE]') break;
+        if (dataStr === '[DONE]') {
+          isDone = true;
+          break;
+        }
 
         try {
           const parsed = JSON.parse(dataStr);
@@ -82,6 +86,10 @@ export async function processPaperStream(
         } catch {
           // Ignore partial chunk parse errors
         }
+      }
+      if (isDone) {
+        reader.cancel().catch(() => {});
+        break;
       }
     }
 
@@ -159,7 +167,7 @@ function transformBackendPayloadToPaperData(
     codeNote: (payload.code_note as string) || null,
     architectureIR: payload.architecture_ir as PaperData['architectureIR'],
     sceneGraph3D: payload.scene_graph_3d as PaperData['sceneGraph3D'],
-    architectureGraph: transformArchitectureGraph(payload.graph),
+    architectureGraph: transformArchitectureGraph(payload.graph, payload.architecture_ir),
     bycroftStages: payload.bycroft_stages as PaperData['bycroftStages'],
     residualHighways: payload.bycroft_highways as PaperData['residualHighways'],
     attentionHeatmap: payload.attention_heatmap as PaperData['attentionHeatmap'],
@@ -168,54 +176,105 @@ function transformBackendPayloadToPaperData(
 }
 
 /**
- * Map the backend `graph` payload (rich ArchitectureGraph, or the legacy
- * react-flow/dagre shape on older deployments) to the frontend shape.
- *
- * The backend emits the rich ArchitectureGraph model dump (nodes with
- * label/bbox/provenance, edges with path_points, plus layout_mode/source/
- * verification). The discriminator is the react-flow marker: react-flow
- * nodes ALWAYS carry a `position` field; rich nodes never do. Anything
- * without `position` passes through unchanged, so a rich node without
- * bbox/description still keeps its label and auto-layouts on the client.
+ * Convert canonical ArchitectureIR into an ArchitectureGraph for 2D rendering.
+ * Used when a paper has no extracted figure bboxes or visual graph, but has
+ * structured semantic architecture nodes and data flows.
  */
-function transformArchitectureGraph(raw: unknown): ArchitectureGraph | undefined {
-  if (!raw || typeof raw !== 'object') return undefined;
-  const r = raw as Record<string, unknown>;
-  const nodes = Array.isArray(r.nodes) ? r.nodes : [];
-  if (nodes.length === 0) return undefined;
+export function irToArchitectureGraph(rawIr: unknown): ArchitectureGraph | undefined {
+  if (!rawIr || typeof rawIr !== 'object') return undefined;
+  const ir = rawIr as Record<string, unknown>;
+  const irNodes = Array.isArray(ir.nodes) ? ir.nodes : [];
+  if (irNodes.length === 0) return undefined;
 
-  const firstNode = nodes[0] as Record<string, unknown> | undefined;
-  const isReactFlowShape = !!firstNode && 'position' in firstNode;
-
-  if (!isReactFlowShape) {
-    return r as unknown as ArchitectureGraph;
-  }
-
-  // Legacy react-flow shape: convert to ArchitectureGraph nodes/edges
-  // with labels from the react-flow `data.label` field. layout_mode=auto.
-  const outNodes = nodes.map((n) => {
+  const outNodes = irNodes.map((n) => {
     const node = n as Record<string, unknown>;
-    const data = (node.data as Record<string, unknown>) || {};
     return {
       id: String(node.id),
-      label: String(data.label ?? node.id),
-      type: String(data.node_type ?? 'other'),
+      label: String(node.label ?? node.id),
+      type: String(node.type ?? 'other'),
+      description: typeof node.description === 'string' ? node.description : undefined,
+      math_formula: typeof node.math_formula === 'string' ? node.math_formula : undefined,
+      parameters: typeof node.parameters === 'string' ? node.parameters : undefined,
+      flops: typeof node.flops === 'string' ? node.flops : undefined,
+      paper_term: typeof node.paper_term === 'string' ? node.paper_term : undefined,
     };
   });
-  const outEdges = Array.isArray(r.edges)
-    ? (r.edges as Array<Record<string, unknown>>).map((e) => ({
-        source: String(e.source),
-        target: String(e.target),
-        label: (e.label as string) ?? null,
-      }))
-    : [];
+
+  const irEdges = Array.isArray(ir.edges) ? ir.edges : [];
+  const outEdges = irEdges.map((e) => {
+    const edge = e as Record<string, unknown>;
+    const edgeType = String(edge.type ?? 'data_flow');
+    return {
+      source: String(edge.source),
+      target: String(edge.target),
+      type: edgeType as any,
+      label: typeof edge.label === 'string' ? edge.label : null,
+      style: edgeType === 'residual_skip' ? { name: 'residual' as const } : undefined,
+    };
+  });
+
+  const archMeta = (ir.architecture as Record<string, unknown>) || {};
   return {
     nodes: outNodes,
     edges: outEdges,
-    version: 'legacy',
-    source: 'legacy',
+    version: String(ir.version || '1.0'),
+    source: 'auto',
     layout_mode: 'auto',
+    paper_title: typeof archMeta.name === 'string' ? archMeta.name : undefined,
   };
+}
+
+/**
+ * Map the backend `graph` payload (rich ArchitectureGraph, or the legacy
+ * react-flow/dagre shape on older deployments) to the frontend shape.
+ * Falls back to synthesizing from ArchitectureIR if the graph payload is empty.
+ */
+export function transformArchitectureGraph(raw: unknown, rawIr?: unknown): ArchitectureGraph | undefined {
+  if (raw && typeof raw === 'object') {
+    const r = raw as Record<string, unknown>;
+    const nodes = Array.isArray(r.nodes) ? r.nodes : [];
+    if (nodes.length > 0) {
+      const firstNode = nodes[0] as Record<string, unknown> | undefined;
+      const isReactFlowShape = !!firstNode && 'position' in firstNode;
+
+      if (!isReactFlowShape) {
+        return r as unknown as ArchitectureGraph;
+      }
+
+      // Legacy react-flow shape: convert to ArchitectureGraph nodes/edges
+      // with labels from the react-flow `data.label` field. layout_mode=auto.
+      const outNodes = nodes.map((n) => {
+        const node = n as Record<string, unknown>;
+        const data = (node.data as Record<string, unknown>) || {};
+        return {
+          id: String(node.id),
+          label: String(data.label ?? node.id),
+          type: String(data.node_type ?? 'other'),
+        };
+      });
+      const outEdges = Array.isArray(r.edges)
+        ? (r.edges as Array<Record<string, unknown>>).map((e) => ({
+            source: String(e.source),
+            target: String(e.target),
+            label: (e.label as string) ?? null,
+          }))
+        : [];
+      return {
+        nodes: outNodes,
+        edges: outEdges,
+        version: 'legacy',
+        source: 'legacy',
+        layout_mode: 'auto',
+      };
+    }
+  }
+
+  // Fallback to synthesizing ArchitectureGraph from ArchitectureIR if present
+  if (rawIr) {
+    return irToArchitectureGraph(rawIr);
+  }
+
+  return undefined;
 }
 
 function transformParsedText(raw: unknown): ParsedDocument | undefined {

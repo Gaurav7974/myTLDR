@@ -103,7 +103,7 @@ export const PaperInputModal: React.FC<PaperInputModalProps> = ({
               Drag & drop your PDF or Markdown file here
             </p>
             <p className="text-[11px] text-zinc-400 font-mono mt-0.5">
-              Supports .pdf and .md up to 50MB
+              Supports .pdf and .md up to 30 pages (max 25MB)
             </p>
           </div>
 

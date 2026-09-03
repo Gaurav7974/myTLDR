@@ -18,9 +18,14 @@ import {
   computeAutoLayout,
   computeElkLayout,
   positionNodesFigure,
+  positionGroupsFigure,
+  routeEdgeOrthogonal,
   resolveEdgeStyle as resolveEdgeStyleImpl,
   type PositionedNode,
+  type PositionedGroup,
+  type RoutedEdgePath,
 } from "./architectureDiagramLayout";
+import { wrapToWidth } from "./diagramNormalizer";
 
 // ── Public types ────────────────────────────────────────────────────
 // The simple `nodes`/`edges` props remain the primary API for callers
@@ -91,23 +96,25 @@ export interface ArchitectureDiagramProps {
 //    from ./architectureDiagramLayout; LAYER_GAP/NODE_GAP are auto-layout
 //    constants and live with computeAutoLayout there.)
 
-const TYPE_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  input: { bg: "#f8fafc", border: "#94a3b8", text: "#334155" },
-  output: { bg: "#f8fafc", border: "#94a3b8", text: "#334155" },
-  embedding: { bg: "#eff6ff", border: "#93c5fd", text: "#1e40af" },
-  attention: { bg: "#fdf2f8", border: "#f9a8d4", text: "#9d174d" },
-  feedforward: { bg: "#f0fdf4", border: "#86efac", text: "#166534" },
-  normalization: { bg: "#fafaf9", border: "#d6d3d1", text: "#44403c" },
-  block: { bg: "#faf5ff", border: "#c4b5fd", text: "#5b21b6" },
-  router: { bg: "#fff7ed", border: "#fdba74", text: "#9a3412" },
-  expert: { bg: "#ecfdf5", border: "#6ee7b7", text: "#065f46" },
-  ssm: { bg: "#f0f9ff", border: "#7dd3fc", text: "#075985" },
-  gate: { bg: "#fefce8", border: "#fde047", text: "#854d0e" },
-  cache: { bg: "#f5f3ff", border: "#a78bfa", text: "#4c1d95" },
-  linear: { bg: "#f1f5f9", border: "#cbd5e1", text: "#334155" },
-  convolution: { bg: "#ecfeff", border: "#67e8f9", text: "#155e75" },
-  residual: { bg: "#fef2f2", border: "#fca5a5", text: "#991b1b" },
-  default: { bg: "#ffffff", border: "#d1d5db", text: "#374151" },
+const TYPE_COLORS: Record<string, { bg: string; border: string; text: string; tagText?: string }> = {
+  input: { bg: "#ffffff", border: "#475569", text: "#0f172a", tagText: "#475569" },
+  output: { bg: "#ffffff", border: "#475569", text: "#0f172a", tagText: "#475569" },
+  embedding: { bg: "#f0f9ff", border: "#0284c7", text: "#0369a1", tagText: "#0284c7" },
+  encoder: { bg: "#eff6ff", border: "#2563eb", text: "#1d4ed8", tagText: "#1d4ed8" },
+  decoder: { bg: "#faf5ff", border: "#9333ea", text: "#7e22ce", tagText: "#9333ea" },
+  attention: { bg: "#fdf2f8", border: "#db2777", text: "#9d174d", tagText: "#be185d" },
+  feedforward: { bg: "#f0fdf4", border: "#16a34a", text: "#15803d", tagText: "#16a34a" },
+  normalization: { bg: "#fafaf9", border: "#78716c", text: "#44403c", tagText: "#78716c" },
+  block: { bg: "#faf5ff", border: "#8b5cf6", text: "#6d28d9", tagText: "#8b5cf6" },
+  router: { bg: "#fff7ed", border: "#ea580c", text: "#c2410c", tagText: "#ea580c" },
+  expert: { bg: "#ecfdf5", border: "#059669", text: "#047857", tagText: "#059669" },
+  ssm: { bg: "#ecfeff", border: "#0891b2", text: "#0e7490", tagText: "#0891b2" },
+  gate: { bg: "#fefce8", border: "#ca8a04", text: "#a16207", tagText: "#ca8a04" },
+  cache: { bg: "#f5f3ff", border: "#7c3aed", text: "#5b21b6", tagText: "#7c3aed" },
+  linear: { bg: "#f8fafc", border: "#475569", text: "#1e293b", tagText: "#475569" },
+  convolution: { bg: "#ecfeff", border: "#0284c7", text: "#0369a1", tagText: "#0284c7" },
+  residual: { bg: "#fef2f2", border: "#dc2626", text: "#b91c1c", tagText: "#dc2626" },
+  default: { bg: "#ffffff", border: "#64748b", text: "#0f172a", tagText: "#64748b" },
 };
 
 function getNodeColors(type: string) {
@@ -159,7 +166,15 @@ export default function ArchitectureDiagram({
   }, [graph, nodesProp, edgesProp]);
 
   const { nodes, edges, layoutMode, groups, source } = unified;
-  const isFigureMode = layoutMode === "figure" && shouldRenderReconstruction(graph as ArchitectureGraph | undefined);
+  const hasFigureBboxes = useMemo(() => {
+    return nodes.some(
+      (n) => n.bbox && typeof n.bbox.x === "number" && typeof n.bbox.y === "number" && Number.isFinite(n.bbox.x) && Number.isFinite(n.bbox.y)
+    );
+  }, [nodes]);
+
+  const isFigureMode =
+    (layoutMode === "figure" && shouldRenderReconstruction(graph as ArchitectureGraph | undefined)) ||
+    hasFigureBboxes;
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -177,19 +192,27 @@ export default function ArchitectureDiagram({
   }, [isFigureMode, nodes, edges]);
 
   const [positioned, setPositioned] = useState<Map<string, PositionedNode>>(initialPositioned);
+  const [elkRoutedEdges, setElkRoutedEdges] = useState<Map<string, RoutedEdgePath> | null>(null);
+  const [elkGroups, setElkGroups] = useState<PositionedGroup[] | null>(null);
 
   useEffect(() => {
     setPositioned(initialPositioned);
+    setElkRoutedEdges(null);
+    setElkGroups(null);
     let cancelled = false;
     if (!isFigureMode && nodes.length > 0) {
-      computeElkLayout(nodes, edges).then((elkPos) => {
-        if (!cancelled && elkPos.size > 0) {
-          setPositioned(elkPos);
+      computeElkLayout(nodes, edges, groups).then((elkResult) => {
+        if (!cancelled && elkResult && elkResult.nodes && elkResult.nodes.size > 0) {
+          setPositioned(elkResult.nodes);
+          setElkRoutedEdges(elkResult.edges);
+          if (elkResult.groups && elkResult.groups.length > 0) {
+            setElkGroups(elkResult.groups);
+          }
         }
       });
     }
     return () => { cancelled = true; };
-  }, [isFigureMode, nodes, edges, initialPositioned]);
+  }, [isFigureMode, nodes, edges, groups, initialPositioned]);
 
   // Mark nodes that have no layout as "missing" so the renderer can draw
   // them safely (or hide them).
@@ -197,69 +220,107 @@ export default function ArchitectureDiagram({
     return nodes.filter((n) => !positioned.has(n.id));
   }, [nodes, positioned]);
 
-  // Canvas dimensions — use actual w/h per bbox in figure mode
-  const { canvasW, canvasH } = useMemo(() => {
-    if (positioned.size === 0) return { canvasW: 800, canvasH: 400 };
+  // Group rectangles — compute tight bounds around member nodes
+  const positionedGroups = useMemo(() => {
+    if (!isFigureMode && elkGroups && elkGroups.length > 0) {
+      return elkGroups;
+    }
+    if (groups.length === 0) return [];
+    return positionGroupsFigure(groups, positioned, nodes as unknown as NormalizedNode[]);
+  }, [groups, positioned, nodes, elkGroups, isFigureMode]);
+
+  // Canvas dimensions and bounding box
+  const { minX, minY, maxX, maxY, canvasW, canvasH } = useMemo(() => {
+    if (positioned.size === 0) return { minX: 0, minY: 0, maxX: 800, maxY: 400, canvasW: 800, canvasH: 400 };
+    let minX = Infinity, minY = Infinity;
     let maxX = 0, maxY = 0;
     positioned.forEach((p: any) => {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
       maxX = Math.max(maxX, p.x + (p.w || NODE_W_DEFAULT));
       maxY = Math.max(maxY, p.y + (p.h || NODE_H_DEFAULT));
     });
-    if (isFigureMode) {
-      maxX = Math.max(maxX, FIGURE_CANVAS_W);
-      maxY = Math.max(maxY, FIGURE_CANVAS_H);
+    if (positionedGroups && positionedGroups.length > 0) {
+      positionedGroups.forEach((g) => {
+        minX = Math.min(minX, g.x);
+        minY = Math.min(minY, g.y);
+        maxX = Math.max(maxX, g.x + g.w);
+        maxY = Math.max(maxY, g.y + g.h);
+      });
     }
-    return { canvasW: maxX + PADDING, canvasH: maxY + PADDING };
-  }, [positioned, isFigureMode]);
+    const safeMinX = Number.isFinite(minX) ? minX : 0;
+    const safeMinY = Number.isFinite(minY) ? minY : 0;
+    const contentMaxX = Math.max(maxX, safeMinX + 100);
+    const contentMaxY = Math.max(maxY, safeMinY + 100);
+    return {
+      minX: safeMinX,
+      minY: safeMinY,
+      maxX: contentMaxX,
+      maxY: contentMaxY,
+      canvasW: Math.max(800, contentMaxX + PADDING),
+      canvasH: Math.max(600, contentMaxY + PADDING),
+    };
+  }, [positioned, positionedGroups, isFigureMode]);
 
-  // Group rectangles
-  const positionedGroups = useMemo(() => {
-    if (!isFigureMode || groups.length === 0) return [];
-    return groups.map((g) => {
-      const b = g.bbox;
-      if (!b) return null;
-      return {
-        id: g.id,
-        label: g.label || g.id,
-        x: b.x * FIGURE_CANVAS_W,
-        y: b.y * FIGURE_CANVAS_H,
-        w: b.w * FIGURE_CANVAS_W,
-        h: b.h * FIGURE_CANVAS_H,
-        color: g.color || "#e5e7eb",
-      };
-    }).filter(Boolean) as Array<{ id: string; label: string; x: number; y: number; w: number; h: number; color: string }>;
-  }, [isFigureMode, groups]);
-
-  // Edge paths
+  // Edge paths — cleanly routed between node boundary ports
   const edgePaths = useMemo(() => {
     return edges
-      .map((e) => {
+      .map((e, idx) => {
         const src = positioned.get(e.source);
         const tgt = positioned.get(e.target);
         if (!src || !tgt) return null;
-        // In figure mode with path_points, use them directly
-        if (isFigureMode && e.path_points && e.path_points.length >= 2) {
-          const points = e.path_points.map((p) => `${p.x * FIGURE_CANVAS_W},${p.y * FIGURE_CANVAS_H}`);
-          const path = `M ${points.join(" L ")}`;
-          const midX = ((e.path_points[0].x + e.path_points[e.path_points.length - 1].x) / 2) * FIGURE_CANVAS_W;
-          const midY = ((e.path_points[0].y + e.path_points[e.path_points.length - 1].y) / 2) * FIGURE_CANVAS_H;
-          return { ...e, path, midX, midY };
+
+        const elkKey = `${e.source}->${e.target}`;
+        const elkEdge = elkRoutedEdges?.get(elkKey) || elkRoutedEdges?.get(`e${idx}`);
+        if (elkEdge && !isFigureMode) {
+          return { ...e, ...elkEdge };
         }
-        // Bezier fallback
-        const sx = src.x + NODE_W_DEFAULT;
-        const sy = src.y + NODE_H_DEFAULT / 2;
-        const tx = tgt.x;
-        const ty = tgt.y + NODE_H_DEFAULT / 2;
-        const dx = tx - sx;
-        const controlOffset = Math.max(40, dx * 0.4);
-        const path = `M ${sx} ${sy} C ${sx + controlOffset} ${sy}, ${tx - controlOffset} ${ty}, ${tx} ${ty}`;
-        return { ...e, path, midX: (sx + tx) / 2, midY: (sy + ty) / 2 };
+
+        const routed = routeEdgeOrthogonal(src, tgt, e, canvasW);
+        return { ...e, ...routed };
       })
       .filter(Boolean) as (DiagramEdge & { path: string; midX: number; midY: number })[];
-  }, [edges, positioned, isFigureMode]);
+  }, [edges, positioned, canvasW, elkRoutedEdges, isFigureMode]);
 
   const selectedNode = selectedId ? nodes.find((n) => n.id === selectedId) : null;
   const selectedMeta = selectedId ? positioned.get(selectedId) : null;
+
+  // Auto-fit diagram cleanly within viewport
+  const fitToView = useCallback(() => {
+    const el = containerRef.current;
+    if (!el || positioned.size === 0) return;
+    const containerW = el.clientWidth || 800;
+    const containerH = el.clientHeight || height || 600;
+
+    const diagW = maxX - minX + PADDING;
+    const diagH = maxY - minY + PADDING;
+    if (diagW <= 0 || diagH <= 0) return;
+
+    const availW = Math.max(100, containerW - 48);
+    const availH = Math.max(100, containerH - 48);
+
+    const scaleX = availW / diagW;
+    const scaleY = availH / diagH;
+    const scale = Math.min(1.0, Math.max(0.3, Math.min(scaleX, scaleY)));
+
+    const scaledDiagW = diagW * scale;
+    const scaledDiagH = diagH * scale;
+
+    const x = (containerW - scaledDiagW) / 2 - minX * scale;
+    const y = Math.max(16, (containerH - scaledDiagH) / 2 - minY * scale);
+
+    setTransform({ x, y, scale });
+  }, [minX, minY, maxX, maxY, positioned.size, height]);
+
+  // Auto-fit on layout calculation
+  useEffect(() => {
+    if (positioned.size > 0) {
+      const raf = requestAnimationFrame(() => {
+        fitToView();
+      });
+      return () => cancelAnimationFrame(raf);
+    }
+  }, [positioned, fitToView]);
 
   // Pan handlers
   const handleMouseDown = useCallback(
@@ -301,7 +362,7 @@ export default function ArchitectureDiagram({
     return () => el.removeEventListener("wheel", handler);
   }, []);
 
-  const resetView = () => setTransform({ x: 0, y: 0, scale: 1 });
+  const resetView = () => fitToView();
 
   const isAvailable = nodes.length > 0;
 
@@ -373,46 +434,71 @@ export default function ArchitectureDiagram({
             transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}
           >
             <defs>
-              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
+              <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="4.5" markerWidth="8" markerHeight="8" orient="auto">
+                <polygon points="0 1, 8 4.5, 0 8" fill="#64748b" />
               </marker>
-              <marker id="arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b82f6" />
+              <marker id="arrow-active" viewBox="0 0 10 10" refX="8" refY="4.5" markerWidth="8" markerHeight="8" orient="auto">
+                <polygon points="0 1, 8 4.5, 0 8" fill="#2563eb" />
+              </marker>
+              <marker id="arrow-residual" viewBox="0 0 10 10" refX="8" refY="4.5" markerWidth="8" markerHeight="8" orient="auto">
+                <polygon points="0 1, 8 4.5, 0 8" fill="#ef4444" />
+              </marker>
+              <marker id="arrow-cross" viewBox="0 0 10 10" refX="8" refY="4.5" markerWidth="8" markerHeight="8" orient="auto">
+                <polygon points="0 1, 8 4.5, 0 8" fill="#3b82f6" />
               </marker>
             </defs>
 
-            {/* Group rectangles (figure-mode only) */}
-            {positionedGroups.map((g) => (
-              <g key={`group-${g.id}`}>
-                <rect
-                  x={g.x}
-                  y={g.y}
-                  width={g.w}
-                  height={g.h}
-                  fill={g.color}
-                  fillOpacity={0.06}
-                  stroke={g.color}
-                  strokeOpacity={0.5}
-                  strokeWidth={1.5}
-                  strokeDasharray="4 3"
-                  rx={6}
-                />
-                <text
-                  x={g.x + 8}
-                  y={g.y + 16}
-                  className="text-[10px] font-semibold pointer-events-none select-none"
-                  fill="#52525b"
-                >
-                  {g.label}
-                </text>
-              </g>
-            ))}
+            {/* Group containers with floating header badge pill */}
+            {positionedGroups.map((g) => {
+              const labelW = Math.max(70, g.label.length * 6.5 + 24);
+              return (
+                <g key={`group-${g.id}`} className="group-container">
+                  <rect
+                    x={g.x}
+                    y={g.y}
+                    width={g.w}
+                    height={g.h}
+                    fill={g.color || "#f8fafc"}
+                    fillOpacity={0.04}
+                    stroke={g.color || "#cbd5e1"}
+                    strokeOpacity={0.7}
+                    strokeWidth={1.5}
+                    strokeDasharray="5 4"
+                    rx={10}
+                  />
+                  {/* Floating header pill badge on the top border */}
+                  <g transform={`translate(${g.x + 14}, ${g.y - 10})`}>
+                    <rect
+                      x={0}
+                      y={0}
+                      width={labelW}
+                      height={20}
+                      rx={10}
+                      fill="#ffffff"
+                      stroke={g.color || "#94a3b8"}
+                      strokeOpacity={0.8}
+                      strokeWidth={1.2}
+                    />
+                    <text
+                      x={labelW / 2}
+                      y={14}
+                      textAnchor="middle"
+                      className="text-[10px] font-bold uppercase tracking-wider select-none pointer-events-none"
+                      fill="#475569"
+                    >
+                      {g.label}
+                    </text>
+                  </g>
+                </g>
+              );
+            })}
 
             {/* Edges */}
             {edgePaths.map((e) => {
               const isActive =
                 selectedId && (e.source === selectedId || e.target === selectedId);
               const { stroke, dasharray, width, marker } = resolveEdgeStyleImpl(e, !!isActive);
+              const labelW = e.label ? Math.max(50, e.label.length * 6.2 + 16) : 0;
               return (
                 <g key={`${e.source}-${e.target}`}>
                   <path
@@ -425,14 +511,27 @@ export default function ArchitectureDiagram({
                     className="transition-all duration-200"
                   />
                   {e.label && (
-                    <text
-                      x={e.midX}
-                      y={e.midY - 6}
-                      textAnchor="middle"
-                      className="text-[10px] fill-zinc-400 pointer-events-none select-none"
-                    >
-                      {e.label}
-                    </text>
+                    <g transform={`translate(${e.midX}, ${e.midY})`}>
+                      <rect
+                        x={-labelW / 2}
+                        y={-9}
+                        width={labelW}
+                        height={18}
+                        rx={4}
+                        fill="#ffffff"
+                        stroke="#e2e8f0"
+                        strokeWidth={1}
+                        className="shadow-sm"
+                      />
+                      <text
+                        x={0}
+                        y={3.5}
+                        textAnchor="middle"
+                        className="text-[9.5px] font-medium fill-zinc-600 pointer-events-none select-none"
+                      >
+                        {e.label}
+                      </text>
+                    </g>
                   )}
                 </g>
               );
@@ -451,7 +550,7 @@ export default function ArchitectureDiagram({
               const isConnected = selectedId && edges.some((e) => (e.source === selectedId && e.target === node.id) || (e.target === selectedId && e.source === node.id));
               const w = (pos as any).w || NODE_W_DEFAULT, h = (pos as any).h || NODE_H_DEFAULT;
               const shape = (node.shape || node.style?.shape || "rounded") as string;
-              const stroke = isSelected ? "#3b82f6" : border, sw = isSelected ? 2 : 1;
+              const stroke = isSelected ? "#3b82f6" : border, sw = isSelected ? 2.5 : 1.5;
               const dim = selectedId && !isSelected && !isConnected ? 0.35 : 1;
 
               const shapeEl = (() => {
@@ -471,12 +570,45 @@ export default function ArchitectureDiagram({
                   onMouseEnter={() => setHoveredId(node.id)} onMouseLeave={() => setHoveredId(null)}>
                   {(isHovered || isSelected) && <rect x={-2} y={-2} width={w+4} height={h+4} rx={10} fill="none" stroke={isSelected ? "#3b82f6" : "#94a3b8"} strokeWidth={sw} opacity={0.5} />}
                   {shapeEl}
-                  <text x={w/2} y={h/2 - 4} textAnchor="middle" dominantBaseline="middle" className="text-[11px] font-medium pointer-events-none select-none" fill={textColor} opacity={dim}>
-                    {node.label.length > 18 ? node.label.slice(0, 18) + "…" : node.label}
-                  </text>
-                  <text x={w/2} y={h/2 + 10} textAnchor="middle" dominantBaseline="middle" className="text-[8px] pointer-events-none select-none uppercase tracking-wider" fill={textColor} opacity={0.45}>
-                    {node.type}
-                  </text>
+                  {(() => {
+                    const labelText = node.label || node.id;
+                    const maxTextW = Math.max(60, w - 20);
+                    const lines = wrapToWidth(labelText, maxTextW, 11);
+                    const lineH = 14;
+                    const hasType = !!node.type && h >= 46;
+                    const startY = hasType ? 16 : (h / 2 - ((lines.length - 1) * lineH) / 2);
+
+                    return (
+                      <g opacity={dim} className="pointer-events-none select-none">
+                        {hasType && (
+                          <text
+                            x={w / 2}
+                            y={14}
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                            className="text-[8.5px] font-bold uppercase tracking-wider"
+                            fill={colors.tagText || textColor}
+                            opacity={0.8}
+                          >
+                            {node.type}
+                          </text>
+                        )}
+                        {lines.map((line, idx) => (
+                          <text
+                            key={idx}
+                            x={w / 2}
+                            y={(hasType ? 30 : startY) + idx * lineH}
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                            className="text-[11px] font-semibold"
+                            fill={textColor}
+                          >
+                            {line}
+                          </text>
+                        ))}
+                      </g>
+                    );
+                  })()}
                 </g>
               );
             })}

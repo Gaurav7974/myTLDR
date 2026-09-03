@@ -864,7 +864,67 @@ def scaled_dot_product_attention(query, key, value, mask=None):
     { token: 'reliably', probability: 0.059, logit: 10.92 }
   ],
   architectureIR: TRANSFORMER_IR,
-  sceneGraph3D: computeClientSceneGraph(TRANSFORMER_IR)
+  sceneGraph3D: computeClientSceneGraph(TRANSFORMER_IR),
+  architectureGraph: {
+    version: '2.0',
+    source: 'vision',
+    layout_mode: 'figure',
+    figure_id: 'Figure 1',
+    figure_page: 3,
+    confidence: 0.99,
+    verification: {
+      valid: true,
+      confidence: 0.98,
+      hallucinations: [],
+      missing_elements: []
+    },
+    groups: [
+      { id: 'encoder_group', label: 'Encoder (Nx)', bbox: { x: 0.10, y: 0.24, w: 0.28, h: 0.44 }, color: '#f1f5f9' },
+      { id: 'decoder_group', label: 'Decoder (Nx)', bbox: { x: 0.50, y: 0.10, w: 0.32, h: 0.60 }, color: '#f1f5f9' }
+    ],
+    nodes: [
+      { id: 'pos_encoding_1', label: 'Positional Encoding', type: 'other', bbox: { x: 0.15, y: 0.84, w: 0.18, h: 0.05 }, shape: 'ellipse' },
+      { id: 'input_embedding', label: 'Input Embedding', type: 'embedding', bbox: { x: 0.15, y: 0.74, w: 0.18, h: 0.06 }, shape: 'rect' },
+      { id: 'encoder_multi_head_attention', label: 'Multi-Head Attention', type: 'attention', bbox: { x: 0.15, y: 0.60, w: 0.18, h: 0.06 }, shape: 'rect', group_id: 'encoder_group' },
+      { id: 'encoder_add_norm_1', label: 'Add & Norm', type: 'normalization', bbox: { x: 0.15, y: 0.50, w: 0.18, h: 0.06 }, shape: 'rect', group_id: 'encoder_group' },
+      { id: 'encoder_feed_forward', label: 'Feed Forward', type: 'feedforward', bbox: { x: 0.15, y: 0.38, w: 0.18, h: 0.06 }, shape: 'rect', group_id: 'encoder_group' },
+      { id: 'encoder_add_norm_2', label: 'Add & Norm', type: 'normalization', bbox: { x: 0.15, y: 0.28, w: 0.18, h: 0.06 }, shape: 'rect', group_id: 'encoder_group' },
+
+      { id: 'pos_encoding_2', label: 'Positional Encoding', type: 'other', bbox: { x: 0.55, y: 0.84, w: 0.18, h: 0.05 }, shape: 'ellipse' },
+      { id: 'output_embedding', label: 'Output Embedding', type: 'embedding', bbox: { x: 0.55, y: 0.74, w: 0.18, h: 0.06 }, shape: 'rect' },
+      { id: 'decoder_masked_mha', label: 'Masked Multi-Head Attention', type: 'attention', bbox: { x: 0.55, y: 0.62, w: 0.22, h: 0.06 }, shape: 'rect', group_id: 'decoder_group' },
+      { id: 'decoder_add_norm_1', label: 'Add & Norm', type: 'normalization', bbox: { x: 0.55, y: 0.52, w: 0.18, h: 0.06 }, shape: 'rect', group_id: 'decoder_group' },
+      { id: 'decoder_multi_head_attention', label: 'Multi-Head Attention', type: 'attention', bbox: { x: 0.55, y: 0.42, w: 0.18, h: 0.06 }, shape: 'rect', group_id: 'decoder_group' },
+      { id: 'decoder_add_norm_2', label: 'Add & Norm', type: 'normalization', bbox: { x: 0.55, y: 0.32, w: 0.18, h: 0.06 }, shape: 'rect', group_id: 'decoder_group' },
+      { id: 'decoder_feed_forward', label: 'Feed Forward', type: 'feedforward', bbox: { x: 0.55, y: 0.22, w: 0.18, h: 0.06 }, shape: 'rect', group_id: 'decoder_group' },
+      { id: 'decoder_add_norm_3', label: 'Add & Norm', type: 'normalization', bbox: { x: 0.55, y: 0.14, w: 0.18, h: 0.05 }, shape: 'rect', group_id: 'decoder_group' },
+      { id: 'linear', label: 'Linear Projection', type: 'linear', bbox: { x: 0.55, y: 0.07, w: 0.18, h: 0.05 }, shape: 'rect' },
+      { id: 'softmax', label: 'Output Softmax', type: 'other', bbox: { x: 0.55, y: 0.01, w: 0.18, h: 0.04 }, shape: 'rect' }
+    ],
+    edges: [
+      { source: 'pos_encoding_1', target: 'input_embedding', type: 'data_flow', path_points: [{ x: 0.24, y: 0.84 }, { x: 0.24, y: 0.80 }] },
+      { source: 'input_embedding', target: 'encoder_multi_head_attention', type: 'data_flow', path_points: [{ x: 0.24, y: 0.74 }, { x: 0.24, y: 0.66 }] },
+      { source: 'encoder_multi_head_attention', target: 'encoder_add_norm_1', type: 'data_flow', path_points: [{ x: 0.24, y: 0.60 }, { x: 0.24, y: 0.56 }] },
+      { source: 'encoder_add_norm_1', target: 'encoder_feed_forward', type: 'data_flow', path_points: [{ x: 0.24, y: 0.50 }, { x: 0.24, y: 0.44 }] },
+      { source: 'encoder_feed_forward', target: 'encoder_add_norm_2', type: 'data_flow', path_points: [{ x: 0.24, y: 0.38 }, { x: 0.24, y: 0.34 }] },
+      { source: 'input_embedding', target: 'encoder_add_norm_1', type: 'residual_skip', style: { name: 'residual' } },
+      { source: 'encoder_add_norm_1', target: 'encoder_add_norm_2', type: 'residual_skip', style: { name: 'residual' } },
+      { source: 'encoder_add_norm_2', target: 'decoder_multi_head_attention', type: 'cross_attention', path_points: [{ x: 0.33, y: 0.31 }, { x: 0.44, y: 0.31 }, { x: 0.44, y: 0.45 }, { x: 0.55, y: 0.45 }] },
+
+      { source: 'pos_encoding_2', target: 'output_embedding', type: 'data_flow', path_points: [{ x: 0.64, y: 0.84 }, { x: 0.64, y: 0.80 }] },
+      { source: 'output_embedding', target: 'decoder_masked_mha', type: 'data_flow', path_points: [{ x: 0.64, y: 0.74 }, { x: 0.64, y: 0.68 }] },
+      { source: 'decoder_masked_mha', target: 'decoder_add_norm_1', type: 'data_flow', path_points: [{ x: 0.64, y: 0.62 }, { x: 0.64, y: 0.58 }] },
+      { source: 'decoder_add_norm_1', target: 'decoder_multi_head_attention', type: 'data_flow', path_points: [{ x: 0.64, y: 0.52 }, { x: 0.64, y: 0.48 }] },
+      { source: 'decoder_multi_head_attention', target: 'decoder_add_norm_2', type: 'data_flow', path_points: [{ x: 0.64, y: 0.42 }, { x: 0.64, y: 0.38 }] },
+      { source: 'decoder_add_norm_2', target: 'decoder_feed_forward', type: 'data_flow', path_points: [{ x: 0.64, y: 0.32 }, { x: 0.64, y: 0.28 }] },
+      { source: 'decoder_feed_forward', target: 'decoder_add_norm_3', type: 'data_flow', path_points: [{ x: 0.64, y: 0.22 }, { x: 0.64, y: 0.19 }] },
+      { source: 'output_embedding', target: 'decoder_add_norm_1', type: 'residual_skip', style: { name: 'residual' } },
+      { source: 'decoder_add_norm_1', target: 'decoder_add_norm_2', type: 'residual_skip', style: { name: 'residual' } },
+      { source: 'decoder_add_norm_2', target: 'decoder_add_norm_3', type: 'residual_skip', style: { name: 'residual' } },
+      { source: 'decoder_add_norm_3', target: 'linear', type: 'data_flow', path_points: [{ x: 0.64, y: 0.14 }, { x: 0.64, y: 0.12 }] },
+      { source: 'linear', target: 'softmax', type: 'data_flow', path_points: [{ x: 0.64, y: 0.07 }, { x: 0.64, y: 0.05 }] }
+    ]
+  }
 };
 
 // =========================================================================

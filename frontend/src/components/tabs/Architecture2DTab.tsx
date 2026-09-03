@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { PaperData } from '@/types/paper';
 import ArchitectureDiagram from '@/components/ArchitectureDiagram';
 import { isVerifiedVisionGraph } from '@/types/architecture_graph';
+import { irToArchitectureGraph } from '@/lib/api';
 
 interface Architecture2DTabProps {
   paper: PaperData;
@@ -11,7 +12,16 @@ interface Architecture2DTabProps {
 }
 
 export const Architecture2DTab: React.FC<Architecture2DTabProps> = ({ paper }) => {
-  const graph = paper.architectureGraph;
+  const graph = useMemo(() => {
+    if (paper.architectureGraph && (paper.architectureGraph.nodes?.length ?? 0) > 0) {
+      return paper.architectureGraph;
+    }
+    if (paper.architectureIR && (paper.architectureIR.nodes?.length ?? 0) > 0) {
+      return irToArchitectureGraph(paper.architectureIR);
+    }
+    return undefined;
+  }, [paper.architectureGraph, paper.architectureIR]);
+
   const hasGraph = !!(graph && (graph.nodes?.length ?? 0) > 0);
 
   const isUnverified = hasGraph && !isVerifiedVisionGraph(graph);

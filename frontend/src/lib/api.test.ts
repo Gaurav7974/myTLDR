@@ -14,6 +14,7 @@
 // and a helper that mirrors the exact same logic as the private function.
 
 import { describe, it, expect } from 'vitest';
+import { irToArchitectureGraph } from './api';
 
 /** Mirrors the exact logic from transformArchitectureGraph in api.ts */
 function transformArchitectureGraph(
@@ -249,5 +250,30 @@ describe('transformArchitectureGraph — mixed / edge cases', () => {
     };
     const result = transformArchitectureGraph(legacy)!;
     expect(result.edges).toEqual([]);
+  });
+
+  it('synthesizes ArchitectureGraph from ArchitectureIR fallback', () => {
+    const rawIr = {
+      version: '1.0',
+      architecture: { name: 'Mamba SSM', paradigm: 'ssm' },
+      nodes: [
+        { id: 'm1', label: 'Embedding', type: 'embedding', description: 'Token embedding' },
+        { id: 'm2', label: 'SSM Scan', type: 'selective_scan', math_formula: 'h_t = Ah_{t-1} + Bx' },
+      ],
+      edges: [
+        { id: 'e1', source: 'm1', target: 'm2', type: 'data_flow' },
+        { id: 'e2', source: 'm1', target: 'm2', type: 'residual_skip' },
+      ],
+    };
+
+    const graph = irToArchitectureGraph(rawIr)!;
+    expect(graph).toBeDefined();
+    expect(graph.nodes).toHaveLength(2);
+    expect(graph.nodes[0].label).toBe('Embedding');
+    expect(graph.nodes[1].math_formula).toBe('h_t = Ah_{t-1} + Bx');
+    expect(graph.edges).toHaveLength(2);
+    expect(graph.edges[1].style).toEqual({ name: 'residual' });
+    expect(graph.layout_mode).toBe('auto');
+    expect(graph.source).toBe('auto');
   });
 });

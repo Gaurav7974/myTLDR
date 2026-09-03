@@ -57,11 +57,17 @@ class TextExtractor:
         if not pdf_bytes or not pdf_bytes.lstrip()[:5] == b"%PDF-":
             raise ValueError("Uploaded file is not a valid PDF (missing %PDF header)")
         doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+        page_count = len(doc)
+        if page_count > settings.MAX_PDF_PAGES:
+            doc.close()
+            raise ValueError(
+                f"Paper has {page_count} pages, which exceeds the {settings.MAX_PDF_PAGES}-page limit. "
+                f"Please upload or submit a paper with {settings.MAX_PDF_PAGES} pages or fewer."
+            )
         pages: List[PageText] = [
             PageText(page_number=i + 1, markdown=page.get_text(), source="pymupdf")
             for i, page in enumerate(doc)
         ]
-        page_count = len(pages)
         doc.close()
 
         if not pages:

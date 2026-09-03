@@ -262,8 +262,12 @@ def is_verified_vision_graph(graph: ArchitectureGraph | None) -> bool:
 def classify_candidates(figures, paper_title: str = "") -> list[dict]:
     """Cheap per-candidate vision classifier: architecture_diagram | other + confidence. No new dep."""
     if not figures or not settings.VISION_API_KEY: return []
+    # Sort main body first (pages 1-15), cap candidates to prevent rate-limit starvation on long papers
+    sorted_figs = sorted(figures, key=lambda f: (0 if f.page <= 15 else 1, f.page))
+    candidate_figs = sorted_figs[:15]
+
     out=[]
-    for fig in figures:
+    for fig in candidate_figs:
         if not fig.base64: continue
         img_url = f"data:image/png;base64,{fig.base64}" if not fig.base64.startswith("data:") else fig.base64
         msgs=[{"role":"system","content":"You are an image classifier."},{"role":"user","content":[{"type":"text","text":"Is this image an architecture/model diagram, or something else (chart, plot, table, photo)? Respond ONLY with valid JSON: {\"label\": \"architecture_diagram\" | \"other\", \"confidence\": 0.0-1.0}"},{"type":"image_url","image_url":{"url":img_url}}]}]
@@ -275,6 +279,9 @@ def classify_candidates(figures, paper_title: str = "") -> list[dict]:
             if label not in ("architecture_diagram","other"): label="other"
             out.append({"figure":fig,"label":label,"confidence":conf,"time":time.time()-t0})
             log.info(f"classify {fig.id} p{fig.page} -> {label} {conf:.2f}")
+            if label == "architecture_diagram" and conf >= 0.95 and fig.page <= 15:
+                log.info(f"Found high-confidence architecture diagram ({fig.id}, conf={conf:.2f}) on page {fig.page}. Early stopping classifier.")
+                break
         except Exception as e: log.warning(f"classify {fig.id} failed: {e}"); out.append({"figure":fig,"label":"other","confidence":0.0})
     # Log distribution
     try: log.info(f"classify distribution: {','.join(f'{x['confidence']:.2f}' for x in out)}")
@@ -410,7 +417,8 @@ class FigureExtractor:
             "response_format": {"type": "json_object"},
         }
         last_err: Exception | None = None
-        for attempt in range(settings.LLM_MAX_RETRIES):
+        max_attempts = max(settings.LLM_MAX_RETRIES, 3)
+        for attempt in range(max_attempts):
             try:
                 resp = requests.post(
                     settings.VISION_API_URL,
@@ -422,8 +430,11 @@ class FigureExtractor:
                     timeout=45,
                 )
                 if resp.status_code == 429:
-                    time.sleep(settings.LLM_RETRY_BACKOFF_BASE * (attempt + 1))
-                    continue
+                    last_err = requests.exceptions.HTTPError("429 Too Many Requests", response=resp)
+                    if attempt < max_attempts - 1:
+                        time.sleep(settings.LLM_RETRY_BACKOFF_BASE * (attempt + 1))
+                        continue
+                    break
                 resp.raise_for_status()
                 content = resp.json()["choices"][0]["message"]["content"]
                 # Debug dump only when DEBUG=true (avoid unbounded disk writes)
@@ -446,7 +457,7 @@ class FigureExtractor:
                 status = getattr(getattr(e, "response", None), "status_code", None)
                 if status not in (429, 502, 503, 504) and not isinstance(e, requests.exceptions.ConnectionError):
                     break
-                if attempt < settings.LLM_MAX_RETRIES - 1:
+                if attempt < max_attempts - 1:
                     time.sleep(settings.LLM_RETRY_BACKOFF_BASE * (attempt + 1))
                     continue
                 break

@@ -49,16 +49,19 @@ async def process_paper(
         metadata["arxiv_id"] = sanitize_arxiv_id(arxiv_id)
         pdf_bytes = await asyncio.to_thread(text_extractor.download_arxiv_pdf, arxiv_id)
         try: extraction = await asyncio.to_thread(text_extractor.extract_from_pdf_bytes, pdf_bytes)
-        except Exception as e: yield {"stage": "error", "message": f"OCR failed: {str(e)}."}; return
+        except ValueError as e: yield {"stage": "error", "message": str(e)}; return
+        except Exception as e: yield {"stage": "error", "message": f"Extraction failed: {str(e)}"}; return
     elif source_type == "url":
         metadata["pdf_url"] = url
         pdf_bytes = await asyncio.to_thread(text_extractor.download_pdf, url)
         try: extraction = await asyncio.to_thread(text_extractor.extract_from_pdf_bytes, pdf_bytes)
-        except Exception as e: yield {"stage": "error", "message": f"OCR failed: {str(e)}."}; return
+        except ValueError as e: yield {"stage": "error", "message": str(e)}; return
+        except Exception as e: yield {"stage": "error", "message": f"Extraction failed: {str(e)}"}; return
     elif source_type == "upload":
         if not file_bytes: yield {"stage": "error", "message": "No file provided"}; return
         try: extraction = await asyncio.to_thread(text_extractor.extract_from_pdf_bytes, file_bytes)
-        except Exception as e: yield {"stage": "error", "message": f"OCR failed: {str(e)}."}; return
+        except ValueError as e: yield {"stage": "error", "message": str(e)}; return
+        except Exception as e: yield {"stage": "error", "message": f"Extraction failed: {str(e)}"}; return
     else: yield {"stage": "error", "message": f"Unknown source type: {source_type}"}; return
     
     full_text = extraction.text

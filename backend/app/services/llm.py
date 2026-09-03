@@ -51,11 +51,23 @@ class ChatClient:
         """
         if not self.providers:
             raise Exception("No LLM provider configured (set OCR_KEY or GROQ_API_KEY)")
+
+        msgs = list(messages)
+        if response_format and response_format.get("type") == "json_object":
+            has_json = any("json" in str(m.get("content", "")).lower() for m in msgs)
+            if not has_json:
+                msgs = [dict(m) for m in msgs]
+                user_idx = next((i for i in range(len(msgs) - 1, -1, -1) if msgs[i].get("role") == "user"), None)
+                if user_idx is not None and isinstance(msgs[user_idx].get("content"), str):
+                    msgs[user_idx]["content"] = msgs[user_idx]["content"] + "\n\nRespond strictly in valid JSON format."
+                elif len(msgs) > 0 and isinstance(msgs[0].get("content"), str):
+                    msgs[0]["content"] = msgs[0]["content"] + "\n\nRespond strictly in valid JSON format."
+
         last_err = None
         for prov in self.providers:
             use_model = model if model == prov["model"] else prov["model"]
             try:
-                return self._post(prov, messages, use_model,
+                return self._post(prov, msgs, use_model,
                                   response_format, temperature)
             except Exception as e:
                 log.warning(f"[LLM] provider '{prov['name']}' failed: {e}")
@@ -88,6 +100,8 @@ class ChatClient:
                     log.error(f"[ERROR] Payload too large on {prov['name']}, trimming trailing text...", exc_info=True)
                     self._shrink_last_message(payload)
                     continue
+                if resp.status_code >= 400:
+                    log.warning(f"[{prov['name']} HTTP {resp.status_code}]: {resp.text[:500]}")
                 resp.raise_for_status()
                 return resp.json()["choices"][0]["message"]["content"]
             except requests.exceptions.RequestException as e:
@@ -121,11 +135,31 @@ class ChatClient:
                         break
 
     def extract_json(self, messages: list, model: str = None) -> dict:
-        """Call the API and parse a JSON response."""
+        """Call the API and parse a JSON response.
+
+        Groq requires the word 'json' to appear in the messages when using
+        response_format=json_object. We ensure it appears in the last user
+        message so both Mistral and Groq accept it.
+        """
         msgs = list(messages)
-        has_json_word = any("json" in str(m.get("content", "")).lower() for m in msgs)
-        if not has_json_word and len(msgs) > 0:
-            msgs[0] = {**msgs[0], "content": msgs[0]["content"] + "\n\nRespond strictly in valid JSON format."}
+        # Find the last user message and check/inject "json" into it.
+        # Groq specifically checks the user message content, not system.
+        last_user_idx = next(
+            (i for i in range(len(msgs) - 1, -1, -1) if msgs[i].get("role") == "user"),
+            None,
+        )
+        if last_user_idx is not None:
+            content = msgs[last_user_idx].get("content", "")
+            if isinstance(content, str) and "json" not in content.lower():
+                msgs[last_user_idx] = {
+                    **msgs[last_user_idx],
+                    "content": content + "\n\nRespond strictly in valid JSON format.",
+                }
+        elif len(msgs) > 0:
+            # Fallback: inject into first message if no user message found
+            content = msgs[0].get("content", "")
+            if isinstance(content, str) and "json" not in content.lower():
+                msgs[0] = {**msgs[0], "content": content + "\n\nRespond strictly in valid JSON format."}
 
         response = self.call(
             messages=msgs,

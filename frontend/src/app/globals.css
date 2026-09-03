@@ -125,13 +125,14 @@ html {
 }
 
 .progress-stripes {
+  background-color: var(--volt, #2563eb);
   background-image: repeating-linear-gradient(
-    -45deg,
-    rgba(255, 255, 255, 0.35) 0 8px,
-    transparent 8px 14px
+    45deg,
+    rgba(255, 255, 255, 0.3) 0 10px,
+    transparent 10px 20px
   );
   background-size: 28px 28px;
-  animation: stripes 0.8s linear infinite;
+  animation: stripes 0.75s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

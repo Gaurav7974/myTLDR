@@ -11,6 +11,10 @@ import {
   resolveEdgeStyle,
   positionGroupsFigure,
   pathPointsToSvgPath,
+  relaxNodePositions,
+  generateRoundedOrthogonalPath,
+  routeEdgeOrthogonal,
+  computeElkLayout,
   FIGURE_CANVAS_W,
   FIGURE_CANVAS_H,
   NODE_W_DEFAULT,
@@ -319,3 +323,179 @@ describe('pathPointsToSvgPath', () => {
     expect(result).toBe(`M ${0},${0} L ${500},${300} L ${1000},${600}`);
   });
 });
+
+describe('relaxNodePositions', () => {
+  it('enforces minimum vertical gap between colliding stacked nodes', () => {
+    const map = new Map();
+    map.set('a', { id: 'a', x: 100, y: 100, w: 160, h: 40, layer: 0, index: 0, source: 'figure' });
+    // Node 'b' touches 'a' at y=140
+    map.set('b', { id: 'b', x: 100, y: 140, w: 160, h: 40, layer: 0, index: 0, source: 'figure' });
+    const relaxed = relaxNodePositions(map, 16);
+    expect(relaxed.get('b')!.y).toBeGreaterThanOrEqual(100 + 40 + 16);
+  });
+
+  it('enforces minimum horizontal gap between colliding side-by-side nodes', () => {
+    const map = new Map();
+    map.set('a', { id: 'a', x: 100, y: 100, w: 60, h: 40, layer: 0, index: 0, source: 'figure' });
+    // Node 'b' overlaps horizontally [140, 240] vs [100, 160]
+    map.set('b', { id: 'b', x: 140, y: 100, w: 100, h: 40, layer: 0, index: 0, source: 'figure' });
+    const relaxed = relaxNodePositions(map, 16, 16);
+    expect(relaxed.get('b')!.x).toBeGreaterThanOrEqual(100 + 60 + 16);
+  });
+});
+
+describe('generateRoundedOrthogonalPath', () => {
+  it('returns empty string for < 2 points', () => {
+    expect(generateRoundedOrthogonalPath([])).toBe('');
+    expect(generateRoundedOrthogonalPath([{ x: 10, y: 10 }])).toBe('');
+  });
+
+  it('returns straight line for 2 points', () => {
+    expect(generateRoundedOrthogonalPath([{ x: 10, y: 10 }, { x: 10, y: 100 }])).toBe('M 10 10 L 10 100');
+  });
+
+  it('inserts quadratic bezier fillets on corners for 3+ points', () => {
+    const pts = [{ x: 10, y: 10 }, { x: 50, y: 10 }, { x: 50, y: 100 }];
+    const path = generateRoundedOrthogonalPath(pts, 8);
+    expect(path).toContain('Q 50 10');
+    expect(path.startsWith('M 10 10')).toBe(true);
+    expect(path.endsWith('L 50 100')).toBe(true);
+  });
+});
+
+describe('routeEdgeOrthogonal', () => {
+  const nodeA = { id: 'a', x: 100, y: 300, w: 160, h: 40, layer: 0, index: 0, source: 'figure' as const };
+  const nodeB = { id: 'b', x: 100, y: 100, w: 160, h: 40, layer: 0, index: 0, source: 'figure' as const };
+
+  it('routes upward sequential flow with straight vertical line', () => {
+    const edge = { source: 'a', target: 'b' };
+    const routed = routeEdgeOrthogonal(nodeA, nodeB, edge);
+    // Node B is directly above Node A: straight line from top of A to bottom of B
+    expect(routed.path).toBe('M 180 300 L 180 140');
+  });
+
+  it('routes downward sequential flow with straight vertical line', () => {
+    const edge = { source: 'b', target: 'a' };
+    const routed = routeEdgeOrthogonal(nodeB, nodeA, edge);
+    // Node A is directly below Node B: straight line from bottom of B to top of A
+    expect(routed.path).toBe('M 180 140 L 180 300');
+  });
+
+  it('routes residual edge outside via gutter lane with rounded bends', () => {
+    const edge = { source: 'b', target: 'a', type: 'residual_skip' };
+    const routed = routeEdgeOrthogonal(nodeB, nodeA, edge, 1000);
+    // Left half gutter should step left of min(x)=100 -> gutterX=60
+    expect(routed.path).toContain('L 60');
+    expect(routed.path).toContain('Q 60');
+  });
+
+  it('routes cross-column edge through corridor', () => {
+    const leftNode = { id: 'enc', x: 100, y: 200, w: 160, h: 40, layer: 0, index: 0, source: 'figure' as const };
+    const rightNode = { id: 'dec', x: 500, y: 250, w: 160, h: 40, layer: 0, index: 0, source: 'figure' as const };
+    const edge = { source: 'enc', target: 'dec', type: 'cross_attention' };
+    const routed = routeEdgeOrthogonal(leftNode, rightNode, edge, 1000);
+    // Corridor between 260 and 500 -> midX = 380
+    expect(routed.path).toContain('380');
+    expect(routed.path).toContain('Q 380');
+  });
+});
+
+describe('positionGroupsFigure member-based containment', () => {
+  it('encloses member nodes tightly with padding', () => {
+    const groups: GraphGroup[] = [{ id: 'g1', label: 'Encoder' }];
+    const nodes = [
+      { id: 'n1', label: 'Layer 1', type: 'attention', group_id: 'g1' },
+      { id: 'n2', label: 'Layer 2', type: 'feedforward', group_id: 'g1' },
+    ];
+    const posMap = new Map();
+    posMap.set('n1', { id: 'n1', x: 100, y: 100, w: 160, h: 40, layer: 0, index: 0, source: 'figure' });
+    posMap.set('n2', { id: 'n2', x: 100, y: 200, w: 160, h: 40, layer: 0, index: 0, source: 'figure' });
+
+    const positioned = positionGroupsFigure(groups, posMap, nodes);
+    expect(positioned).toHaveLength(1);
+    const g = positioned[0];
+    // x: minX(100) - 24 = 76
+    expect(g.x).toBe(76);
+    // y: minY(100) - 32 = 68
+    expect(g.y).toBe(68);
+    // w: (160) + 48 = 208
+    expect(g.w).toBe(208);
+    // h: (maxY(240) - minY(100)) + 32 + 20 = 192
+    expect(g.h).toBe(192);
+  });
+});
+
+describe('computeElkLayout', () => {
+  it('returns empty result when nodes array is empty', async () => {
+    const res = await computeElkLayout([], []);
+    expect(res.nodes.size).toBe(0);
+    expect(res.edges.size).toBe(0);
+    expect(res.groups).toHaveLength(0);
+  });
+
+  it('lays out sequential nodes and computes orthogonal edge paths with bend points', async () => {
+    const nodes = [
+      { id: 'in', label: 'Input', type: 'input' },
+      { id: 'mid', label: 'Layer', type: 'linear' },
+      { id: 'out', label: 'Output', type: 'output' },
+    ];
+    const edges = [
+      { source: 'in', target: 'mid' },
+      { source: 'mid', target: 'out' },
+    ];
+
+    const res = await computeElkLayout(nodes, edges);
+    expect(res.nodes.size).toBe(3);
+    expect(res.nodes.get('in')).toBeDefined();
+    expect(res.nodes.get('mid')).toBeDefined();
+    expect(res.nodes.get('out')).toBeDefined();
+
+    // Top to bottom flow
+    const inY = res.nodes.get('in')!.y;
+    const midY = res.nodes.get('mid')!.y;
+    const outY = res.nodes.get('out')!.y;
+    expect(midY).toBeGreaterThan(inY);
+    expect(outY).toBeGreaterThan(midY);
+
+    // Edges routed
+    expect(res.edges.size).toBeGreaterThan(0);
+    const edge1 = res.edges.get('in->mid');
+    expect(edge1).toBeDefined();
+    expect(edge1!.path.startsWith('M')).toBe(true);
+    expect(typeof edge1!.midX).toBe('number');
+    expect(typeof edge1!.midY).toBe('number');
+  });
+
+  it('supports compound groups and positions member nodes within group bounds', async () => {
+    const groups: GraphGroup[] = [
+      { id: 'enc_group', label: 'Encoder' },
+    ];
+    const nodes = [
+      { id: 'src', label: 'Source', type: 'input' },
+      { id: 'attn', label: 'Self-Attention', type: 'attention', group_id: 'enc_group' },
+      { id: 'ffn', label: 'Feed Forward', type: 'feedforward', group_id: 'enc_group' },
+    ];
+    const edges = [
+      { source: 'src', target: 'attn' },
+      { source: 'attn', target: 'ffn' },
+    ];
+
+    const res = await computeElkLayout(nodes, edges, groups);
+    expect(res.nodes.size).toBe(3);
+    expect(res.groups).toHaveLength(1);
+
+    const g = res.groups[0];
+    expect(g.id).toBe('enc_group');
+    expect(g.label).toBe('Encoder');
+
+    const attnPos = res.nodes.get('attn')!;
+    const ffnPos = res.nodes.get('ffn')!;
+
+    // Both member nodes are inside the group rectangle
+    expect(attnPos.x).toBeGreaterThanOrEqual(g.x);
+    expect(attnPos.y).toBeGreaterThanOrEqual(g.y);
+    expect(attnPos.x + attnPos.w).toBeLessThanOrEqual(g.x + g.w + 1);
+    expect(ffnPos.y + ffnPos.h).toBeLessThanOrEqual(g.y + g.h + 1);
+  });
+});
+

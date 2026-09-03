@@ -55,7 +55,7 @@ function measureText(text: string, fontSize = 13): number {
   return w * (fontSize / 13);
 }
 
-function wrapToWidth(label: string, maxWidth: number, fontSize = 13): string[] {
+export function wrapToWidth(label: string, maxWidth: number, fontSize = 13): string[] {
   if (!label) return [""];
   const words = label.split(/\s+/);
   const lines: string[] = [];

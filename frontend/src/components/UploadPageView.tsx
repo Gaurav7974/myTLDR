@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { PaperData } from '@/types/paper';
 import { TRANSFORMER_PAPER_DATA, MAMBA_PAPER_DATA, generateDynamicPaperData } from '@/lib/mockData';
@@ -116,7 +116,7 @@ const SOURCES = [
   { name: 'Google Scholar', slug: 'googlescholar' },
 ];
 
-const TRUST_BADGES = ['NO SIGN-UP', 'FREE IN BETA', '3 DEPTHS', 'VERIFIED OUTPUT'];
+const TRUST_BADGES = ['NO SIGN-UP', 'FREE IN BETA', 'MAX 30 PAGES', '3 DEPTHS', 'VERIFIED OUTPUT'];
 
 const DEPTHS = [
   { id: 'beginner' as const, label: 'BEGINNER' },
@@ -160,11 +160,33 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
   const [url, setUrl] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressStatus, setProgressStatus] = useState<string>('');
+  const [progressPercent, setProgressPercent] = useState<number>(0);
+  const [progressStage, setProgressStage] = useState<string>('extracting');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [difficulty, setDifficulty] = useState<'beginner' | 'intermediate' | 'expert'>('intermediate');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Smooth progress bar advancement while processing
+  useEffect(() => {
+    if (!isProcessing) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setProgressPercent((prev) => {
+        if (progressStage === 'extracting') {
+          if (prev < 32) return prev + 0.6;
+        } else if (progressStage === 'explaining') {
+          if (prev < 68) return prev + 0.5;
+        } else if (progressStage === 'diagramming') {
+          if (prev < 94) return prev + 0.3;
+        }
+        return prev;
+      });
+    }, 150);
+    return () => clearInterval(timer);
+  }, [isProcessing, progressStage]);
 
   const filteredPapers = useMemo(() => {
     if (selectedCategory === 'All') return BENCHMARK_PAPERS;
@@ -199,6 +221,8 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
 
     setIsProcessing(true);
     setSubmitError(null);
+    setProgressPercent(12);
+    setProgressStage('extracting');
     setProgressStatus('Initializing ingestion pipeline...');
 
     try {
@@ -210,6 +234,19 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
         },
         (evt) => {
           if (evt.message) setProgressStatus(evt.message);
+          if (evt.stage === 'extracting') {
+            setProgressStage('extracting');
+            setProgressPercent((prev) => Math.max(prev, 22));
+          } else if (evt.stage === 'explaining') {
+            setProgressStage('explaining');
+            setProgressPercent((prev) => Math.max(prev, 50));
+          } else if (evt.stage === 'diagramming') {
+            setProgressStage('diagramming');
+            setProgressPercent((prev) => Math.max(prev, 78));
+          } else if (evt.stage === 'done') {
+            setProgressStage('done');
+            setProgressPercent(100);
+          }
         }
       );
       onSelectPaper(paper);
@@ -226,6 +263,8 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
     if (isProcessing) return;
     setIsProcessing(true);
     setSubmitError(null);
+    setProgressPercent(12);
+    setProgressStage('extracting');
     setProgressStatus(`Extracting ${file.name} via OCR...`);
 
     try {
@@ -237,6 +276,19 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
         },
         (evt) => {
           if (evt.message) setProgressStatus(evt.message);
+          if (evt.stage === 'extracting') {
+            setProgressStage('extracting');
+            setProgressPercent((prev) => Math.max(prev, 22));
+          } else if (evt.stage === 'explaining') {
+            setProgressStage('explaining');
+            setProgressPercent((prev) => Math.max(prev, 50));
+          } else if (evt.stage === 'diagramming') {
+            setProgressStage('diagramming');
+            setProgressPercent((prev) => Math.max(prev, 78));
+          } else if (evt.stage === 'done') {
+            setProgressStage('done');
+            setProgressPercent(100);
+          }
         }
       );
       onSelectPaper(paper);
@@ -418,25 +470,53 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
               </div>
             )}
 
-            {/* Processing status */}
+            {/* Modern High-UX Progress Bar */}
             {isProcessing && (
-              <div className="progress-stripes border-2 border-ink bg-volt px-4 py-3 animate-fadeIn" role="status">
-                <p className="font-mono text-xs font-bold tracking-[0.06em] text-white">
-                  <Sparkles className="mr-2 inline h-3.5 w-3.5 animate-spin" />
-                  {progressStatus || 'Deconstructing paper...'}
-                </p>
+              <div className="border-2 border-ink bg-white p-3.5 space-y-2.5 shadow-2xs animate-fadeIn" role="status">
+                {/* Header: Stage and Percent */}
+                <div className="flex items-center justify-between font-mono text-xs">
+                  <span className="flex items-center gap-2 font-bold tracking-[0.08em] text-ink uppercase">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-volt opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-volt"></span>
+                    </span>
+                    {progressStage === 'extracting' ? 'EXTRACTING & OCR' :
+                     progressStage === 'explaining' ? 'GENERATING EXPLANATION' :
+                     progressStage === 'diagramming' ? 'DECONSTRUCTING ARCHITECTURE' :
+                     'FINALIZING'}
+                  </span>
+                  <span className="font-mono font-bold text-volt tracking-wider">
+                    {Math.round(progressPercent)}%
+                  </span>
+                </div>
+
+                {/* Bar Track & Moving Animated Stripes */}
+                <div className="h-3.5 w-full border-2 border-ink bg-zinc-100 p-[1px] relative overflow-hidden">
+                  <div
+                    className="progress-stripes h-full bg-volt transition-all duration-300 ease-out shadow-[0_0_10px_rgba(37,99,235,0.4)]"
+                    style={{ width: `${Math.max(6, Math.min(100, progressPercent))}%` }}
+                  />
+                </div>
+
+                {/* Subtitle: dynamic backend message */}
+                <div className="flex items-center justify-between font-mono text-[11px] text-ink/70">
+                  <span className="truncate flex items-center gap-1.5">
+                    <Sparkles className="h-3 w-3 shrink-0 text-volt animate-spin" />
+                    {progressStatus || 'Deconstructing paper...'}
+                  </span>
+                  <span className="shrink-0 text-[10px] text-fog pl-2 font-bold">
+                    MAX 30 PAGES
+                  </span>
+                </div>
               </div>
             )}
 
-            {/* Submission error — honest failure, never mock content */}
+            {/* Submission error — single clean error message */}
             {submitError && !isProcessing && (
               <div className="border-2 border-ink bg-red-50 px-4 py-3 animate-fadeIn" role="alert">
-                <p className="font-mono text-xs font-bold tracking-[0.06em] text-red-800">
-                  <span className="mr-2">✕</span>
-                  {submitError}
-                </p>
-                <p className="mt-1 font-mono text-[11px] text-red-600">
-                  Check the paper source and try again. Nothing was generated for this request.
+                <p className="font-mono text-xs font-bold tracking-[0.06em] text-red-800 flex items-start gap-2">
+                  <span className="shrink-0 text-red-600 font-bold">✕</span>
+                  <span>{submitError}</span>
                 </p>
               </div>
             )}
@@ -477,7 +557,7 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
               </React.Fragment>
             ))}
             <span className="w-full pt-1 text-[10px] tracking-[0.06em] text-fog">
-              NO SIGN-IN. FREE WHILE IN BETA. DROP A PDF ANYWHERE ON THE BOX ABOVE.
+              NO SIGN-IN. FREE WHILE IN BETA. MAX 30 PAGES. DROP A PDF ANYWHERE ON THE BOX ABOVE.
             </span>
           </div>
 

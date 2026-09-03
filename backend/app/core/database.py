@@ -35,19 +35,23 @@ async def init_db():
                 log.warning(f"table {table.name} setup skipped: {type(e).__name__}: {e}")
 
 
-async def get_db() -> AsyncSession:
-    async with async_session() as session:
-        try:
-            yield session
-        except Exception as e:
+async def get_db():
+    try:
+        async with async_session() as session:
             try:
-                await session.rollback()
-            except Exception:
-                pass
-            log.error(f"DB session error: {e}", exc_info=True)
-            raise
-        finally:
-            try:
-                await session.close()
-            except Exception:
-                pass
+                yield session
+            except Exception as e:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
+                log.warning(f"DB session error: {e}")
+                yield None
+            finally:
+                try:
+                    await session.close()
+                except Exception:
+                    pass
+    except Exception as e:
+        log.warning(f"DB connection failed: {e}")
+        yield None
