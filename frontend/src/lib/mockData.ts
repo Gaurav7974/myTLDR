@@ -2111,11 +2111,8 @@ export function generateDynamicPaperData(title: string, arxivId?: string, text?:
       }
     ],
     codeSnippets: [
-      {
-        title: 'model_pipeline.py',
-        language: 'python',
-        code: `import torch\nimport torch.nn as nn\n\nclass DeconstructedModel(nn.Module):\n    """Dynamic neural architecture implementation."""\n    def __init__(self, in_features: int = 512, hidden_dim: int = 2048):\n        super().__init__()\n        self.norm = nn.LayerNorm(in_features)\n        self.linear1 = nn.Linear(in_features, hidden_dim)\n        self.act = nn.GELU()\n        self.linear2 = nn.Linear(hidden_dim, in_features)\n\n    def forward(self, x: torch.Tensor) -> torch.Tensor:\n        residual = x\n        x = self.norm(x)\n        x = self.linear2(self.act(self.linear1(x)))\n        return residual + x`
-      }
+      // Deliberately empty: inventing a model_pipeline.py for an unknown
+      // paper is exactly the fabrication the honest empty state prevents.
     ],
     bycroftStages: [
       {

@@ -1,5 +1,6 @@
 """FastAPI application."""
 import uuid, time
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,10 +13,25 @@ from app.core.security import limiter
 setup_logging()
 log = get_logger("app")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Create extension + tables (init_db is idempotent). Never let DB
+    # problems take the app down — endpoints degrade without it.
+    try:
+        from app.core.database import init_db
+        await init_db()
+        log.info("database initialized")
+    except Exception as e:
+        log.warning(f"database init skipped (degraded mode): {e}")
+    yield
+
+
 app = FastAPI(
     title=settings.APP_NAME,
     description="AI Research Paper Analysis & 3D Deconstruction Platform API with pgvector RAG & Security Shield",
-    version="2.0.0"
+    version="2.0.0",
+    lifespan=lifespan,
 )
 
 # Attach SlowAPI Limiter to app state

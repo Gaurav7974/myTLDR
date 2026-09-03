@@ -7,6 +7,7 @@ import requests
 import pymupdf  # PyMuPDF
 from dataclasses import dataclass, field
 from typing import List, Optional
+from urllib.parse import urljoin
 from app.core.config import settings
 from app.core.logger import get_logger
 log = get_logger(__name__)
@@ -297,8 +298,10 @@ class TextExtractor:
                 loc = resp.headers.get("Location")
                 if not loc:
                     resp.raise_for_status()
-                # Validate redirect target
-                current_url = validate_and_sanitize_url(loc)
+                # Resolve relative / protocol-relative targets against the
+                # current URL first — urlparse rejects them as scheme-less,
+                # which broke every arXiv download.
+                current_url = validate_and_sanitize_url(urljoin(current_url, loc))
                 continue
             resp.raise_for_status()
             cl = resp.headers.get("Content-Length")
