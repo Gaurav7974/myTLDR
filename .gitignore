@@ -62,5 +62,8 @@ platfrom testing/
 frontend/AGENTS.md
 frontend/CLAUDE.md
 
-# Root-level stray icon (app icon lives in frontend/app/icon.png)
-icon.png
+# Prevent stray root-level app dir that would hijack Next.js routing
+frontend/app/
+
+# Root-level stray icon (app icon lives in frontend/src/app/icon.png)
+/icon.png
