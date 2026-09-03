@@ -54,13 +54,18 @@ class ChatClient:
 
         msgs = list(messages)
         if response_format and response_format.get("type") == "json_object":
-            has_json = any("json" in str(m.get("content", "")).lower() for m in msgs)
-            if not has_json:
+            last_user_idx = next(
+                (i for i in range(len(msgs) - 1, -1, -1) if msgs[i].get("role") == "user"),
+                None,
+            )
+            has_json = False
+            if last_user_idx is not None:
+                has_json = "json" in str(msgs[last_user_idx].get("content", "")).lower()
+            if not has_json and len(msgs) > 0:
                 msgs = [dict(m) for m in msgs]
-                user_idx = next((i for i in range(len(msgs) - 1, -1, -1) if msgs[i].get("role") == "user"), None)
-                if user_idx is not None and isinstance(msgs[user_idx].get("content"), str):
-                    msgs[user_idx]["content"] = msgs[user_idx]["content"] + "\n\nRespond strictly in valid JSON format."
-                elif len(msgs) > 0 and isinstance(msgs[0].get("content"), str):
+                if last_user_idx is not None and isinstance(msgs[last_user_idx].get("content"), str):
+                    msgs[last_user_idx]["content"] = msgs[last_user_idx]["content"] + "\n\nRespond strictly in valid JSON format."
+                elif isinstance(msgs[0].get("content"), str):
                     msgs[0]["content"] = msgs[0]["content"] + "\n\nRespond strictly in valid JSON format."
 
         last_err = None

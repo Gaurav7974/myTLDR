@@ -178,7 +178,7 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          paper_hash: paper.metadata.arxivId || `unknown-${Date.now()}`,
+          paper_hash: paper.metadata.contentHash || paper.metadata.arxivId || `unknown-${Date.now()}`,
           paper_title: paper.metadata.title,
           query: userText.trim(),
           history: messages.slice(-4).map((m) => ({ sender: m.sender, text: m.text })),

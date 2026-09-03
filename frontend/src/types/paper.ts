@@ -58,6 +58,7 @@ export interface PaperMetadata {
   pdfUrl?: string;
   fileBlobUrl?: string;
   citationsCount: number;
+  contentHash?: string;
 }
 
 export interface BycroftStage {

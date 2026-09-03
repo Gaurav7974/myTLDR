@@ -5,7 +5,7 @@ import math
 import hashlib
 import asyncio
 from typing import List, Dict, Any, Optional
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.orm import PaperChunk
 from app.services.llm import groq_client
@@ -23,6 +23,12 @@ _MEMORY_VECTOR_STORE: Dict[str, List[Dict[str, Any]]] = LRUCache(maxsize=100) if
 _embedding_cache: Dict[str, List[float]] = LRUCache(maxsize=512) if LRUCache is not dict else {}  # type: ignore[arg-type]
 
 RELEVANCE_THRESHOLD = 0.35
+
+
+def _sanitize_paper_title(title: str) -> str:
+    cleaned = re.sub(r'[\x00-\x1f\x7f]', '', title)
+    cleaned = re.sub(r'["\\]', '', cleaned)
+    return cleaned.strip()[:200] or "Research Paper"
 
 
 async def compute_dense_embedding(text_str: str) -> List[float] | None:
@@ -127,7 +133,13 @@ class RAGService:
                 select(PaperChunk.id).where(PaperChunk.paper_hash == paper_hash).limit(1)
             )
             if res.scalar():
-                return len(chunks)
+                count_res = await db.execute(
+                    select(func.count(PaperChunk.id)).where(PaperChunk.paper_hash == paper_hash)
+                )
+                existing = count_res.scalar() or 0
+                if existing >= len(chunks):
+                    return len(chunks)
+                log.warning(f"index_paper: partial index detected for {paper_hash[:8]} ({existing}/{len(chunks)} chunks), re-indexing")
         except Exception:
             # DB unavailable — RAG will be unavailable until DB recovers
             log.warning(f"index_paper: DB check failed for {paper_hash[:8]}")
@@ -280,14 +292,16 @@ class RAGService:
             )
         context_str = "\n\n".join(context_blocks)
 
+        safe_title = _sanitize_paper_title(paper_title)
+
         system_prompt = f"""<role_and_scope>
-You are myTLDR's AI Research Assistant, an expert AI scientist for the paper: "{paper_title}".
+You are myTLDR's AI Research Assistant, an expert AI scientist for the paper: "{safe_title}".
 Your scope is strictly this paper. You answer only questions about its methods, architecture, math, experiments, and results.
 
 Out-of-scope: general knowledge (capitals, sports, celebrities), personal chat, or other papers.
-For out-of-scope, politely decline: "I can only answer questions about '{paper_title}'. This paper is about [one-sentence from context]. Try: 'What bottleneck does it solve?' or 'Explain its attention mechanism.'"
+For out-of-scope, politely decline: "I can only answer questions about '{safe_title}'. This paper is about [one-sentence from context]. Try: 'What bottleneck does it solve?' or 'Explain its attention mechanism.'"
 Examples:
-- Q: What is France capital? → A: I can only answer about "{paper_title}" — I don't have general knowledge in this mode.
+- Q: What is France capital? → A: I can only answer about "{safe_title}" — I don't have general knowledge in this mode.
 - Q: What is attention in this paper? → A: Grounded answer with citation [Source 1 - Section Title].
 </role_and_scope>
 
@@ -320,13 +334,16 @@ If LLM context is empty, use the grounded fallback answer provided by the system
             "Provide a grounded answer using only the paper context above. Cite as [Source N - Section Title]."
         )
 
+        messages = [{"role": "system", "content": system_prompt}]
+        for turn in (history or []):
+            if isinstance(turn, dict) and turn.get("role") in ("user", "assistant"):
+                messages.append({"role": turn["role"], "content": str(turn.get("content", ""))[:4000]})
+        messages.append({"role": "user", "content": user_prompt})
+
         # Step 4: Call LLM (Mistral primary, Groq failover)
         try:
             answer = groq_client.call(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
+                messages=messages,
                 model=settings.MISTRAL_LLM_MODEL,
                 temperature=0.3,
             )

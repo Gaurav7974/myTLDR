@@ -147,6 +147,7 @@ async def process_paper(
             "summary_available": cached_explanation is not None,
             "metadata": metadata,
             "parsed_text": parsed_text,
+            "content_hash": content_hash,
             "cached": True
         }
         return
@@ -189,7 +190,7 @@ async def process_paper(
     text_graph, vision_graph = _ok("tgraph"), _ok("vgraph")
     # Parallel verification (both independent, were sequential)
     text_verified = False
-    if text_graph and len(text_graph.nodes) > 0 or vision_graph and len(getattr(vision_graph,'nodes',[])) > 0:
+    if (text_graph and len(text_graph.nodes) > 0) or (vision_graph and len(getattr(vision_graph,'nodes',[])) > 0):
         vtasks = {}
         if vision_graph and len(vision_graph.nodes) > 0: vtasks["vv"] = asyncio.to_thread(figure_extractor.verify_figure_graph, arch_figure, vision_graph, paper_title)
         if text_graph and len(text_graph.nodes) > 0: vtasks["tv"] = asyncio.to_thread(graph_extractor.verify_graph, arch_text, text_graph, paper_title)
@@ -304,6 +305,7 @@ async def process_paper(
         "summary_available": explanation is not None,
         "metadata": metadata,
         "parsed_text": parsed_text,
+        "content_hash": content_hash,
         "cached": False
     }
 

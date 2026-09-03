@@ -62,7 +62,7 @@ async def chat_with_paper(
             clean_hash = req.paper_hash.strip()
 
     log.info(f"chat query hash={clean_hash[:8]} q={req.query[:60]}")
-    try: result = await rag_service.answer_question(db=db, paper_hash=clean_hash, paper_title=req.paper_title or "Research Paper", query=req.query.strip(), history=req.history, difficulty=req.difficulty or "intermediate")
+    try: result = await asyncio.to_thread(rag_service.answer_question, db, clean_hash, req.paper_title or "Research Paper", req.query.strip(), req.history, req.difficulty or "intermediate")
     except Exception as e: log.error(f"chat failed: {e}", exc_info=True); raise HTTPException(status_code=500, detail=str(e))
 
     return ChatResponse(

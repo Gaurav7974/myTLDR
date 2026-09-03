@@ -1,9 +1,11 @@
 """Database connection and session management."""
 
+from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from app.core.config import settings
 from app.core.logger import get_logger
+log = get_logger(__name__)
 from app.models.orm import Base
 log = get_logger(__name__)
 
@@ -46,7 +48,7 @@ async def get_db():
                 except Exception:
                     pass
                 log.warning(f"DB session error: {e}")
-                yield None
+                raise HTTPException(status_code=503, detail="Database temporarily unavailable")
             finally:
                 try:
                     await session.close()
@@ -54,4 +56,4 @@ async def get_db():
                     pass
     except Exception as e:
         log.warning(f"DB connection failed: {e}")
-        yield None
+        raise HTTPException(status_code=503, detail="Database temporarily unavailable")

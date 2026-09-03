@@ -145,6 +145,7 @@ function transformBackendPayloadToPaperData(
       keywords: (explanation.metadata as Record<string, unknown>)?.keywords as PaperData['metadata']['keywords'] || [],
       pdfUrl: directPdfUrl,
       citationsCount: (metadata.citations as number) || 1200,
+      contentHash: (payload.content_hash as string) || (metadata.arxiv_id as string) || url?.match(/\d{4}\.\d{4,5}/)?.[0],
     },
     structuredSummary,
     eli5Summary: {
