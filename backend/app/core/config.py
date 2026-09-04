@@ -75,6 +75,11 @@ class Settings:
     GOOGLE_EMBEDDING_KEY: str = os.getenv("GOOGLE_EMBEDDING_KEY", "")
     GOOGLE_EMBEDDING_MODEL: str = os.getenv("GOOGLE_EMBEDDING_MODEL", "gemini-embedding-001")
     EMBEDDING_DIM: int = 3072
+
+    # RAG retrieval — cosine similarity floor; 0.25 is a good default for
+    # research-paper embeddings (gemini-embedding-001 / 3072-dim).
+    # Lower if you want wider recall; raise to tighten grounding.
+    RAG_RELEVANCE_THRESHOLD: float = float(os.getenv("RAG_RELEVANCE_THRESHOLD", "0.25"))
     
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5433/papers")

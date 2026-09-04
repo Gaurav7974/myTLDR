@@ -7,7 +7,9 @@ import {
   Sparkles, 
   Copy,
   Check,
-  ArrowRight
+  ArrowRight,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
 import { MathFormula } from './MathDeconstructedTab';
 import { InteractiveHighlightedText } from '../InteractiveHighlightedText';
@@ -32,6 +34,7 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   citations?: ChatCitation[];
+  indexingInProgress?: boolean;
 }
 
 // Locate the paper page holding a citation's topic by matching distinctive
@@ -169,17 +172,34 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
     setIsLoading(true);
 
     try {
+      // Always use contentHash — this is the key the backend indexed chunks under.
+      // If contentHash is missing, log a warning (BM25 fallback will still work
+      // if the paper was processed in this session).
+      const paperHash = paper.metadata.contentHash;
+      if (!paperHash) {
+        console.warn('[AIChatTab] contentHash missing from paper metadata — RAG will use BM25 fallback only');
+      }
+
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          paper_hash: paper.metadata.contentHash || paper.metadata.arxivId || `unknown-${Date.now()}`,
+          paper_hash: paperHash || '',
           paper_title: paper.metadata.title,
           query: userText.trim(),
-          history: messages.slice(-4).map((m) => ({ sender: m.sender, text: m.text })),
-          difficulty: 'intermediate'
+          // Standard {role, content} format — backend also accepts legacy {sender, text}
+          history: messages.slice(-6).map((m) => ({
+            role: m.sender === 'user' ? 'user' : 'assistant',
+            content: m.text,
+          })),
+          difficulty: 'intermediate',
         })
       });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `HTTP ${res.status}`);
+      }
 
       const data = await res.json();
       const aiMsg: ChatMessage = {
@@ -187,23 +207,24 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
         sender: 'ai',
         text: data.answer || 'Could not generate a response.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        citations: data.citations || []
+        citations: data.citations || [],
+        indexingInProgress: data.indexing_in_progress === true,
       };
 
       setMessages((prev) => [...prev, aiMsg]);
-    } catch {
-      // Graceful fallback
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
       const fallbackMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'ai',
-        text: `The architecture decomposes computation into modular tensor stages and self-attention transformations with verified mathematical guarantees grounded in the paper.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        text: `Connection error: ${errMsg}. Please ensure the backend is running and retry.`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, fallbackMsg]);
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, messages, paper.metadata.arxivId, paper.metadata.title]);
+  }, [isLoading, messages, paper.metadata.contentHash, paper.metadata.title]);
 
   // Handle incoming initial prompt from bottom bar or summary tab
   useEffect(() => {
@@ -246,7 +267,7 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
     }
   ];
 
-  const quickPrompts = React.useMemo(() => {
+  const quickPrompts = useMemo(() => {
     const kws = paper.metadata.keywords || [];
     if (kws.length >= 4) {
       return [
@@ -297,9 +318,15 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
                 <p className="text-xs text-zinc-600 leading-relaxed font-normal">
                   Ask any question regarding the paper&apos;s mathematical formulation, architecture design, PyTorch implementation, or benchmark results. Responses are strictly grounded in <span className="font-semibold text-zinc-900">{paper.metadata.title}</span>.
                 </p>
+                {!paper.metadata.contentHash && (
+                  <div className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>Paper index hash unavailable — using keyword search fallback. Semantic search requires re-processing this paper.</span>
+                  </div>
+                )}
               </div>
 
-              {/* Starter Suggestion Grid — Minimal, clean, without tacky icons */}
+              {/* Starter Suggestion Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {starterCards.map((card, idx) => (
                   <button
@@ -329,19 +356,19 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
 
           {/* Render Messages */}
           {messages.map((msg) => {
-            const cleanText = msg.text.replace(/^Regarding\s+(\*\*"[^\n*]+"\*\*|"[^\n"]+")\s+in\s+\*[^\n*]+\*:\s*/i, '').trim();
+            const cleanText = msg.text.replace(/^Regarding\s+(\*\*"[^\n*]+"(\*\*)|"[^\n"]+")\s+in\s+\*[^\n*]+\*:\s*/i, '').trim();
 
             return (
               <div key={msg.id} className="space-y-2">
                 {msg.sender === 'user' ? (
-                  /* USER MESSAGE: Modern Right-Aligned Pill */
+                  /* USER MESSAGE: Right-Aligned Pill */
                   <div className="flex justify-end">
                     <div className="max-w-2xl px-4 py-2.5 rounded-2xl rounded-tr-sm bg-zinc-950 text-white text-[13px] leading-relaxed shadow-sm">
                       {msg.text}
                     </div>
                   </div>
                 ) : (
-                  /* AI MESSAGE: chat flow, minimal chrome */
+                  /* AI MESSAGE */
                   <div className="py-1 space-y-2.5 text-left max-w-3xl">
                     
                     {/* Slim message header */}
@@ -349,6 +376,17 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
                       <span className="font-bold text-[11px] text-zinc-950 font-mono tracking-wider">myTLDR AI</span>
                       <span className="text-[10px] font-mono text-zinc-400">• {msg.timestamp}</span>
                     </div>
+
+                    {/* Indexing-in-progress notice */}
+                    {msg.indexingInProgress && (
+                      <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[12px]">
+                        <RefreshCw className="w-3.5 h-3.5 mt-0.5 shrink-0 animate-spin" />
+                        <div>
+                          <span className="font-semibold">Index may still be building</span>
+                          <span className="text-amber-700"> — wait 10–15 seconds and ask again for better results.</span>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Message Body with KaTeX Math Rendering */}
                     <FormattedMessageContent
@@ -362,27 +400,30 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
                     {msg.citations && msg.citations.length > 0 && (
                       <div className="pt-2.5 pb-1 space-y-1.5">
                         <span className="text-zinc-400 font-mono text-[10px] uppercase tracking-wider block font-semibold">
-                          Sources Grounding:
+                          Sources:
                         </span>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {msg.citations.map((cit, citIdx) => {
                             const page = findCitationPage(cit, paper);
-                            const pill = "px-2.5 py-1 rounded-md bg-white border border-zinc-200 text-[11px] text-zinc-700 font-mono font-medium max-w-[260px] truncate shadow-2xs transition-all";
+                            const simPct = Math.round(cit.similarity * 100);
+                            const pill = "px-2.5 py-1 rounded-md bg-white border border-zinc-200 text-[11px] text-zinc-700 font-mono font-medium max-w-[260px] shadow-2xs transition-all";
                             return page != null && onJumpToPage ? (
                               <button
                                 key={citIdx}
                                 onClick={() => onJumpToPage(page, cit.section_title)}
-                                title={`Open page ${page} in the paper`}
+                                title={`Open page ${page} — similarity ${simPct}%`}
                                 className={`${pill} hover:bg-zinc-100 hover:border-zinc-300 cursor-pointer flex items-center gap-1`}
                               >
                                 <span className="text-zinc-400">§</span>
                                 <span className="truncate">{cit.section_title}</span>
                                 <span className="text-[10px] text-zinc-400 ml-1">p.{page}</span>
+                                <span className="text-[10px] text-zinc-300 ml-0.5">{simPct}%</span>
                               </button>
                             ) : (
-                              <span key={citIdx} title="Passage cited from paper" className={`${pill} cursor-default flex items-center gap-1`}>
+                              <span key={citIdx} title={`Passage cited — similarity ${simPct}%`} className={`${pill} cursor-default flex items-center gap-1`}>
                                 <span className="text-zinc-400">§</span>
                                 <span className="truncate">{cit.section_title}</span>
+                                <span className="text-[10px] text-zinc-300 ml-1">{simPct}%</span>
                               </span>
                             );
                           })}
@@ -390,7 +431,7 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
                       </div>
                     )}
 
-                    {/* Action Bar Below Message: Copy Button + Follow-ups */}
+                    {/* Action Bar Below Message */}
                     <div className="pt-2 flex items-center gap-2 flex-wrap text-[11px]">
                       <button
                         onClick={() => copyMessage(msg.id, cleanText)}
@@ -446,11 +487,11 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
         </div>
       </div>
 
-      {/* Floating Island Composer Capsule with Frosted Scrim */}
+      {/* Floating Island Composer Capsule */}
       <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none pt-14 pb-4 px-4 md:px-6 bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA]/90 via-50% to-transparent backdrop-blur-[2px]">
         <div className="max-w-3xl mx-auto w-full space-y-2 pointer-events-auto">
           
-          {/* Paper Keyword Chips (click to send pre-filled ask) */}
+          {/* Paper Keyword Chips */}
           {paper.metadata.keywords && paper.metadata.keywords.length > 0 && (
             <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none px-1">
               <span className="text-[10px] font-mono uppercase font-bold text-zinc-400 shrink-0">
@@ -468,7 +509,7 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
             </div>
           )}
 
-          {/* Quick Suggestion Chips (Floating Pills) */}
+          {/* Quick Suggestion Chips */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none px-1">
             <span className="text-[10px] font-mono uppercase font-bold text-zinc-400 shrink-0">
               Quick Ask:

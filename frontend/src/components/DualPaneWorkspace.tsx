@@ -24,6 +24,7 @@ import {
   Send,
   Check,
   Quote,
+  Copy,
   FileText,
   List,
   CornerDownLeft,
@@ -346,10 +347,25 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg'>('sm');
   const [copiedBibtex, setCopiedBibtex] = useState(false);
-  const [isBookmarked, setIsBookmarked] = useState(false);
+  const [citeDropdownOpen, setCiteDropdownOpen] = useState(false);
   const [pdfLoadError, setPdfLoadError] = useState(false);
   const [pdfPage, setPdfPage] = useState<number>(1);
   const [pdfJumpNotice, setPdfJumpNotice] = useState<string | null>(null);
+
+  // Bookmark — persisted to localStorage keyed by paper id / arxivId
+  const bookmarkKey = `mytldr_saved_${paper.metadata.id || paper.metadata.arxivId || 'paper'}`;
+  const [isBookmarked, setIsBookmarked] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try { return localStorage.getItem(bookmarkKey) === '1'; } catch { return false; }
+  });
+
+  const toggleBookmark = useCallback(() => {
+    setIsBookmarked((prev) => {
+      const next = !prev;
+      try { next ? localStorage.setItem(bookmarkKey, '1') : localStorage.removeItem(bookmarkKey); } catch { /* ignore */ }
+      return next;
+    });
+  }, [bookmarkKey]);
 
   const handleJumpToPdfPage = useCallback((page: number, sectionTitle?: string) => {
     setPdfPage(page);
@@ -429,7 +445,22 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
     handleExecutePrompt(chatInput.trim());
   };
 
-  const copyBibtex = () => {
+  // Close cite dropdown on outside click
+  useEffect(() => {
+    if (!citeDropdownOpen) return;
+    const close = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (!target.closest('[data-cite-dropdown]')) {
+        setCiteDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [citeDropdownOpen]);
+
+
+  // ── BibTeX helpers ──────────────────────────────────────────────────────────
+  const buildBibtex = useCallback(() => {
     const m = paper.metadata;
     const arxivId = m.arxivId || '';
     const year = m.publishedDate ? new Date(m.publishedDate).getFullYear() : new Date().getFullYear();
@@ -437,16 +468,102 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
     const slug = (m.title || 'paper').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
     const key = `${firstAuthor}${year}${slug}`.replace(/[^a-z0-9]/g, '');
     const authorList = (m.authors || []).join(' and ');
-    const bibtex = `@article{${key},
-  title={${m.title || 'Untitled'}},
-  author={${authorList}},
-  journal={arXiv preprint${arxivId ? ` arXiv:${arxivId}` : ''}},
-  year={${year}}
-}`;
-    navigator.clipboard.writeText(bibtex);
+    return `@article{${key},\n  title={${m.title || 'Untitled'}},\n  author={${authorList}},\n  journal={arXiv preprint${arxivId ? ` arXiv:${arxivId}` : ''}},\n  year={${year}}\n}`;
+  }, [paper.metadata]);
+
+  const copyBibtex = useCallback(() => {
+    navigator.clipboard.writeText(buildBibtex());
     setCopiedBibtex(true);
+    setCiteDropdownOpen(false);
     setTimeout(() => setCopiedBibtex(false), 2000);
-  };
+  }, [buildBibtex]);
+
+  const downloadBibtex = useCallback(() => {
+    const bibtex = buildBibtex();
+    const m = paper.metadata;
+    const slug = (m.title || 'paper').toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40);
+    const blob = new Blob([bibtex], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${slug}.bib`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setCiteDropdownOpen(false);
+  }, [buildBibtex, paper.metadata]);
+
+  const downloadSummary = useCallback(() => {
+    const m = paper.metadata;
+    const s = paper.structuredSummary;
+    const lines: string[] = [];
+    lines.push(`# ${m.title || 'Research Paper'}`);
+    lines.push('');
+    if (m.authors?.length) lines.push(`**Authors:** ${m.authors.join(', ')}`);
+    if (m.arxivId) lines.push(`**arXiv:** ${m.arxivId}`);
+    if (m.publishedDate) lines.push(`**Published:** ${m.publishedDate}`);
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+    if (s?.overview?.one_sentence) {
+      lines.push('## One Sentence Summary');
+      lines.push('');
+      lines.push(`> ${s.overview.one_sentence}`);
+      lines.push('');
+    }
+    if (s?.overview?.problem) {
+      lines.push('## Problem');
+      lines.push('');
+      lines.push(s.overview.problem);
+      lines.push('');
+    }
+    if (s?.overview?.solution) {
+      lines.push('## Core Idea');
+      lines.push('');
+      lines.push(s.overview.solution);
+      lines.push('');
+    }
+    if (s?.contributions?.length) {
+      lines.push('## Contributions');
+      lines.push('');
+      s.contributions.forEach((c, i) => {
+        lines.push(`### ${i + 1}. ${c.title}`);
+        lines.push('');
+        lines.push(c.summary);
+        lines.push('');
+      });
+    }
+    if (s?.key_findings?.length) {
+      lines.push('## Key Results');
+      lines.push('');
+      s.key_findings.forEach((f) => {
+        lines.push(`- **${f.title}** ${f.metric_value ? `(${f.metric_value})` : ''}: ${f.summary}`);
+      });
+      lines.push('');
+    }
+    if (s?.limitations?.length) {
+      lines.push('## Limitations');
+      lines.push('');
+      s.limitations.forEach((l) => {
+        lines.push(`- **${l.title}**: ${l.summary}`);
+      });
+      lines.push('');
+    }
+    lines.push('---');
+    lines.push('');
+    lines.push(`*Generated by myTLDR — ${new Date().toLocaleDateString()}*`);
+    const slug = (m.title || 'summary').toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40);
+    const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${slug}_summary.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [paper.metadata, paper.structuredSummary]);
 
   // Dynamic Quick Chat Suggestions grounded in active paper
   const quickSuggestions = React.useMemo(() => {
@@ -877,9 +994,107 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
           isDragging ? 'transition-none' : 'transition-[width] duration-300 ease-in-out'
         } ${mobileTab === 'workspace' ? 'flex flex-1' : 'hidden lg:flex'}`}
       >
-        {/* TOP TAB BAR ("TAB 1 TAB 2 TAB 3" + Clean Quick Actions on Right) */}
-        <div className="flex items-center justify-between border-b border-zinc-200/80 bg-[#FAFAFA] px-3 overflow-hidden shrink-0 scrollbar-none">
-          <div className="flex flex-1 min-w-0 items-center overflow-x-auto scrollbar-none max-lg:[mask-image:linear-gradient(to_right,black_calc(100%-1.5rem),transparent)]">
+        {/* ── RIGHT PANEL HEADER: 2 rows ───────────────────────────────────────
+            Row 1: Paper title + action buttons (Save, Cite, Download, Expand)
+            Row 2: Tab navigation bar (clean, no clutter)
+            ──────────────────────────────────────────────────────────────────── */}
+        <div className="shrink-0 bg-[#FAFAFA] border-b border-zinc-200/80">
+
+          {/* Row 1 — paper identity + actions */}
+          <div className="flex items-center justify-between gap-3 px-3.5 pt-2.5 pb-2 border-b border-zinc-100">
+            {/* Paper title (truncated) */}
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 shrink-0 hidden sm:block">Paper</span>
+              <h2 className="text-[12px] font-semibold text-zinc-800 truncate leading-tight" title={paper.metadata.title}>
+                {paper.metadata.title}
+              </h2>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-1.5 shrink-0">
+
+              {/* Save / Bookmark (persisted to localStorage) */}
+              <button
+                onClick={toggleBookmark}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-all active:scale-95 ${
+                  isBookmarked
+                    ? 'bg-zinc-900 text-white border-zinc-900'
+                    : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 hover:border-zinc-300'
+                }`}
+                title={isBookmarked ? 'Saved — click to unsave' : 'Save this paper'}
+              >
+                <Bookmark className={`w-3.5 h-3.5 ${isBookmarked ? 'fill-current' : ''}`} />
+                <span className="hidden sm:inline">{isBookmarked ? 'Saved' : 'Save'}</span>
+              </button>
+
+              {/* Download Summary .md */}
+              <button
+                onClick={downloadSummary}
+                disabled={!paper.structuredSummary}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 hover:border-zinc-300 text-zinc-600 text-[11px] font-medium transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Download structured summary as Markdown"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Summary</span>
+              </button>
+
+              {/* Cite — dropdown: Copy BibTeX or Download .bib */}
+              <div className="relative" data-cite-dropdown>
+                <button
+                  onClick={() => setCiteDropdownOpen((o) => !o)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 hover:border-zinc-300 text-zinc-600 text-[11px] font-medium transition-all active:scale-95"
+                  title="Cite this paper"
+                >
+                  {copiedBibtex ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  ) : (
+                    <Quote className="w-3.5 h-3.5" />
+                  )}
+                  <span>{copiedBibtex ? 'Copied!' : 'Cite'}</span>
+                </button>
+
+                {citeDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-1.5 z-50 w-48 rounded-xl bg-white border border-zinc-200 shadow-lg overflow-hidden">
+                    <button
+                      onClick={copyBibtex}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[12px] text-zinc-700 hover:bg-zinc-50 transition-colors text-left"
+                    >
+                      <Copy className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <span>Copy BibTeX</span>
+                    </button>
+                    <div className="border-t border-zinc-100" />
+                    <button
+                      onClick={downloadBibtex}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[12px] text-zinc-700 hover:bg-zinc-50 transition-colors text-left"
+                    >
+                      <Share2 className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <span>Download .bib file</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Expand/Collapse toggle */}
+              <button
+                onClick={toggleExpand}
+                className={`p-1.5 rounded-lg border text-xs transition-all ${
+                  isExpanded
+                    ? 'bg-blue-50 text-blue-600 border-blue-200'
+                    : 'bg-white text-zinc-500 hover:text-zinc-900 border-zinc-200 hover:bg-zinc-100'
+                }`}
+                title={isExpanded ? 'Collapse panel (Escape)' : 'Expand panel to full width'}
+              >
+                {isExpanded ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Row 2 — Tab bar (no actions here) */}
+          <div className="flex items-center overflow-x-auto scrollbar-none px-3 max-lg:[mask-image:linear-gradient(to_right,black_calc(100%-1.5rem),transparent)]">
             <button
               onClick={() => handleTabClick('summary')}
               className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
@@ -889,7 +1104,7 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
               }`}
             >
               <Lightbulb className="w-3.5 h-3.5" />
-              <span>Summary & ELI5</span>
+              <span>Summary</span>
             </button>
 
             <button
@@ -913,7 +1128,7 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
               }`}
             >
               <Calculator className="w-3.5 h-3.5" />
-              <span>Equations & Math</span>
+              <span>Equations</span>
             </button>
 
             <button
@@ -925,7 +1140,7 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
               }`}
             >
               <Code className="w-3.5 h-3.5" />
-              <span>PyTorch Code</span>
+              <span>PyTorch</span>
             </button>
 
             <button
@@ -937,50 +1152,11 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
               }`}
             >
               <MessageSquare className="w-3.5 h-3.5" />
-              <span>AI Assistant</span>
-            </button>
-          </div>
-
-          {/* Quick Actions (Bookmark & BibTeX) integrated directly into Tab Bar */}
-          <div className="flex items-center gap-1.5 shrink-0 pl-2">
-            {/* Expand/Collapse toggle */}
-            <button
-              onClick={toggleExpand}
-              className={`p-1.5 rounded-md border text-xs transition-all ${
-                isExpanded
-                  ? 'bg-blue-50 text-blue-600 border-blue-200'
-                  : 'bg-white text-zinc-500 hover:text-zinc-900 border-zinc-200 hover:bg-zinc-100'
-              }`}
-              title={isExpanded ? 'Collapse panel (Escape)' : 'Expand panel to full width'}
-            >
-              {isExpanded ? (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
-              )}
-            </button>
-            <button
-              onClick={() => setIsBookmarked(!isBookmarked)}
-              className={`p-1.5 rounded-md border text-xs transition-all ${
-                isBookmarked
-                  ? 'bg-zinc-900 text-white border-zinc-900'
-                  : 'bg-white text-zinc-500 hover:text-zinc-900 border-zinc-200 hover:bg-zinc-100'
-              }`}
-              title="Bookmark paper"
-            >
-              <Bookmark className="w-3.5 h-3.5" />
-            </button>
-
-            <button
-              onClick={copyBibtex}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-200 text-xs font-medium transition-all shadow-2xs"
-              title="Copy BibTeX Citation"
-            >
-              {copiedBibtex ? <Check className="w-3.5 h-3.5 text-zinc-900" /> : <Share2 className="w-3.5 h-3.5" />}
-              <span className="text-[11px] font-mono">{copiedBibtex ? 'Copied' : 'BibTeX'}</span>
+              <span>AI Chat</span>
             </button>
           </div>
         </div>
+
 
         {/* MAIN TAB CONTENT DISPLAY ("TEXT SUMMARY" / 3D / Math / Code / Chat) */}
         <div className={`flex-1 ${activeTab === 'chat' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto pb-36'} bg-[#FAFAFA]`}>
