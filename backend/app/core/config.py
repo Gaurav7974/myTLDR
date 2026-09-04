@@ -32,8 +32,11 @@ class Settings:
     RATE_LIMIT_SUBMIT: str = os.getenv("RATE_LIMIT_SUBMIT", "20/minute")
     
     # ── LLM (primary: Mistral; optional fallback: Groq) ──
-    # A single Mistral key (env OCR_KEY) powers OCR + vision + the text LLM.
+    # Primary Mistral key (env OCR_KEY) powers OCR + vision + the text LLM.
+    # An optional second key (MISTRAL_API_KEY_2) from a second account is rotated
+    # round-robin with the primary to halve per-key rate-limit pressure.
     MISTRAL_API_KEY: str = os.getenv("OCR_KEY", "")
+    MISTRAL_API_KEY_2: str = os.getenv("MISTRAL_API_KEY_2", "")
     MISTRAL_LLM_URL: str = "https://api.mistral.ai/v1/chat/completions"
     # Default is mistral-small-latest: it is the strongest multimodal Mistral model
     # available on the standard (non-enterprise) tier. mistral-large-latest is gated to
