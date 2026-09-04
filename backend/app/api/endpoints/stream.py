@@ -43,6 +43,11 @@ async def stream_paper(
     if source == "arxiv" and url:
         sanitized_url = sanitize_arxiv_id(url)
     elif source == "url" and url:
+        if "arxiv.org" not in url.lower():
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid URL: Only arXiv papers are supported (e.g. https://arxiv.org/abs/1706.03762). Please try again."
+            )
         sanitized_url = await asyncio.to_thread(validate_and_sanitize_url, url)
 
     # Stream file with incremental cap (avoid loading 1GB into memory)

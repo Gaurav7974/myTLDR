@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.graph import GRAPH_PAYLOAD_VERSION
-from app.models.orm import PaperCache, GraphCache, ParsedTextCache
+from app.models.orm import PaperCache, GraphCache, ParsedTextCache, AnalysisCache
 from app.services.text_extraction import text_extractor
 from app.core.logger import get_logger
 log = get_logger(__name__)
@@ -38,6 +38,7 @@ def _make_cache(maxsize: int):
 _IN_MEMORY_EXPLANATIONS = _make_cache(200)
 _IN_MEMORY_GRAPHS = _make_cache(100)
 _IN_MEMORY_PARSED_TEXT = _make_cache(100)
+_IN_MEMORY_ANALYSIS = _make_cache(100)
 
 
 def _downgrade_legacy_graph(graph_json: dict | None) -> dict | None:
@@ -235,6 +236,51 @@ class CacheService:
                         raise
                 _IN_MEMORY_PARSED_TEXT[content_hash] = parsed
         except Exception as e: log.warning(f"[WARN] Own-session cache also failed: {e}")
+
+    async def get_analysis(self, db: AsyncSession, content_hash: str) -> dict | None:
+        """Look up cached analysis bundle (equations, code, IR) by content hash."""
+        if content_hash in _IN_MEMORY_ANALYSIS:
+            return _IN_MEMORY_ANALYSIS[content_hash]
+        try:
+            result = await db.execute(select(AnalysisCache).where(AnalysisCache.content_hash == content_hash))
+            cache = result.scalar_one_or_none()
+            if cache and cache.analysis_json:
+                _IN_MEMORY_ANALYSIS[content_hash] = cache.analysis_json
+                return cache.analysis_json
+        except Exception:
+            try: await db.rollback()
+            except Exception: pass
+        return None
+
+    async def store_analysis(self, db: AsyncSession, content_hash: str, analysis: dict):
+        """Store analysis bundle in cache (equations, code, IR)."""
+        try:
+            db.add(AnalysisCache(content_hash=content_hash, analysis_json=analysis))
+            await db.commit()
+            _IN_MEMORY_ANALYSIS[content_hash] = analysis
+            return
+        except Exception as e:
+            try: await db.rollback()
+            except Exception: pass
+            log.warning(f"[WARN] Failed to cache analysis bundle: {e}")
+        try:
+            from app.core.database import async_session
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            async with async_session() as s:
+                try:
+                    stmt = pg_insert(AnalysisCache).values(content_hash=content_hash, analysis_json=analysis).on_conflict_do_nothing(index_elements=["content_hash"])
+                    await s.execute(stmt)
+                    await s.commit()
+                except Exception:
+                    await s.rollback()
+                    try:
+                        s.add(AnalysisCache(content_hash=content_hash, analysis_json=analysis))
+                        await s.commit()
+                    except Exception:
+                        await s.rollback()
+                        raise
+                _IN_MEMORY_ANALYSIS[content_hash] = analysis
+        except Exception as e: log.warning(f"[WARN] Own-session analysis cache also failed: {e}")
 
 
 cache_service = CacheService()

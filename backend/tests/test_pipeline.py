@@ -312,3 +312,65 @@ def test_pipeline_decision_no_verified_returns_no_diagram():
     assert g is None
     assert available is False
     assert reason == "no_verified_graph"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_cache_hit_returns_full_payload():
+    from app.services.pipeline import process_paper
+    from unittest.mock import AsyncMock, patch
+
+    mock_db = AsyncMock()
+    cached_expl = {"overview": {"one_sentence": "Test paper summary"}}
+    cached_g = {
+        "version": GRAPH_PAYLOAD_VERSION,
+        "source": "text",
+        "layout_mode": "auto",
+        "nodes": [{"id": "n1", "label": "Encoder", "type": "encoder"}],
+        "edges": [],
+    }
+    cached_analysis = {
+        "equations": [{"id": "eq1", "latex": "y = Wx + b"}],
+        "code_snippets": [{"title": "model.py", "code": "class Model: pass"}],
+        "code_note": None,
+        "canonical_ir": {
+            "version": "1.0",
+            "architecture": {"name": "TestNet", "paradigm": "transformer"},
+            "nodes": [{"id": "n1", "label": "Encoder", "type": "encoder"}],
+            "edges": []
+        }
+    }
+
+    with patch("app.services.pipeline.text_extractor.extract_from_pdf_bytes") as mock_extract, \
+         patch("app.services.pipeline.cache_service.get_parsed_text", new_callable=AsyncMock) as mock_parsed, \
+         patch("app.services.pipeline.cache_service.get_explanation", new_callable=AsyncMock) as mock_get_expl, \
+         patch("app.services.pipeline.cache_service.get_graph", new_callable=AsyncMock) as mock_get_graph, \
+         patch("app.services.pipeline.cache_service.get_analysis", new_callable=AsyncMock) as mock_get_analysis, \
+         patch("app.services.pipeline.rag_service.index_paper", new_callable=AsyncMock):
+
+        mock_extraction = MagicMock()
+        mock_extraction.text = "This is a valid research paper text exceeding one hundred characters easily for extraction test purposes."
+        mock_extraction.figures = []
+        mock_extraction.page_count = 1
+        mock_extraction.pages = []
+        mock_extract.return_value = mock_extraction
+
+        mock_parsed.return_value = {"page_count": 1, "pages": [], "figures": []}
+        mock_get_expl.return_value = cached_expl
+        mock_get_graph.return_value = cached_g
+        mock_get_analysis.return_value = cached_analysis
+
+        events = []
+        fake_pdf = b"%PDF-1.5 fake pdf content here"
+        async for event in process_paper(source_type="upload", file_bytes=fake_pdf, url=None, difficulty="intermediate", db=mock_db):
+            events.append(event)
+
+        done_event = next((e for e in events if e.get("stage") == "done"), None)
+        assert done_event is not None
+        assert done_event.get("cached") is True
+        assert done_event.get("explanation") == cached_expl
+        assert len(done_event.get("equations")) == 1
+        assert done_event.get("equations")[0]["latex"] == "y = Wx + b"
+        assert len(done_event.get("code_snippets")) == 1
+        assert done_event.get("code_snippets")[0]["title"] == "model.py"
+        assert done_event.get("architecture_ir") is not None
+        assert done_event.get("bycroft_stages") == []

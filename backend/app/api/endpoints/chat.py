@@ -15,7 +15,8 @@ router = APIRouter()
 
 
 class ChatRequest(BaseModel):
-    paper_hash: str
+    paper_hash: Optional[str] = None
+    paper_id: Optional[str] = None
     paper_title: Optional[str] = "Research Paper"
     query: str
     history: Optional[List[Dict[str, str]]] = None
@@ -41,11 +42,10 @@ async def chat_with_paper(
     request: Request,
     req: ChatRequest,
     api_key: Optional[str] = Depends(verify_api_key),
-    db: AsyncSession = Depends(get_db)
 ):
     """
     RAG-based Interactive Paper Q&A:
-    Retrieves semantic chunks via pgvector and returns grounded LLM answer with verified citations.
+    Retrieves semantic chunks via pgvector/memory and returns grounded LLM answer with verified citations.
     Rate limited by IP or API Key.
     """
     if not req.query or not req.query.strip():
@@ -54,16 +54,43 @@ async def chat_with_paper(
         raise HTTPException(status_code=400, detail=f"Invalid difficulty: {req.difficulty}")
 
     # Sanitize paper hash/id if formatted like arXiv ID
-    clean_hash = req.paper_hash
+    raw_id = req.paper_hash or req.paper_id or "default"
+    clean_hash = raw_id
     if "arxiv" in clean_hash.lower() or "." in clean_hash:
         try:
             clean_hash = sanitize_arxiv_id(clean_hash)
         except Exception:
-            clean_hash = req.paper_hash.strip()
+            clean_hash = raw_id.strip()
 
     log.info(f"chat query hash={clean_hash[:8]} q={req.query[:60]}")
-    try: result = await asyncio.to_thread(rag_service.answer_question, db, clean_hash, req.paper_title or "Research Paper", req.query.strip(), req.history, req.difficulty or "intermediate")
-    except Exception as e: log.error(f"chat failed: {e}", exc_info=True); raise HTTPException(status_code=500, detail=str(e))
+    
+    # Try using database session if available, else gracefully fallback to memory/direct LLM
+    db_session = None
+    try:
+        from app.core.database import async_session
+        async with async_session() as session:
+            result = await rag_service.answer_question(
+                session,
+                clean_hash,
+                req.paper_title or "Research Paper",
+                req.query.strip(),
+                req.history,
+                req.difficulty or "intermediate"
+            )
+    except Exception as db_err:
+        log.warning(f"Database session unavailable, using direct LLM synthesis: {db_err}")
+        try:
+            result = await rag_service.answer_question(
+                None,
+                clean_hash,
+                req.paper_title or "Research Paper",
+                req.query.strip(),
+                req.history,
+                req.difficulty or "intermediate"
+            )
+        except Exception as e:
+            log.error(f"chat failed: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
 
     return ChatResponse(
         answer=result["answer"],

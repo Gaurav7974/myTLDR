@@ -277,14 +277,24 @@ def is_verified_vision_graph(graph: ArchitectureGraph | None) -> bool:
 def classify_candidates(figures, paper_title: str = "") -> list[dict]:
     """Cheap per-candidate vision classifier: architecture_diagram | other + confidence.
 
-    Circuit-breaker: if 2 consecutive figures get 429 (both keys exhausted), stop
-    immediately rather than sleeping through all figures. Max 1 retry per figure
-    to avoid blocking the thread for minutes when rate-limited.
+    Sorts candidates by caption keyword relevance first, caps at top 2 candidates,
+    and runs fast check without serial sleeps.
     """
     if not figures or not settings.VISION_API_KEY: return []
-    # Sort main body first (pages 1-15), cap at 8 candidates to limit API call bursts.
-    sorted_figs = sorted(figures, key=lambda f: (0 if f.page <= 15 else 1, f.page))
-    candidate_figs = sorted_figs[:8]
+
+    def _score_fig(fig):
+        cap = (getattr(fig, "caption", None) or "").lower()
+        score = 0
+        if "architecture" in cap: score += 4
+        if "model" in cap: score += 3
+        if any(k in cap for k in ("overview", "framework", "network", "pipeline", "diagram", "transformer", "attention", "block")): score += 2
+        if "figure" in cap or "fig" in cap: score += 1
+        if getattr(fig, "page", 1) <= 15: score += 2
+        return score
+
+    # Sort by relevance score descending
+    sorted_figs = sorted(figures, key=_score_fig, reverse=True)
+    candidate_figs = sorted_figs[:2]
 
     out = []
     consecutive_429s = 0
@@ -294,9 +304,6 @@ def classify_candidates(figures, paper_title: str = "") -> list[dict]:
         if consecutive_429s >= 2:
             log.warning(f"[CLASSIFIER] Circuit breaker tripped after {consecutive_429s} consecutive 429s — aborting classifier early")
             break
-        # Small inter-call sleep to avoid bursting all candidates into the rate limiter
-        if i > 0:
-            time.sleep(0.5)
         img_url = f"data:image/png;base64,{fig.base64}" if not fig.base64.startswith("data:") else fig.base64
         msgs=[{"role":"system","content":"You are an image classifier."},{"role":"user","content":[{"type":"text","text":"Is this image an architecture/model diagram, or something else (chart, plot, table, photo)? Respond ONLY with valid JSON: {\"label\": \"architecture_diagram\" | \"other\", \"confidence\": 0.0-1.0}"},{"type":"image_url","image_url":{"url":img_url}}]}]
         try:
@@ -308,7 +315,7 @@ def classify_candidates(figures, paper_title: str = "") -> list[dict]:
             out.append({"figure": fig, "label": label, "confidence": conf, "time": time.time() - t0})
             log.info(f"classify {fig.id} p{fig.page} -> {label} {conf:.2f}")
             consecutive_429s = 0  # reset on success
-            if label == "architecture_diagram" and conf >= 0.95 and fig.page <= 15:
+            if label == "architecture_diagram" and conf >= 0.85 and fig.page <= 15:
                 log.info(f"Found high-confidence architecture diagram ({fig.id}, conf={conf:.2f}) on page {fig.page}. Early stopping classifier.")
                 break
         except Exception as e:

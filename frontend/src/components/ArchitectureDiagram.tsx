@@ -6,7 +6,6 @@ import {
   Layers,
   Cpu,
   ArrowRight,
-  ArrowLeft,
   Sparkles,
   X,
   ChevronRight,
@@ -103,6 +102,7 @@ export interface ArchitectureDiagramProps {
   graph?: ArchitectureGraph;
   height?: number;
   paperTitle?: string;
+  isUnverified?: boolean;
   /** Optional callback when the user clicks a node — useful for tests. */
   onNodeClick?: (node: DiagramNode) => void;
 }
@@ -133,15 +133,9 @@ const TYPE_COLORS: Record<string, { bg: string; border: string; text: string; ta
 };
 
 function getNodeColors(type: string) {
-  return TYPE_COLORS[type?.toLowerCase()] || TYPE_COLORS.default;
+  const t = (type || "default").toLowerCase();
+  return TYPE_COLORS[t] || TYPE_COLORS.default;
 }
-
-// ── Edge style + layout helpers (imported) ─────────────────────────
-// resolveEdgeStyle, computeAutoLayout, figureNodePosition,
-// positionGroupsFigure, pathPointsToSvgPath, FIGURE_CANVAS_W, FIGURE_CANVAS_H,
-// NODE_W_DEFAULT, NODE_H_DEFAULT, PADDING, and PositionedNode all come from
-// ./architectureDiagramLayout so they can be unit-tested in isolation
-// without React or a DOM.
 
 // ── Math rendering (Safe KaTeX rendering with fallback) ──────────────
 function MathText({ value, displayMode = false }: { value: string; displayMode?: boolean }) {
@@ -163,21 +157,94 @@ function MathText({ value, displayMode = false }: { value: string; displayMode?:
   return <span className="katex-rendered inline-block" dangerouslySetInnerHTML={{ __html: rendered }} />;
 }
 
-interface ComponentDetails {
-  role: string;
-  mathFormula?: string;
+interface ComponentTheoryDetails {
   category: string;
-  tensorFlow?: string;
+  whatIsIt: string;
+  whatItDoes: string;
+  theory: string;
+  mathFormula?: string;
 }
 
-function getComponentDetails(node: DiagramNode): ComponentDetails {
+function getComponentTheory(node: DiagramNode): ComponentTheoryDetails {
+  const labelLower = (node.label || "").toLowerCase();
+  const typeLower = (node.type || "").toLowerCase();
+  const desc = node.description?.trim();
+  const how = node.how_it_works?.trim();
+  const formula = node.math_formula?.trim();
+
+  // 1. Attention & Multi-Head Attention
+  if (typeLower === "attention" || labelLower.includes("attention") || labelLower.includes("mha")) {
+    return {
+      category: "ATTENTION MECHANISM",
+      whatIsIt: desc || "Attention mechanism sub-layer. Enables dynamic routing and pairwise interaction between sequence positions across the model representation space.",
+      whatItDoes: how || "Computes compatibility scores between Query and Key representations, normalizes them via softmax, and computes a weighted sum over Value states across parallel subspace heads.",
+      theory: "Provides direct pairwise connectivity between all sequence coordinates without requiring sequential recurrence. Allows representations to incorporate global context across the entire input sequence.",
+      mathFormula: formula || undefined,
+    };
+  }
+
+  // 2. Feed-Forward Network / MLP
+  if (typeLower === "feedforward" || labelLower.includes("feed forward") || labelLower.includes("ffn") || labelLower.includes("mlp")) {
+    return {
+      category: "FEED-FORWARD NETWORK",
+      whatIsIt: desc || "Point-wise Feed-Forward Network (FFN / MLP). Transforms hidden representations independently at each sequence position.",
+      whatItDoes: how || "Projects representations into an intermediate higher-dimensional space, applies a non-linear activation function, and projects back to the model hidden dimension.",
+      theory: "Executes non-linear feature transformation and channel-wise mixing, expanding representational capacity and functioning as associative memory across learned features.",
+      mathFormula: formula || undefined,
+    };
+  }
+
+  // 3. Normalization (LayerNorm / RMSNorm / BatchNorm)
+  if (typeLower === "normalization" || labelLower.includes("norm") || labelLower.includes("layernorm") || labelLower.includes("rmsnorm")) {
+    return {
+      category: "NORMALIZATION LAYER",
+      whatIsIt: desc || "Normalization sub-layer. Normalizes intermediate activation distributions across channels or layers.",
+      whatItDoes: how || "Standardizes activation distributions across features to maintain stable variance, followed by learned scaling and shifting parameters.",
+      theory: "Stabilizes forward activations and backward gradient propagation across deep stacked layers, preventing gradient explosion or vanishing during training.",
+      mathFormula: formula || undefined,
+    };
+  }
+
+  // 4. Embedding & Positional Encoding
+  if (typeLower === "embedding" || labelLower.includes("embedding") || labelLower.includes("positional") || labelLower.includes("pe")) {
+    return {
+      category: "EMBEDDING & REPRESENTATION",
+      whatIsIt: desc || "Input/Output Embedding layer. Maps discrete token identifiers or input features into continuous vector space.",
+      whatItDoes: how || "Transforms input indices into dense continuous vectors and incorporates coordinate or positional information to provide spatial awareness.",
+      theory: "Constructs semantic representations in vector space where geometrical proximity reflects functional or semantic relationships.",
+      mathFormula: formula || undefined,
+    };
+  }
+
+  // 5. Residual Shortcut / Skip Connection
+  if (typeLower === "residual" || labelLower.includes("add") || labelLower.includes("residual") || labelLower.includes("skip")) {
+    return {
+      category: "RESIDUAL SHORTCUT",
+      whatIsIt: desc || "Residual Skip Connection. Directly connects preceding activations to subsequent layer outputs.",
+      whatItDoes: how || "Performs an identity addition between the layer input activations and the transformation sub-layer output.",
+      theory: "Creates unimpeded gradient flow paths during backpropagation, eliminating vanishing gradients and enabling stable convergence in very deep networks.",
+      mathFormula: formula || undefined,
+    };
+  }
+
+  // 6. Linear / Output Projection
+  if (typeLower === "output" || typeLower === "linear" || labelLower.includes("linear") || labelLower.includes("softmax") || labelLower.includes("projection")) {
+    return {
+      category: "OUTPUT PROJECTION",
+      whatIsIt: desc || "Linear Projection / Output layer. Maps high-dimensional latent states to target output dimensions.",
+      whatItDoes: how || "Applies affine transformations to intermediate representations to produce output logits or predictions.",
+      theory: "Serves as the final decision boundary or representation projector from latent feature space to task-specific prediction space.",
+      mathFormula: formula || undefined,
+    };
+  }
+
+  // Default fallback for any other architectural block
   return {
-    role:
-      node.description ||
-      `Architectural component of type ${node.type || 'layer'} in the paper model pipeline.`,
-    mathFormula: node.math_formula || undefined,
     category: (node.type || "COMPONENT").toUpperCase(),
-    tensorFlow: node.how_it_works || undefined,
+    whatIsIt: desc || `Architectural component of type '${node.type || 'layer'}' in the paper's model pipeline.`,
+    whatItDoes: how || "Executes intermediate representation transformation, dimensional alignment, and feature routing in the forward pass.",
+    theory: "Deconstructs the computational pipeline into modular, verified tensor blocks with bounded complexity, ensuring numerical stability and parameter efficiency across training and inference.",
+    mathFormula: formula || undefined,
   };
 }
 
@@ -188,6 +255,7 @@ export default function ArchitectureDiagram({
   graph,
   height = 600,
   paperTitle,
+  isUnverified,
   onNodeClick,
 }: ArchitectureDiagramProps) {
   // Unify the two APIs: a `graph` prop or flat `nodes`/`edges` props.
@@ -343,18 +411,8 @@ export default function ArchitectureDiagram({
 
   const componentDetails = useMemo(() => {
     if (!selectedNode) return null;
-    return getComponentDetails(selectedNode);
+    return getComponentTheory(selectedNode);
   }, [selectedNode]);
-
-  const inboundEdges = useMemo(() => {
-    if (!selectedNode) return [];
-    return edges.filter((e) => e.target === selectedNode.id);
-  }, [selectedNode, edges]);
-
-  const outboundEdges = useMemo(() => {
-    if (!selectedNode) return [];
-    return edges.filter((e) => e.source === selectedNode.id);
-  }, [selectedNode, edges]);
 
   // Auto-fit diagram cleanly within viewport
   const fitToView = useCallback(() => {
@@ -483,7 +541,7 @@ export default function ArchitectureDiagram({
         </div>
 
         {/* Layout Mode Toggle & Badges */}
-        <div className="absolute top-3 left-3 z-20 flex items-center gap-1 p-1 bg-white/95 backdrop-blur-xs border border-zinc-200 rounded-lg shadow-2xs text-[11px]">
+        <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 p-1 bg-white/95 backdrop-blur-xs border border-zinc-200 rounded-lg shadow-2xs text-[11px]">
           <button
             onClick={() => setLayoutView("elk")}
             className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1.5 font-medium ${
@@ -509,6 +567,12 @@ export default function ArchitectureDiagram({
               <Sparkles className="w-3.5 h-3.5" />
               Paper Figure (Spatial)
             </button>
+          )}
+          {isUnverified && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-mono font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              <span>Unverified</span>
+            </div>
           )}
         </div>
 
@@ -729,7 +793,7 @@ export default function ArchitectureDiagram({
 
       {/* ── Inspector Sidebar ──────────────────────────────────── */}
       <div
-        className="w-[350px] border-l border-zinc-200 bg-white flex flex-col shrink-0 overflow-hidden shadow-xs"
+        className="w-full lg:w-[380px] xl:w-[430px] max-w-full border-l border-zinc-200 bg-white flex flex-col shrink-0 overflow-hidden shadow-xs"
         style={{ height: height }}
       >
         {selectedNode ? (
@@ -775,157 +839,78 @@ export default function ArchitectureDiagram({
 
             {/* Scrollable Body */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* Function & Role Card */}
-              <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-200/80 space-y-1.5">
-                <div className="flex items-center gap-1.5 text-zinc-500">
-                  <Cpu className="w-3.5 h-3.5 text-zinc-600" />
-                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-600">
-                    Architectural Role
-                  </h4>
-                </div>
-                <p className="text-xs text-zinc-700 leading-relaxed">
-                  {componentDetails?.role || selectedNode.description}
+              {/* 1. What is it? (Role & Definition) */}
+              <div className="p-3.5 bg-zinc-50 rounded-xl border border-zinc-200/80 space-y-1.5">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-400 block">
+                  01 / WHAT IS IT?
+                </span>
+                <p className="text-xs text-zinc-800 leading-relaxed font-normal">
+                  {componentDetails?.whatIsIt || selectedNode.description}
                 </p>
               </div>
 
-              {/* How it works (paper-specific procedural flow) */}
-              {selectedNode.how_it_works && (
-                <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-200/80 space-y-1.5">
-                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-600">
-                    How it Works in this Paper
-                  </h4>
-                  <p className="text-xs text-zinc-700 leading-relaxed">
-                    {selectedNode.how_it_works}
-                  </p>
-                </div>
-              )}
-
-              {/* Mathematical Formulation (KaTeX) */}
-              {selectedNode.math_formula && (
-                <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-200/80 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-zinc-500">
-                      <FileCode2 className="w-3.5 h-3.5 text-zinc-600" />
-                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-600">
-                        Mathematical Model
-                      </h4>
-                    </div>
-                    <span className="text-[9px] font-mono text-zinc-400">KaTeX</span>
-                  </div>
-                  <div className="p-2.5 bg-white rounded border border-zinc-200/60 text-center overflow-x-auto text-sm text-zinc-900 shadow-2xs">
-                    <MathText value={selectedNode.math_formula} displayMode={true} />
-                  </div>
-                </div>
-              )}
-
-              {/* Parameters & FLOPs */}
-              {(selectedNode.parameters || selectedNode.flops) && (
-                <div className="grid grid-cols-2 gap-2">
-                  {selectedNode.parameters && (
-                    <div className="p-2.5 bg-zinc-50 rounded-lg border border-zinc-200/80">
-                      <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-400 block">
-                        Parameters
-                      </span>
-                      <span className="text-xs font-mono font-bold text-zinc-800 mt-0.5 block">
-                        {selectedNode.parameters}
-                      </span>
-                    </div>
-                  )}
-                  {selectedNode.flops && (
-                    <div className="p-2.5 bg-zinc-50 rounded-lg border border-zinc-200/80">
-                      <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-400 block">
-                        FLOPs
-                      </span>
-                      <span className="text-xs font-mono font-bold text-zinc-800 mt-0.5 block">
-                        {selectedNode.flops}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Connections (Inbound & Outbound) */}
-              <div className="space-y-3">
-                {/* Inbound Inputs */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-1">
-                      <ArrowLeft className="w-3 h-3 text-emerald-600" />
-                      Inbound Inputs ({inboundEdges.length})
-                    </h4>
-                  </div>
-                  <div className="space-y-1.5">
-                    {inboundEdges.map((e, i) => {
-                      const other = nodes.find((n) => n.id === e.source);
-                      const isResidual = e.type === 'residual_skip' || (e.style?.name === 'dashed') || (e.style?.name === 'residual');
-                      return (
-                        <button
-                          key={i}
-                          onClick={() => setSelectedId(e.source)}
-                          className="w-full text-left p-2 rounded-md bg-zinc-50 hover:bg-zinc-100/80 border border-zinc-200/80 flex items-center justify-between gap-2 transition-all hover:border-zinc-300"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-1 rounded border border-emerald-200">
-                              ← IN
-                            </span>
-                            <span className="text-xs font-semibold text-zinc-800 truncate">
-                              {other?.label || e.source}
-                            </span>
-                          </div>
-                          <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${
-                            isResidual ? 'bg-amber-50 text-amber-700 border-amber-200 font-semibold' : 'bg-zinc-100 text-zinc-500 border-zinc-200'
-                          }`}>
-                            {isResidual ? 'shortcut' : (e.type || 'data flow').replace(/_/g, ' ')}
-                          </span>
-                        </button>
-                      );
-                    })}
-                    {inboundEdges.length === 0 && (
-                      <p className="text-[11px] font-mono text-zinc-400 italic pl-1">Primary model input (no preceding layer)</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Outbound Outputs */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-1">
-                      <ArrowRight className="w-3 h-3 text-blue-600" />
-                      Outbound Outputs ({outboundEdges.length})
-                    </h4>
-                  </div>
-                  <div className="space-y-1.5">
-                    {outboundEdges.map((e, i) => {
-                      const other = nodes.find((n) => n.id === e.target);
-                      const isResidual = e.type === 'residual_skip' || (e.style?.name === 'dashed') || (e.style?.name === 'residual');
-                      return (
-                        <button
-                          key={i}
-                          onClick={() => setSelectedId(e.target)}
-                          className="w-full text-left p-2 rounded-md bg-zinc-50 hover:bg-zinc-100/80 border border-zinc-200/80 flex items-center justify-between gap-2 transition-all hover:border-zinc-300"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-50 px-1 rounded border border-blue-200">
-                              → OUT
-                            </span>
-                            <span className="text-xs font-semibold text-zinc-800 truncate">
-                              {other?.label || e.target}
-                            </span>
-                          </div>
-                          <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${
-                            isResidual ? 'bg-amber-50 text-amber-700 border-amber-200 font-semibold' : 'bg-zinc-100 text-zinc-500 border-zinc-200'
-                          }`}>
-                            {isResidual ? 'shortcut' : (e.type || 'data flow').replace(/_/g, ' ')}
-                          </span>
-                        </button>
-                      );
-                    })}
-                    {outboundEdges.length === 0 && (
-                      <p className="text-[11px] font-mono text-zinc-400 italic pl-1">Final model output (terminal node)</p>
-                    )}
-                  </div>
-                </div>
+              {/* 2. What it does & How it works */}
+              <div className="p-3.5 bg-zinc-50 rounded-xl border border-zinc-200/80 space-y-1.5">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-400 block">
+                  02 / WHAT IT DOES & HOW IT WORKS
+                </span>
+                <p className="text-xs text-zinc-800 leading-relaxed font-normal">
+                  {componentDetails?.whatItDoes || selectedNode.how_it_works}
+                </p>
               </div>
+
+              {/* 3. Theory & Mathematical Formulation */}
+              <div className="p-3.5 bg-zinc-50 rounded-xl border border-zinc-200/80 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-400">
+                    03 / THEORY & MATHEMATICAL MODEL
+                  </span>
+                  {(componentDetails?.mathFormula || selectedNode.math_formula) && (
+                    <span className="text-[9px] font-mono text-zinc-400 font-medium">KaTeX</span>
+                  )}
+                </div>
+
+                {(componentDetails?.mathFormula || selectedNode.math_formula) && (
+                  <div className="p-2.5 bg-white rounded-lg border border-zinc-200/60 text-center overflow-x-auto text-sm text-zinc-900 shadow-2xs">
+                    <MathText value={componentDetails?.mathFormula || selectedNode.math_formula || ""} displayMode={true} />
+                  </div>
+                )}
+
+                <p className="text-xs text-zinc-700 leading-relaxed">
+                  {componentDetails?.theory}
+                </p>
+              </div>
+
+              {/* 4. Parameters & Computation (if present) */}
+              {(selectedNode.parameters || selectedNode.flops) && (
+                <div className="p-3.5 bg-zinc-50 rounded-xl border border-zinc-200/80 space-y-2">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-400 block">
+                    04 / PARAMETERS & COMPUTATION
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {selectedNode.parameters && (
+                      <div className="p-2 bg-white rounded-lg border border-zinc-200/60">
+                        <span className="text-[9px] font-mono uppercase tracking-wider text-zinc-400 block">
+                          Parameters
+                        </span>
+                        <span className="text-xs font-mono font-bold text-zinc-900 mt-0.5 block">
+                          {selectedNode.parameters}
+                        </span>
+                      </div>
+                    )}
+                    {selectedNode.flops && (
+                      <div className="p-2 bg-white rounded-lg border border-zinc-200/60">
+                        <span className="text-[9px] font-mono uppercase tracking-wider text-zinc-400 block">
+                          FLOPs
+                        </span>
+                        <span className="text-xs font-mono font-bold text-zinc-900 mt-0.5 block">
+                          {selectedNode.flops}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Provenance & Page Grounding */}
               <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-200/80 space-y-1.5">

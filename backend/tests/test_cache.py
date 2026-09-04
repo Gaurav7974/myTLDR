@@ -102,3 +102,20 @@ async def test_get_graph_returns_none_when_missing():
     db = _FakeDB()
     got = await cache.cache_service.get_graph(db, "nope")
     assert got is None
+
+
+@pytest.mark.asyncio
+async def test_store_and_get_analysis_bundle():
+    db = _FakeDB()
+    analysis = {
+        "equations": [{"id": "eq1", "latex": "E=mc^2"}],
+        "code_snippets": [{"code": "class Model: pass"}],
+        "code_note": "Custom architecture",
+        "canonical_ir": {"version": "1.0", "nodes": []},
+    }
+    await cache.cache_service.store_analysis(db, "test_hash_analysis", analysis)
+    assert cache._IN_MEMORY_ANALYSIS["test_hash_analysis"] == analysis
+    retrieved = await cache.cache_service.get_analysis(db, "test_hash_analysis")
+    assert retrieved == analysis
+    assert len(retrieved["equations"]) == 1
+    assert retrieved["equations"][0]["latex"] == "E=mc^2"

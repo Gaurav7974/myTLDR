@@ -195,10 +195,27 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
     return BENCHMARK_PAPERS.filter((p) => p.category === selectedCategory);
   }, [selectedCategory]);
 
+  // Strict arXiv validator
+  const isArxivInput = (val: string): boolean => {
+    const t = val.trim();
+    if (!t) return false;
+    if (/^\d{4}\.\d{4,5}(v\d+)?$/i.test(t)) return true;
+    if (/^[a-zA-Z\-]+(\.[a-zA-Z\-]+)?\/\d{7}(v\d+)?$/i.test(t)) return true;
+    if (/^(https?:\/\/)?(www\.)?arxiv\.org\/(abs|pdf)\/([a-zA-Z\-]+(\.[a-zA-Z\-]+)?\/\d{7}|\d{4}\.\d{4,5})(v\d+)?(\.pdf)?([?#].*)?$/i.test(t)) {
+      return true;
+    }
+    return false;
+  };
+
+  const isInvalidUrl = useMemo(() => {
+    const trimmed = url.trim();
+    return trimmed.length > 0 && !isArxivInput(trimmed);
+  }, [url]);
+
   // Detected arXiv preview when typing
   const detectedArxiv = useMemo(() => {
     const trimmed = url.trim();
-    if (!trimmed) return null;
+    if (!trimmed || !isArxivInput(trimmed)) return null;
     if (trimmed.includes('1706.03762')) {
       return { title: 'Attention Is All You Need', authors: 'Ashish Vaswani, Noam Shazeer, et al.' };
     }
@@ -221,6 +238,11 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
     e.preventDefault();
     if (!url.trim() || isProcessing) return;
 
+    if (!isArxivInput(url)) {
+      setSubmitError("Invalid URL: Only arXiv papers are supported (e.g. 1706.03762 or https://arxiv.org/abs/1706.03762). Please try again.");
+      return;
+    }
+
     setIsProcessing(true);
     setSubmitError(null);
     setProgressPercent(1);
@@ -230,7 +252,7 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
     try {
       const paper = await processPaperStream(
         {
-          source: url.includes('arxiv.org') || url.match(/^\d{4}\.\d{4,5}/) ? 'arxiv' : 'url',
+          source: 'arxiv',
           url: url.trim(),
           difficulty,
         },
@@ -454,13 +476,21 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
               </button>
               <button
                 type="submit"
-                disabled={!url.trim() || isProcessing}
+                disabled={!url.trim() || isInvalidUrl || isProcessing}
                 className="flex items-center gap-2 border-l-2 border-ink bg-ink px-5 font-mono text-xs font-bold tracking-[0.14em] text-white transition-colors hover:bg-volt disabled:cursor-not-allowed disabled:opacity-40 md:px-7"
               >
                 {isProcessing ? 'PARSING' : 'EXPLAIN'}
                 <ArrowRight className={`h-4 w-4 ${isProcessing ? 'animate-pulse' : ''}`} />
               </button>
             </div>
+
+            {/* Invalid URL Warning */}
+            {isInvalidUrl && !isProcessing && (
+              <div className="flex items-center gap-2 border-2 border-red-500 bg-red-50 px-3.5 py-2.5 text-xs font-mono text-red-700 animate-fadeIn">
+                <span className="font-bold shrink-0">⚠ INVALID URL:</span>
+                <span>Only arXiv papers are supported (e.g. 1706.03762 or https://arxiv.org/abs/1706.03762). Please provide a valid arXiv ID or URL.</span>
+              </div>
+            )}
 
             {/* Detected paper preview */}
             {detectedArxiv && !isProcessing && (

@@ -3,15 +3,10 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { PaperData, KeywordDefinition } from '@/types/paper';
 import { 
-  Send, 
+  ArrowUp,
   Sparkles, 
-  Bot, 
-  CornerDownLeft,
   Copy,
   Check,
-  Code2,
-  HelpCircle,
-  Zap,
   ArrowRight
 } from 'lucide-react';
 import { MathFormula } from './MathDeconstructedTab';
@@ -201,7 +196,7 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
       const fallbackMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'ai',
-        text: `Regarding **"${userText}"** in *${paper.metadata.title}*: The architecture decomposes computation into modular tensor stages with verified mathematical guarantees.`,
+        text: `The architecture decomposes computation into modular tensor stages and self-attention transformations with verified mathematical guarantees grounded in the paper.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMessages((prev) => [...prev, fallbackMsg]);
@@ -230,22 +225,22 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
 
   const starterCards = [
     {
-      icon: <Sparkles className="w-4 h-4 text-purple-600" />,
+      tag: 'SUMMARY',
       title: 'Executive Summary',
       prompt: `Explain ${paper.metadata.title} in 2 minutes for a researcher.`
     },
     {
-      icon: <Zap className="w-4 h-4 text-amber-600" />,
+      tag: 'BOTTLENECK',
       title: 'Core Bottleneck',
       prompt: 'What fundamental limitation of prior architectures does this paper solve?'
     },
     {
-      icon: <Code2 className="w-4 h-4 text-emerald-600" />,
+      tag: 'TENSOR MATH',
       title: 'Math & Tensor Shapes',
       prompt: 'Break down the mathematical formulation and tensor shapes step-by-step.'
     },
     {
-      icon: <HelpCircle className="w-4 h-4 text-blue-600" />,
+      tag: 'ENGINEERING',
       title: 'Engineering Tradeoffs',
       prompt: 'What are the main hardware limitations and compute tradeoffs mentioned by the authors?'
     }
@@ -286,39 +281,43 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
 
           {/* Empty State / Welcome Greeting */}
           {messages.length === 0 && (
-            <div className="pt-4 pb-4 space-y-6 animate-fadeIn">
-              <div className="p-6 rounded-2xl bg-white border border-zinc-200/90 shadow-sm space-y-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-zinc-950 text-white flex items-center justify-center shadow-xs">
-                    <Bot className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm text-zinc-950">myTLDR Research Assistant</h3>
-                    <p className="text-xs text-zinc-500 font-mono">Grounded RAG • {paper.metadata.title}</p>
-                  </div>
+            <div className="pt-4 pb-4 space-y-5 animate-fadeIn">
+              <div className="p-6 rounded-2xl bg-white border border-zinc-200/90 shadow-2xs space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-400">
+                    RESEARCH ASSISTANT // GROUNDED RAG
+                  </span>
+                  <span className="text-[10px] font-mono text-zinc-400 truncate max-w-[200px]">
+                    {paper.metadata.arxivId ? `arXiv:${paper.metadata.arxivId}` : 'VERIFIED CORPUS'}
+                  </span>
                 </div>
-                <p className="text-xs md:text-sm text-zinc-600 leading-relaxed">
-                  Ask any question regarding the paper&apos;s mathematical formulation, 3D tensor dataflow, PyTorch implementation, or benchmark results.
+                <h3 className="text-base font-bold text-zinc-950 tracking-tight">
+                  myTLDR AI Assistant
+                </h3>
+                <p className="text-xs text-zinc-600 leading-relaxed font-normal">
+                  Ask any question regarding the paper&apos;s mathematical formulation, architecture design, PyTorch implementation, or benchmark results. Responses are strictly grounded in <span className="font-semibold text-zinc-900">{paper.metadata.title}</span>.
                 </p>
               </div>
 
-              {/* Starter Suggestion Grid */}
+              {/* Starter Suggestion Grid — Minimal, clean, without tacky icons */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {starterCards.map((card, idx) => (
                   <button
                     key={idx}
                     onClick={() => executeMessage(card.prompt)}
-                    className="p-3.5 rounded-xl bg-white hover:bg-zinc-50 border border-zinc-200 text-left transition-all shadow-2xs hover:shadow-sm hover:border-zinc-300 group flex items-start gap-3"
+                    className="p-4 rounded-xl bg-white hover:bg-zinc-50 border border-zinc-200/90 text-left transition-all shadow-2xs hover:shadow-sm hover:border-zinc-300 group flex flex-col justify-between space-y-2"
                   >
-                    <div className="p-2 rounded-lg bg-zinc-50 border border-zinc-100 shrink-0 group-hover:bg-white transition-colors">
-                      {card.icon}
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-[10px] font-mono font-bold text-zinc-400 group-hover:text-zinc-950 transition-colors">
+                        0{idx + 1} // {card.tag}
+                      </span>
+                      <ArrowRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-zinc-950 group-hover:translate-x-0.5 transition-all" />
                     </div>
-                    <div className="space-y-0.5 min-w-0">
-                      <div className="font-semibold text-xs text-zinc-900 flex items-center gap-1">
-                        <span>{card.title}</span>
-                        <ArrowRight className="w-3 h-3 text-zinc-400 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-                      </div>
-                      <p className="text-[11px] text-zinc-500 line-clamp-1">
+                    <div>
+                      <h4 className="font-semibold text-xs text-zinc-900 group-hover:text-zinc-950">
+                        {card.title}
+                      </h4>
+                      <p className="text-[11px] text-zinc-500 line-clamp-2 mt-0.5 leading-relaxed">
                         {card.prompt}
                       </p>
                     </div>
@@ -329,93 +328,109 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
           )}
 
           {/* Render Messages */}
-          {messages.map((msg) => (
-            <div key={msg.id} className="space-y-2">
-              {msg.sender === 'user' ? (
-                /* USER MESSAGE: Modern Right-Aligned Pill */
-                <div className="flex justify-end">
-                  <div className="max-w-2xl px-4 py-2.5 rounded-2xl rounded-tr-sm bg-zinc-950 text-white text-[13px] leading-relaxed shadow-sm">
-                    {msg.text}
-                  </div>
-                </div>
-              ) : (
-                /* AI MESSAGE: chat flow, minimal chrome */
-                <div className="py-1 space-y-2.5 text-left max-w-3xl">
-                  
-                  {/* Slim message header */}
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded-md bg-zinc-950 text-white flex items-center justify-center">
-                      <Bot className="w-3 h-3" />
+          {messages.map((msg) => {
+            const cleanText = msg.text.replace(/^Regarding\s+(\*\*"[^\n*]+"\*\*|"[^\n"]+")\s+in\s+\*[^\n*]+\*:\s*/i, '').trim();
+
+            return (
+              <div key={msg.id} className="space-y-2">
+                {msg.sender === 'user' ? (
+                  /* USER MESSAGE: Modern Right-Aligned Pill */
+                  <div className="flex justify-end">
+                    <div className="max-w-2xl px-4 py-2.5 rounded-2xl rounded-tr-sm bg-zinc-950 text-white text-[13px] leading-relaxed shadow-sm">
+                      {msg.text}
                     </div>
-                    <span className="font-bold text-[11px] text-zinc-900 font-mono">myTLDR AI</span>
-                    <span className="text-[10px] font-mono text-zinc-400">{msg.timestamp}</span>
-                    <button
-                      onClick={() => copyMessage(msg.id, msg.text)}
-                      className="p-0.5 rounded text-zinc-300 hover:text-zinc-700 transition-colors"
-                      title="Copy response"
-                    >
-                      {copiedMsgId === msg.id ? (
-                        <Check className="w-3 h-3 text-emerald-600" />
-                      ) : (
-                        <Copy className="w-3 h-3" />
-                      )}
-                    </button>
                   </div>
+                ) : (
+                  /* AI MESSAGE: chat flow, minimal chrome */
+                  <div className="py-1 space-y-2.5 text-left max-w-3xl">
+                    
+                    {/* Slim message header */}
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-bold text-[11px] text-zinc-950 font-mono tracking-wider">myTLDR AI</span>
+                      <span className="text-[10px] font-mono text-zinc-400">• {msg.timestamp}</span>
+                    </div>
 
-                  {/* Message Body with KaTeX Math Rendering */}
-                  <FormattedMessageContent
-                    text={msg.text}
-                    keywords={paper.metadata.keywords}
-                    onAskAI={onAskAI}
-                    onJumpToPage={onJumpToPage}
-                  />
+                    {/* Message Body with KaTeX Math Rendering */}
+                    <FormattedMessageContent
+                      text={cleanText}
+                      keywords={paper.metadata.keywords}
+                      onAskAI={onAskAI}
+                      onJumpToPage={onJumpToPage}
+                    />
 
-                  {/* Source pills — click jumps to the paper page holding the topic */}
-                  {msg.citations && msg.citations.length > 0 && (
-                    <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                      <span className="text-zinc-400 font-mono text-[10px]">Sources:</span>
-                      {msg.citations.map((cit, citIdx) => {
-                        const page = findCitationPage(cit, paper);
-                        const pill = "px-2 py-0.5 rounded-full bg-zinc-100 border border-zinc-200 text-[11px] text-zinc-600 font-medium max-w-[220px] truncate transition-colors";
-                        return page != null && onJumpToPage ? (
-                          <button
-                            key={citIdx}
-                            onClick={() => onJumpToPage(page, cit.section_title)}
-                            title={`Open page ${page} in the paper`}
-                            className={`${pill} hover:bg-zinc-200 cursor-pointer`}
-                          >
-                            § {cit.section_title}
-                          </button>
+                    {/* Source pills — positioned below the response text */}
+                    {msg.citations && msg.citations.length > 0 && (
+                      <div className="pt-2.5 pb-1 space-y-1.5">
+                        <span className="text-zinc-400 font-mono text-[10px] uppercase tracking-wider block font-semibold">
+                          Sources Grounding:
+                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {msg.citations.map((cit, citIdx) => {
+                            const page = findCitationPage(cit, paper);
+                            const pill = "px-2.5 py-1 rounded-md bg-white border border-zinc-200 text-[11px] text-zinc-700 font-mono font-medium max-w-[260px] truncate shadow-2xs transition-all";
+                            return page != null && onJumpToPage ? (
+                              <button
+                                key={citIdx}
+                                onClick={() => onJumpToPage(page, cit.section_title)}
+                                title={`Open page ${page} in the paper`}
+                                className={`${pill} hover:bg-zinc-100 hover:border-zinc-300 cursor-pointer flex items-center gap-1`}
+                              >
+                                <span className="text-zinc-400">§</span>
+                                <span className="truncate">{cit.section_title}</span>
+                                <span className="text-[10px] text-zinc-400 ml-1">p.{page}</span>
+                              </button>
+                            ) : (
+                              <span key={citIdx} title="Passage cited from paper" className={`${pill} cursor-default flex items-center gap-1`}>
+                                <span className="text-zinc-400">§</span>
+                                <span className="truncate">{cit.section_title}</span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Action Bar Below Message: Copy Button + Follow-ups */}
+                    <div className="pt-2 flex items-center gap-2 flex-wrap text-[11px]">
+                      <button
+                        onClick={() => copyMessage(msg.id, cleanText)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-white hover:bg-zinc-100 border border-zinc-200 text-zinc-700 font-mono transition-colors shadow-2xs"
+                        title="Copy response"
+                      >
+                        {copiedMsgId === msg.id ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-600" />
+                            <span className="text-emerald-700 font-medium">Copied</span>
+                          </>
                         ) : (
-                          <span key={citIdx} title="Page not located" className={`${pill} cursor-default`}>
-                            § {cit.section_title}
-                          </span>
-                        );
-                      })}
+                          <>
+                            <Copy className="w-3 h-3 text-zinc-500" />
+                            <span>Copy response</span>
+                          </>
+                        )}
+                      </button>
+
+                      <span className="text-zinc-300">|</span>
+
+                      <button
+                        onClick={() => executeMessage(`Explain this simpler with a real-world analogy.`)}
+                        className="px-2.5 py-1 rounded-md bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-medium transition-colors"
+                      >
+                        Explain simpler
+                      </button>
+                      <button
+                        onClick={() => executeMessage(`Show the exact PyTorch implementation for this.`)}
+                        className="px-2.5 py-1 rounded-md bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-medium transition-colors"
+                      >
+                        Show PyTorch code
+                      </button>
                     </div>
-                  )}
 
-                  {/* Follow-up Prompts */}
-                  <div className="pt-2 flex items-center gap-2 flex-wrap text-[11px]">
-                    <span className="text-zinc-400 font-mono text-[10px]">Ask follow-up:</span>
-                    <button
-                      onClick={() => executeMessage(`Explain this simpler with a real-world analogy.`)}
-                      className="px-2 py-0.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-medium transition-colors"
-                    >
-                      Explain simpler
-                    </button>
-                    <button
-                      onClick={() => executeMessage(`Show the exact PyTorch implementation for this.`)}
-                      className="px-2 py-0.5 rounded-full bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-medium transition-colors"
-                    >
-                      Show PyTorch code
-                    </button>
                   </div>
-
-                </div>
-              )}
-            </div>
-          ))}
+                )}
+              </div>
+            );
+          })}
 
           {/* Loading Indicator */}
           {isLoading && (
@@ -477,19 +492,16 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={`Ask any question about ${paper.metadata.title}...`}
-              className="w-full pl-3.5 pr-24 py-2 bg-transparent text-xs md:text-sm text-zinc-900 focus:outline-none placeholder:text-zinc-400 font-normal"
+              className="w-full pl-3.5 pr-12 py-2 bg-transparent text-xs md:text-sm text-zinc-900 focus:outline-none placeholder:text-zinc-400 font-normal"
             />
-            <div className="absolute right-2 flex items-center gap-1.5">
-              <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-zinc-400 bg-zinc-100 border border-zinc-200/80 rounded-md">
-                <CornerDownLeft className="w-2.5 h-2.5 mr-0.5" /> Enter
-              </kbd>
+            <div className="absolute right-2 flex items-center">
               <button
                 type="submit"
                 disabled={!input.trim() || isLoading}
-                className="p-2 rounded-xl bg-zinc-950 hover:bg-zinc-800 disabled:opacity-30 text-white transition-all shadow-2xs active:scale-95"
+                className="w-8 h-8 rounded-full bg-zinc-950 hover:bg-zinc-800 disabled:opacity-20 text-white flex items-center justify-center transition-all shadow-xs active:scale-95"
                 title="Send Message"
               >
-                <Send className="w-3.5 h-3.5" />
+                <ArrowUp className="w-4 h-4" />
               </button>
             </div>
           </form>

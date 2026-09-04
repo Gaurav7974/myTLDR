@@ -18,6 +18,7 @@ import {
   Share2,
   Bookmark,
   ArrowLeft,
+  ArrowUp,
   Search,
   Send,
   Check,
@@ -1006,8 +1007,8 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
         {/* Floating Bottom Chat Dock — one glass layer done properly: the
             scrim fades scrolled content underneath, the form alone carries
             the frost. Pills stay solid (nested blurs compound into mud). */}
-        {activeTab !== 'chat' && (
-          <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none pt-14 pb-4 px-4 md:px-6 bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA]/80 to-transparent">
+        {activeTab !== 'chat' && activeTab !== 'visualizer' && (
+          <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none pt-14 pb-4 px-4 md:px-6 bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA]/90 to-transparent">
             <div className="max-w-2xl mx-auto w-full space-y-2 pointer-events-auto">
               
               {/* Quick Suggested Prompt Pills (Floating Capsules) */}
@@ -1026,26 +1027,23 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
                 ))}
               </div>
 
-              {/* LLM Chat Input Form - the single frosted island */}
-              <form onSubmit={handleChatSubmit} className="relative flex items-center bg-white/85 backdrop-blur-xl border border-zinc-200 shadow-xl shadow-zinc-950/8 rounded-2xl p-1.5 transition-all focus-within:border-zinc-950/70 focus-within:ring-2 focus-within:ring-zinc-950/10 focus-within:shadow-2xl">
+              {/* LLM Chat Input Form - modern minimal input */}
+              <form onSubmit={handleChatSubmit} className="relative flex items-center bg-white/95 backdrop-blur-xl border border-zinc-200 shadow-xl shadow-zinc-950/8 rounded-2xl p-1.5 transition-all focus-within:border-zinc-950/70 focus-within:ring-2 focus-within:ring-zinc-950/10 focus-within:shadow-2xl">
                 <input
                   type="text"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   placeholder={`Ask any question about ${paper.metadata.title}...`}
-                  className="w-full pl-3.5 pr-24 py-2 bg-transparent text-xs md:text-sm text-zinc-900 focus:outline-none placeholder:text-zinc-400 font-normal"
+                  className="w-full pl-3.5 pr-12 py-2 bg-transparent text-xs md:text-sm text-zinc-900 focus:outline-none placeholder:text-zinc-400 font-normal"
                 />
-                <div className="absolute right-2 flex items-center gap-1.5">
-                  <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-zinc-400 bg-zinc-100 border border-zinc-200/80 rounded-md">
-                    <CornerDownLeft className="w-2.5 h-2.5 mr-0.5" /> Enter
-                  </kbd>
+                <div className="absolute right-2 flex items-center">
                   <button
                     type="submit"
                     disabled={!chatInput.trim()}
-                    className="p-2 rounded-xl bg-zinc-950 hover:bg-zinc-800 disabled:opacity-30 text-white transition-all shadow-2xs active:scale-95"
+                    className="w-8 h-8 rounded-full bg-zinc-950 hover:bg-zinc-800 disabled:opacity-20 text-white flex items-center justify-center transition-all shadow-xs active:scale-95"
                     title="Send to AI Assistant"
                   >
-                    <Send className="w-3.5 h-3.5" />
+                    <ArrowUp className="w-4 h-4" />
                   </button>
                 </div>
               </form>

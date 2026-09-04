@@ -87,17 +87,27 @@ class TextExtractor:
                 log.warning(f"[WARN] Mistral OCR failed: {e} — returning raw text layer")
                 return self._build_result(pages)
 
-        # Hybrid: OCR only the image/scanned pages individually
+        # Hybrid: OCR only the image/scanned pages concurrently (bounded to 3 workers)
         hybrid_figures: List[Figure] = []
-        for p in ocr_candidates[:settings.OCR_MAX_PAGE_CALLS]:
-            try:
-                md, figs = self._mistral_ocr_single_page(pdf_bytes, p.page_number - 1)
-                if md:
-                    p.markdown = md
-                    p.source = "mistral_ocr"
-                hybrid_figures.extend(figs)
-            except Exception as e:
-                log.warning(f"[WARN] OCR failed for page {p.page_number}: {e}")
+        if ocr_candidates:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            target_pages = ocr_candidates[:settings.OCR_MAX_PAGE_CALLS]
+            def _ocr_page(p):
+                try:
+                    md, figs = self._mistral_ocr_single_page(pdf_bytes, p.page_number - 1)
+                    return p, md, figs
+                except Exception as e:
+                    log.warning(f"[WARN] OCR failed for page {p.page_number}: {e}")
+                    return p, None, []
+
+            with ThreadPoolExecutor(max_workers=min(3, len(target_pages))) as executor:
+                futures = [executor.submit(_ocr_page, p) for p in target_pages]
+                for f in as_completed(futures):
+                    p, md, figs = f.result()
+                    if md:
+                        p.markdown = md
+                        p.source = "mistral_ocr"
+                    hybrid_figures.extend(figs)
         if len(ocr_candidates) > settings.OCR_MAX_PAGE_CALLS:
             log.warning(f"[WARN] {len(ocr_candidates)} image pages exceed OCR_MAX_PAGE_CALLS; only the first {settings.OCR_MAX_PAGE_CALLS} were OCR'd")
         result = self._build_result(pages, hybrid_figures)
@@ -323,9 +333,8 @@ class TextExtractor:
         raise ValueError("Too many redirects")
     
     def download_arxiv_pdf(self, arxiv_id: str) -> bytes:
-        """Download PDF from arXiv with canonical ID sanitization and rate limiting."""
+        """Download PDF from arXiv with canonical ID sanitization."""
         clean_id = sanitize_arxiv_id(arxiv_id)
-        self._rate_limit_arxiv()
         url = f"https://arxiv.org/pdf/{clean_id}.pdf"
         return self.download_pdf(url)
     

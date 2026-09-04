@@ -73,6 +73,11 @@ async def submit_paper(
     elif source == "url":
         if not url:
             raise HTTPException(status_code=400, detail="No URL provided")
+        if "arxiv.org" not in url.lower():
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid URL: Only arXiv papers are supported (e.g. https://arxiv.org/abs/1706.03762). Please try again."
+            )
         safe_url = await asyncio.to_thread(validate_and_sanitize_url, url)
         return {"status": "received", "source": "url", "url": safe_url}
 
