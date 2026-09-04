@@ -7,6 +7,7 @@ import { Architecture2DTab } from './tabs/Architecture2DTab';
 import { MathDeconstructedTab, MathFormula } from './tabs/MathDeconstructedTab';
 import { CodeWalkthroughTab } from './tabs/CodeWalkthroughTab';
 import { AIChatTab } from './tabs/AIChatTab';
+import { TabErrorBoundary } from './TabErrorBoundary';
 import {
   Lightbulb,
   Layers,
@@ -983,25 +984,35 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
 
         {/* MAIN TAB CONTENT DISPLAY ("TEXT SUMMARY" / 3D / Math / Code / Chat) */}
         <div className={`flex-1 ${activeTab === 'chat' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto pb-36'} bg-[#FAFAFA]`}>
-          {activeTab === 'summary' && (
-            <SummaryTab
-              paper={paper}
-              onAskAI={handleExecutePrompt}
-              onJumpToPage={handleJumpToPdfPage}
-            />
-          )}
-          {activeTab === 'visualizer' && <Architecture2DTab paper={paper} onJumpToPage={handleJumpToPdfPage} />}
-          {activeTab === 'math' && <MathDeconstructedTab paper={paper} />}
-          {activeTab === 'code' && <CodeWalkthroughTab paper={paper} />}
-          {activeTab === 'chat' && (
-            <AIChatTab
-              paper={paper}
-              initialPrompt={pendingChatPrompt}
-              onPromptHandled={() => setPendingChatPrompt(null)}
-              onAskAI={handleExecutePrompt}
-              onJumpToPage={handleJumpToPdfPage}
-            />
-          )}
+          <TabErrorBoundary tabName="Summary">
+            {activeTab === 'summary' && (
+              <SummaryTab
+                paper={paper}
+                onAskAI={handleExecutePrompt}
+                onJumpToPage={handleJumpToPdfPage}
+              />
+            )}
+          </TabErrorBoundary>
+          <TabErrorBoundary tabName="Architecture Visualizer">
+            {activeTab === 'visualizer' && <Architecture2DTab paper={paper} onJumpToPage={handleJumpToPdfPage} />}
+          </TabErrorBoundary>
+          <TabErrorBoundary tabName="Equations & Math">
+            {activeTab === 'math' && <MathDeconstructedTab paper={paper} />}
+          </TabErrorBoundary>
+          <TabErrorBoundary tabName="PyTorch Code">
+            {activeTab === 'code' && <CodeWalkthroughTab paper={paper} />}
+          </TabErrorBoundary>
+          <TabErrorBoundary tabName="AI Assistant">
+            {activeTab === 'chat' && (
+              <AIChatTab
+                paper={paper}
+                initialPrompt={pendingChatPrompt}
+                onPromptHandled={() => setPendingChatPrompt(null)}
+                onAskAI={handleExecutePrompt}
+                onJumpToPage={handleJumpToPdfPage}
+              />
+            )}
+          </TabErrorBoundary>
         </div>
 
         {/* Floating Bottom Chat Dock — one glass layer done properly: the
