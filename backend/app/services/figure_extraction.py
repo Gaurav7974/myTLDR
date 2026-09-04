@@ -14,6 +14,7 @@ visual geometry and text semantics are combined.
 from __future__ import annotations
 
 import json
+import threading
 import time
 import requests
 from typing import Any, Optional
@@ -31,8 +32,22 @@ from app.models.graph import (
     VISION_CONFIDENCE_THRESHOLD,
 )
 
+# ── Vision key rotation ───────────────────────────────────────────────────────
+# Mirror the same round-robin strategy used in ChatClient so OCR/vision calls
+# are spread across both Mistral accounts, halving per-key rate-limit pressure.
+_vision_keys: list[str] = [k for k in [settings.VISION_API_KEY, settings.VISION_API_KEY_2] if k]
+_vision_key_idx: int = 0
+_vision_key_lock = threading.Lock()
 
-# ── Prompts ──────────────────────────────────────────────────────────
+def _next_vision_key() -> str:
+    """Return the next vision API key in round-robin order (thread-safe)."""
+    global _vision_key_idx
+    with _vision_key_lock:
+        key = _vision_keys[_vision_key_idx % len(_vision_keys)]
+        _vision_key_idx += 1
+        return key
+
+
 VISION_GRAPH_PROMPT = """You are an expert at reading neural-network architecture diagrams.
 
 Context flag: {figure_context}
@@ -262,13 +277,17 @@ def is_verified_vision_graph(graph: ArchitectureGraph | None) -> bool:
 def classify_candidates(figures, paper_title: str = "") -> list[dict]:
     """Cheap per-candidate vision classifier: architecture_diagram | other + confidence. No new dep."""
     if not figures or not settings.VISION_API_KEY: return []
-    # Sort main body first (pages 1-15), cap candidates to prevent rate-limit starvation on long papers
+    # Sort main body first (pages 1-15), cap at 8 candidates to limit API call bursts.
+    # The early-stop on high-confidence hits means most papers stop at 1-3 calls anyway.
     sorted_figs = sorted(figures, key=lambda f: (0 if f.page <= 15 else 1, f.page))
-    candidate_figs = sorted_figs[:15]
+    candidate_figs = sorted_figs[:8]
 
     out=[]
-    for fig in candidate_figs:
+    for i, fig in enumerate(candidate_figs):
         if not fig.base64: continue
+        # Small inter-call sleep to avoid bursting all candidates into the rate limiter
+        if i > 0:
+            time.sleep(0.5)
         img_url = f"data:image/png;base64,{fig.base64}" if not fig.base64.startswith("data:") else fig.base64
         msgs=[{"role":"system","content":"You are an image classifier."},{"role":"user","content":[{"type":"text","text":"Is this image an architecture/model diagram, or something else (chart, plot, table, photo)? Respond ONLY with valid JSON: {\"label\": \"architecture_diagram\" | \"other\", \"confidence\": 0.0-1.0}"},{"type":"image_url","image_url":{"url":img_url}}]}]
         try:
@@ -409,7 +428,12 @@ class FigureExtractor:
         return _parse_verification_payload(raw)
 
     def _call_and_parse(self, messages: list, is_verification: bool = False) -> dict:
-        """POST to the vision LLM and return the JSON object from its reply."""
+        """POST to the vision LLM and return the JSON object from its reply.
+
+        Picks the next API key in the round-robin on every call so both Mistral
+        accounts share the quota. On a 429 it immediately rotates to the other
+        key before sleeping, maximising the chance the retry succeeds.
+        """
         payload = {
             "model": settings.VISION_MODEL,
             "messages": messages,
@@ -418,12 +442,15 @@ class FigureExtractor:
         }
         last_err: Exception | None = None
         max_attempts = max(settings.LLM_MAX_RETRIES, 3)
+        # Pick key once at call-start; rotate again on 429
+        api_key = _next_vision_key() if _vision_keys else ""
+        key_hint = f" (key ...{api_key[-6:]})" if len(_vision_keys) > 1 else ""
         for attempt in range(max_attempts):
             try:
                 resp = requests.post(
                     settings.VISION_API_URL,
                     headers={
-                        "Authorization": f"Bearer {settings.VISION_API_KEY}",
+                        "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json",
                     },
                     json=payload,
@@ -432,7 +459,13 @@ class FigureExtractor:
                 if resp.status_code == 429:
                     last_err = requests.exceptions.HTTPError("429 Too Many Requests", response=resp)
                     if attempt < max_attempts - 1:
-                        time.sleep(settings.LLM_RETRY_BACKOFF_BASE * (attempt + 1))
+                        wait = settings.LLM_RETRY_BACKOFF_BASE * (attempt + 1)
+                        log.warning(f"[RATE LIMIT] Vision 429{key_hint} — waiting {wait}s, rotating key...")
+                        time.sleep(wait)
+                        # Rotate to the other key for the retry
+                        if len(_vision_keys) > 1:
+                            api_key = _next_vision_key()
+                            key_hint = f" (key ...{api_key[-6:]})"
                         continue
                     break
                 resp.raise_for_status()

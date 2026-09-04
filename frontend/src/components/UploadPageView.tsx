@@ -176,8 +176,10 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
     const timer = setInterval(() => {
       setProgressPercent((prev) => {
         if (progressStage === 'extracting') {
-          if (prev < 32) return prev + 0.6;
+          // Tick to just below the 'explaining' SSE floor (40) so no jump occurs
+          if (prev < 38) return prev + 0.6;
         } else if (progressStage === 'explaining') {
+          // Tick to just below the 'diagramming' SSE floor (70)
           if (prev < 68) return prev + 0.5;
         } else if (progressStage === 'diagramming') {
           if (prev < 94) return prev + 0.3;
@@ -221,7 +223,7 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
 
     setIsProcessing(true);
     setSubmitError(null);
-    setProgressPercent(12);
+    setProgressPercent(1);
     setProgressStage('extracting');
     setProgressStatus('Initializing ingestion pipeline...');
 
@@ -236,13 +238,14 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
           if (evt.message) setProgressStatus(evt.message);
           if (evt.stage === 'extracting') {
             setProgressStage('extracting');
-            setProgressPercent((prev) => Math.max(prev, 22));
+            // Only nudge forward if we're still at the very start
+            setProgressPercent((prev) => Math.max(prev, 10));
           } else if (evt.stage === 'explaining') {
             setProgressStage('explaining');
-            setProgressPercent((prev) => Math.max(prev, 50));
+            setProgressPercent((prev) => Math.max(prev, 40));
           } else if (evt.stage === 'diagramming') {
             setProgressStage('diagramming');
-            setProgressPercent((prev) => Math.max(prev, 78));
+            setProgressPercent((prev) => Math.max(prev, 70));
           } else if (evt.stage === 'done') {
             setProgressStage('done');
             setProgressPercent(100);
@@ -263,7 +266,7 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
     if (isProcessing) return;
     setIsProcessing(true);
     setSubmitError(null);
-    setProgressPercent(12);
+    setProgressPercent(1);
     setProgressStage('extracting');
     setProgressStatus(`Extracting ${file.name} via OCR...`);
 
@@ -278,13 +281,13 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
           if (evt.message) setProgressStatus(evt.message);
           if (evt.stage === 'extracting') {
             setProgressStage('extracting');
-            setProgressPercent((prev) => Math.max(prev, 22));
+            setProgressPercent((prev) => Math.max(prev, 10));
           } else if (evt.stage === 'explaining') {
             setProgressStage('explaining');
-            setProgressPercent((prev) => Math.max(prev, 50));
+            setProgressPercent((prev) => Math.max(prev, 40));
           } else if (evt.stage === 'diagramming') {
             setProgressStage('diagramming');
-            setProgressPercent((prev) => Math.max(prev, 78));
+            setProgressPercent((prev) => Math.max(prev, 70));
           } else if (evt.stage === 'done') {
             setProgressStage('done');
             setProgressPercent(100);
@@ -721,7 +724,10 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
                     ✦
                   </div>
                   <span className="font-sans font-black text-2xl tracking-tight text-white">
-                    PaperScope
+                    myTLDR
+                  </span>
+                  <span className="hidden sm:inline-flex px-2 py-0.5 bg-zinc-900 border border-zinc-700/80 text-zinc-300 font-mono text-[10px] font-bold tracking-wider uppercase rounded-xs">
+                    Paper Decoder
                   </span>
                 </div>
                 <span className="px-2 py-0.5 bg-zinc-900 border border-zinc-700/80 text-zinc-400 font-mono text-[10px] font-bold tracking-wider uppercase rounded-xs">
@@ -753,7 +759,7 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
                 </h4>
                 <ul className="space-y-2 text-zinc-400">
                   <li>
-                    <a href="#benchmarks" className="hover:text-white transition-colors">
+                    <a href="#classics" className="hover:text-white transition-colors">
                       3D Visualizer
                     </a>
                   </li>
@@ -763,17 +769,17 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
                     </a>
                   </li>
                   <li>
-                    <a href="#features" className="hover:text-white transition-colors">
+                    <a href="#how" className="hover:text-white transition-colors">
                       Equations & Math
                     </a>
                   </li>
                   <li>
-                    <a href="#benchmarks" className="hover:text-white transition-colors">
+                    <a href="#input-zone" className="hover:text-white transition-colors">
                       PyTorch Generator
                     </a>
                   </li>
                   <li>
-                    <a href="#benchmarks" className="hover:text-white transition-colors">
+                    <a href="#classics" className="hover:text-white transition-colors">
                       AI Assistant
                     </a>
                   </li>
@@ -795,22 +801,22 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
                     </button>
                   </li>
                   <li>
-                    <a href="#benchmarks" className="hover:text-white transition-colors">
+                    <a href="#classics" className="hover:text-white transition-colors">
                       FlashAttention
                     </a>
                   </li>
                   <li>
-                    <a href="#benchmarks" className="hover:text-white transition-colors">
+                    <a href="#classics" className="hover:text-white transition-colors">
                       Mamba SSM
                     </a>
                   </li>
                   <li>
-                    <a href="#benchmarks" className="hover:text-white transition-colors">
+                    <a href="#classics" className="hover:text-white transition-colors">
                       Llama 2
                     </a>
                   </li>
                   <li>
-                    <a href="#benchmarks" className="hover:text-white transition-colors">
+                    <a href="#classics" className="hover:text-white transition-colors">
                       LoRA Adaptation
                     </a>
                   </li>
@@ -856,7 +862,7 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
           {/* Bottom Bar */}
           <div className="mt-12 pt-8 border-t border-zinc-800/80 flex flex-col sm:flex-row items-center justify-between gap-4 font-mono text-[11px] text-zinc-500">
             <div>
-              © 2026 PaperScope. Engineered for AI researchers, engineers, and curious minds.
+              © 2026 myTLDR. Engineered for AI researchers, engineers, and curious minds.
             </div>
             <div className="flex items-center gap-4">
               <span className="text-zinc-600">ZERO HALLUCINATION GUARANTEE</span>

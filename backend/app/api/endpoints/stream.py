@@ -62,18 +62,45 @@ async def stream_paper(
         file_bytes = b"".join(chunks) if chunks else None
     
     log.info(f"stream start source={source} difficulty={difficulty_level} url={sanitized_url} file={bool(file_bytes)}")
+
+    # Heartbeat wrapper: pipeline has 60-180s gaps with zero bytes
+    # (LLM gather in pipeline.py) during which Railway/HTTP-2 kills the
+    # idle stream -> ERR_HTTP2_PROTOCOL_ERROR. Emit `: ping` every 15s
+    # so the connection never idles. Frontend already skips non-data lines.
     async def event_generator():
+        queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+        async def _produce() -> None:
+            try:
+                async for event in process_paper(source_type=source, file_bytes=file_bytes, url=sanitized_url, difficulty=difficulty_level, db=db):
+                    log.info(f"sse stage={event.get('stage')} diagram={event.get('diagram_available')}")
+                    await queue.put(f"data: {json.dumps(event)}\n\n")
+                await queue.put("data: [DONE]\n\n")
+                log.info("stream done")
+            except Exception as e:
+                log.error(f"stream pipeline error: {e}", exc_info=True)
+                # never leak internal details to client, but surface clean validation messages
+                msg = str(e) if isinstance(e, ValueError) else 'Processing failed. Please retry.'
+                await queue.put(f"data: {json.dumps({'stage': 'error', 'message': msg})}\n\n")
+            finally:
+                await queue.put(None)
+
+        producer = asyncio.create_task(_produce())
         try:
-            async for event in process_paper(source_type=source, file_bytes=file_bytes, url=sanitized_url, difficulty=difficulty_level, db=db):
-                log.info(f"sse stage={event.get('stage')} diagram={event.get('diagram_available')}")
-                yield f"data: {json.dumps(event)}\n\n"
-            yield "data: [DONE]\n\n"
-            log.info("stream done")
-        except Exception as e:
-            log.error(f"stream pipeline error: {e}", exc_info=True)
-            # never leak internal details to client, but surface clean validation messages
-            msg = str(e) if isinstance(e, ValueError) else 'Processing failed. Please retry.'
-            yield f"data: {json.dumps({'stage':'error','message': msg})}\n\n"
+            # Open the stream immediately so proxies start forwarding.
+            yield ": connected\n\n"
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+                    continue
+                if item is None:
+                    break
+                yield item
+        finally:
+            if not producer.done():
+                producer.cancel()
     
     return StreamingResponse(
         event_generator(),

@@ -63,7 +63,8 @@ export async function processPaperStream(
       let isDone = false;
       for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data:')) continue;
+        // SSE comments (`: ping` keepalive) and blanks carry no payload — skip.
+        if (!trimmed || trimmed.startsWith(':') || !trimmed.startsWith('data:')) continue;
         const dataStr = trimmed.slice(5).trim();
 
         if (dataStr === '[DONE]') {
@@ -105,7 +106,8 @@ export async function processPaperStream(
     // surface a real error instead of silently substituting mock data.
     throw new Error('The processing stream ended before results were ready. Please retry.');
   } catch (err) {
-    console.warn('[Pipeline] Backend stream error:', err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn('[Pipeline] Backend stream error:', msg);
     throw err instanceof Error ? err : new Error('Could not reach the processing backend.');
   }
 }

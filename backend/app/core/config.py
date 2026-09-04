@@ -56,7 +56,10 @@ class Settings:
 
     # Vision (architecture-from-image). mistral-small-latest is multimodal on this tier
     # (mistral-large-latest is tier-gated). Override VISION_MODEL to a larger model if upgraded.
+    # VISION_API_KEY_2 mirrors the second Mistral account key so the vision path
+    # participates in the same round-robin rotation as the text path.
     VISION_API_KEY: str = os.getenv("VISION_API_KEY", os.getenv("OCR_KEY", ""))
+    VISION_API_KEY_2: str = os.getenv("VISION_API_KEY_2", os.getenv("MISTRAL_API_KEY_2", ""))
     VISION_API_URL: str = os.getenv("VISION_API_URL", "https://api.mistral.ai/v1/chat/completions")
     VISION_MODEL: str = os.getenv("VISION_MODEL", "mistral-small-latest")
 

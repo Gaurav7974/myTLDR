@@ -128,11 +128,13 @@ export const PixelHeaderGrid: React.FC<PixelHeaderGridProps> = ({
 
       {/* ============ TOP MONOSPACE NAVIGATION (Sits above grid) ============ */}
       <nav className="relative z-10 mx-auto flex h-12 md:h-14 w-full max-w-[1400px] items-center justify-between px-4 md:px-8 pointer-events-auto">
-        {/* Nav Links Stack */}
+        {/* Nav Links Stack — only what the platform needs */}
         <div className="flex items-center gap-1 md:gap-2">
-          {/* Active Home Pill with pixel brackets < > */}
           <button
-            onClick={() => setActiveLink('home')}
+            onClick={() => {
+              setActiveLink('home');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
             className={`flex items-center px-2.5 py-1 font-mono text-[11px] font-bold tracking-wider uppercase transition-all ${
               activeLink === 'home'
                 ? 'bg-[#0055FF] text-white shadow-sm'
@@ -145,38 +147,11 @@ export const PixelHeaderGrid: React.FC<PixelHeaderGridProps> = ({
           </button>
 
           <a
-            href="#how"
-            onClick={() => setActiveLink('about')}
-            className="hidden sm:inline-block px-3 py-1 font-mono text-[11px] font-medium tracking-wider uppercase text-zinc-400 hover:text-white transition-colors"
-          >
-            ABOUT
-          </a>
-
-          <a
-            href="#benchmarks"
+            href="#classics"
             onClick={() => setActiveLink('papers')}
             className="hidden sm:inline-block px-3 py-1 font-mono text-[11px] font-medium tracking-wider uppercase text-zinc-400 hover:text-white transition-colors"
           >
             PAPERS
-          </a>
-
-          <a
-            href="#features"
-            onClick={() => setActiveLink('docs')}
-            className="hidden md:inline-block px-3 py-1 font-mono text-[11px] font-medium tracking-wider uppercase text-zinc-400 hover:text-white transition-colors"
-          >
-            DOCS
-          </a>
-
-          <a
-            href="#benchmarks"
-            onClick={() => setActiveLink('models')}
-            className="hidden lg:flex items-center gap-1.5 px-3 py-1 font-mono text-[11px] font-medium tracking-wider uppercase text-zinc-400 hover:text-white transition-colors"
-          >
-            <span>MODELS</span>
-            <span className="px-1.5 py-0.2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[10px] font-bold rounded-xs">
-              4
-            </span>
           </a>
         </div>
 
@@ -200,18 +175,19 @@ export const PixelHeaderGrid: React.FC<PixelHeaderGridProps> = ({
 
       {/* ============ HERO MID BANNER: BRANDING & SCROLL INDICATOR ============ */}
       <div className="relative z-10 mx-auto w-full max-w-[1400px] px-4 md:px-8 py-5 md:py-7 flex items-center justify-between pointer-events-none">
-        {/* Left Retro Brand Logo */}
+        {/* Left Brand — unified to myTLDR */}
         <div className="flex items-center gap-3 pointer-events-auto">
           <div className="flex items-center gap-2">
-            {/* 4-point geometric spark icon */}
             <div className="w-5 h-5 text-[#0055FF] flex items-center justify-center font-mono font-bold text-lg">
               ✦
             </div>
             <span className="font-sans font-black text-2xl md:text-3xl tracking-tight text-white">
-              PaperScope
+              myTLDR
+            </span>
+            <span className="hidden sm:inline-flex px-2 py-0.5 bg-zinc-900/90 border border-zinc-700/80 text-zinc-300 font-mono text-[10px] font-bold tracking-wider uppercase rounded-xs">
+              Paper Decoder
             </span>
           </div>
-
           <span className="px-2 py-0.5 bg-zinc-900/90 border border-zinc-700/80 text-zinc-400 font-mono text-[10px] font-bold tracking-wider uppercase rounded-xs">
             v1.0-BETA
           </span>
