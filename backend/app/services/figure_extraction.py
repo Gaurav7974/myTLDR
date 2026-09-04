@@ -275,36 +275,56 @@ def is_verified_vision_graph(graph: ArchitectureGraph | None) -> bool:
 
 
 def classify_candidates(figures, paper_title: str = "") -> list[dict]:
-    """Cheap per-candidate vision classifier: architecture_diagram | other + confidence. No new dep."""
+    """Cheap per-candidate vision classifier: architecture_diagram | other + confidence.
+
+    Circuit-breaker: if 2 consecutive figures get 429 (both keys exhausted), stop
+    immediately rather than sleeping through all figures. Max 1 retry per figure
+    to avoid blocking the thread for minutes when rate-limited.
+    """
     if not figures or not settings.VISION_API_KEY: return []
     # Sort main body first (pages 1-15), cap at 8 candidates to limit API call bursts.
-    # The early-stop on high-confidence hits means most papers stop at 1-3 calls anyway.
     sorted_figs = sorted(figures, key=lambda f: (0 if f.page <= 15 else 1, f.page))
     candidate_figs = sorted_figs[:8]
 
-    out=[]
+    out = []
+    consecutive_429s = 0
     for i, fig in enumerate(candidate_figs):
         if not fig.base64: continue
+        # Circuit-breaker: both keys exhausted → stop wasting thread time
+        if consecutive_429s >= 2:
+            log.warning(f"[CLASSIFIER] Circuit breaker tripped after {consecutive_429s} consecutive 429s — aborting classifier early")
+            break
         # Small inter-call sleep to avoid bursting all candidates into the rate limiter
         if i > 0:
             time.sleep(0.5)
         img_url = f"data:image/png;base64,{fig.base64}" if not fig.base64.startswith("data:") else fig.base64
         msgs=[{"role":"system","content":"You are an image classifier."},{"role":"user","content":[{"type":"text","text":"Is this image an architecture/model diagram, or something else (chart, plot, table, photo)? Respond ONLY with valid JSON: {\"label\": \"architecture_diagram\" | \"other\", \"confidence\": 0.0-1.0}"},{"type":"image_url","image_url":{"url":img_url}}]}]
         try:
-            t0=time.time()
-            raw=FigureExtractor()._call_and_parse(msgs)  # reuse retry/timeout logic via new instance
-            # _call_and_parse expects vision prompt shape but works for classifier too
-            label, conf = raw.get("label"), float(raw.get("confidence",0.0) or 0.0)
-            if label not in ("architecture_diagram","other"): label="other"
-            out.append({"figure":fig,"label":label,"confidence":conf,"time":time.time()-t0})
+            t0 = time.time()
+            # max_attempts=1: no retry sleep for classifier — fail fast, try next figure
+            raw = FigureExtractor()._call_and_parse(msgs, max_attempts=1)
+            label, conf = raw.get("label"), float(raw.get("confidence", 0.0) or 0.0)
+            if label not in ("architecture_diagram", "other"): label = "other"
+            out.append({"figure": fig, "label": label, "confidence": conf, "time": time.time() - t0})
             log.info(f"classify {fig.id} p{fig.page} -> {label} {conf:.2f}")
+            consecutive_429s = 0  # reset on success
             if label == "architecture_diagram" and conf >= 0.95 and fig.page <= 15:
                 log.info(f"Found high-confidence architecture diagram ({fig.id}, conf={conf:.2f}) on page {fig.page}. Early stopping classifier.")
                 break
-        except Exception as e: log.warning(f"classify {fig.id} failed: {e}"); out.append({"figure":fig,"label":"other","confidence":0.0})
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str:
+                consecutive_429s += 1
+            else:
+                consecutive_429s = 0
+            log.warning(f"classify {fig.id} failed: {e}")
+            out.append({"figure": fig, "label": "other", "confidence": 0.0})
     # Log distribution
-    try: log.info(f"classify distribution: {','.join(f'{x['confidence']:.2f}' for x in out)}")
-    except Exception: pass
+    try:
+        dist_str = ','.join(f"{x['confidence']:.2f}" for x in out)
+        log.info(f"classify distribution: {dist_str}")
+    except Exception:
+        pass
     return out
 
 def pick_architecture_figure_classifier(figures, paper_title: str = ""):
@@ -427,12 +447,16 @@ class FigureExtractor:
 
         return _parse_verification_payload(raw)
 
-    def _call_and_parse(self, messages: list, is_verification: bool = False) -> dict:
+    def _call_and_parse(self, messages: list, is_verification: bool = False, max_attempts: int = 0) -> dict:
         """POST to the vision LLM and return the JSON object from its reply.
 
         Picks the next API key in the round-robin on every call so both Mistral
         accounts share the quota. On a 429 it immediately rotates to the other
         key before sleeping, maximising the chance the retry succeeds.
+
+        Args:
+            max_attempts: Override retry count. 0 = use settings.LLM_MAX_RETRIES.
+                          Pass 1 for classifier calls (fail fast, no sleep).
         """
         payload = {
             "model": settings.VISION_MODEL,
@@ -441,11 +465,12 @@ class FigureExtractor:
             "response_format": {"type": "json_object"},
         }
         last_err: Exception | None = None
-        max_attempts = max(settings.LLM_MAX_RETRIES, 3)
+        effective_attempts = max_attempts if max_attempts > 0 else max(settings.LLM_MAX_RETRIES, 3)
+
         # Pick key once at call-start; rotate again on 429
         api_key = _next_vision_key() if _vision_keys else ""
         key_hint = f" (key ...{api_key[-6:]})" if len(_vision_keys) > 1 else ""
-        for attempt in range(max_attempts):
+        for attempt in range(effective_attempts):
             try:
                 resp = requests.post(
                     settings.VISION_API_URL,
@@ -454,11 +479,11 @@ class FigureExtractor:
                         "Content-Type": "application/json",
                     },
                     json=payload,
-                    timeout=45,
+                    timeout=120,
                 )
                 if resp.status_code == 429:
                     last_err = requests.exceptions.HTTPError("429 Too Many Requests", response=resp)
-                    if attempt < max_attempts - 1:
+                    if attempt < effective_attempts - 1:
                         wait = settings.LLM_RETRY_BACKOFF_BASE * (attempt + 1)
                         log.warning(f"[RATE LIMIT] Vision 429{key_hint} — waiting {wait}s, rotating key...")
                         time.sleep(wait)
@@ -488,9 +513,9 @@ class FigureExtractor:
                 last_err = e
                 # Only retry transient HTTP errors, not JSON validation
                 status = getattr(getattr(e, "response", None), "status_code", None)
-                if status not in (429, 502, 503, 504) and not isinstance(e, requests.exceptions.ConnectionError):
+                if status not in (429, 502, 503, 504) and not isinstance(e, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)):
                     break
-                if attempt < max_attempts - 1:
+                if attempt < effective_attempts - 1:
                     time.sleep(settings.LLM_RETRY_BACKOFF_BASE * (attempt + 1))
                     continue
                 break
@@ -501,6 +526,7 @@ class FigureExtractor:
         raise RuntimeError(
             f"vision {'verification' if is_verification else 'extraction'} failed: {last_err}"
         )
+
 
 
 figure_extractor = FigureExtractor()

@@ -46,8 +46,14 @@ Thumbs.db
 
 # Generated artifacts
 architecture.html
+platform-architecture.*
+tldr.html
 summary_reference.txt
 test.md
+CONTEXT.md
+imgs/
+*.pdf
+*.db
 
 # Local audit docs (not for public repo)
 improve-codebase.md

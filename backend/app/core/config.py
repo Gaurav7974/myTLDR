@@ -38,10 +38,9 @@ class Settings:
     MISTRAL_API_KEY: str = os.getenv("OCR_KEY", "")
     MISTRAL_API_KEY_2: str = os.getenv("MISTRAL_API_KEY_2", "")
     MISTRAL_LLM_URL: str = "https://api.mistral.ai/v1/chat/completions"
-    # Default is mistral-small-latest: it is the strongest multimodal Mistral model
-    # available on the standard (non-enterprise) tier. mistral-large-latest is gated to
-    # a higher subscription tier (returns 403). Override via MISTRAL_LLM_MODEL if you upgrade.
-    MISTRAL_LLM_MODEL: str = os.getenv("MISTRAL_LLM_MODEL", "mistral-small-latest")
+    # Default is ministral-8b-latest: multimodal (vision + text), 128k context,
+    # 188 req/min quota per key on standard tier. mistral-small-latest is rate-limited to 0.
+    MISTRAL_LLM_MODEL: str = os.getenv("MISTRAL_LLM_MODEL", "ministral-8b-latest")
 
     # Mistral OCR
     MISTRAL_OCR_URL: str = "https://api.mistral.ai/v1/ocr"
@@ -54,14 +53,13 @@ class Settings:
     MAX_INLINE_IMAGES: int = 20
     MAX_INLINE_IMAGE_KB: int = 2048
 
-    # Vision (architecture-from-image). mistral-small-latest is multimodal on this tier
-    # (mistral-large-latest is tier-gated). Override VISION_MODEL to a larger model if upgraded.
+    # Vision (architecture-from-image). ministral-8b-latest is multimodal with full bounding box support.
     # VISION_API_KEY_2 mirrors the second Mistral account key so the vision path
     # participates in the same round-robin rotation as the text path.
     VISION_API_KEY: str = os.getenv("VISION_API_KEY", os.getenv("OCR_KEY", ""))
     VISION_API_KEY_2: str = os.getenv("VISION_API_KEY_2", os.getenv("MISTRAL_API_KEY_2", ""))
     VISION_API_URL: str = os.getenv("VISION_API_URL", "https://api.mistral.ai/v1/chat/completions")
-    VISION_MODEL: str = os.getenv("VISION_MODEL", "mistral-small-latest")
+    VISION_MODEL: str = os.getenv("VISION_MODEL", "ministral-8b-latest")
 
     # Optional Groq fallback for the TEXT path only (Groq is text-only: no vision/OCR).
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")

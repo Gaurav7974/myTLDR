@@ -2,6 +2,6 @@
 builder = "RAILPACK"
 
 [deploy]
-startCommand = "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2"
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --timeout-keep-alive 300 --limit-concurrency 20"
 healthcheckPath = "/health"
 healthcheckTimeout = 100

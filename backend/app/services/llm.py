@@ -123,7 +123,7 @@ class ChatClient:
                             "Content-Type": "application/json",
                         },
                         json=payload,
-                        timeout=45,
+                        timeout=120,
                     )
                 if resp.status_code == 429:
                     wait = self.backoff_base * (attempt + 1)
