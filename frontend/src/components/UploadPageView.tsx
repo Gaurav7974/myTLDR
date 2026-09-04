@@ -9,6 +9,7 @@ import { PixelMosaic } from '@/components/PixelMosaic';
 import { PixelHeaderGrid } from '@/components/PixelHeaderGrid';
 import { Reveal } from '@/components/Reveal';
 import { Typewriter, TypeOnce } from '@/components/Typewriter';
+import { UglyShrimpLoader } from '@/components/UglyShrimpLoader';
 // Physics wall is canvas-only with theme-dependent first render — keep it
 // client-side so SSR HTML never mismatches (was: hydration error).
 const StickerWall = dynamic(() => import('@/components/StickerWall'), {
@@ -23,7 +24,6 @@ import {
   MessageSquare,
   Network,
   Paperclip,
-  Sparkles,
 } from 'lucide-react';
 
 interface UploadPageViewProps {
@@ -533,8 +533,8 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
 
                 {/* Subtitle: dynamic backend message */}
                 <div className="flex items-center justify-between font-mono text-[11px] text-ink/70">
-                  <span className="truncate flex items-center gap-1.5">
-                    <Sparkles className="h-3 w-3 shrink-0 text-volt animate-spin" />
+                  <span className="truncate flex items-center gap-2">
+                    <UglyShrimpLoader size="sm" />
                     {progressStatus || 'Deconstructing paper...'}
                   </span>
                   <span className="shrink-0 text-[10px] text-fog pl-2 font-bold">
