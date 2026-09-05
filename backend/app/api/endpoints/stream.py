@@ -52,7 +52,11 @@ async def stream_paper(
 
     # Stream file with incremental cap (avoid loading 1GB into memory)
     file_bytes = None
-    if file:
+    if source == "upload":
+        if not file:
+            raise HTTPException(status_code=400, detail="No file provided")
+        if not file.filename or not file.filename.lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail="Invalid file type: Only PDF documents (.pdf) are supported.")
         max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
         chunks = []
         total = 0
@@ -65,6 +69,24 @@ async def stream_paper(
                 raise HTTPException(status_code=413, detail=f"File too large (max {settings.MAX_UPLOAD_SIZE_MB}MB)")
             chunks.append(chunk)
         file_bytes = b"".join(chunks) if chunks else None
+        if not file_bytes:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+        if not file_bytes.lstrip().startswith(b"%PDF-"):
+            raise HTTPException(status_code=400, detail="Uploaded file is not a valid PDF (missing %PDF header)")
+        try:
+            import pymupdf
+            doc = pymupdf.open(stream=file_bytes, filetype="pdf")
+            p_count = len(doc)
+            doc.close()
+            if p_count > settings.MAX_PDF_PAGES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Paper has {p_count} pages, which exceeds the {settings.MAX_PDF_PAGES}-page limit. Please provide a paper with {settings.MAX_PDF_PAGES} pages or fewer."
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            log.warning(f"Could not inspect PDF page count in stream: {e}")
     
     log.info(f"stream start source={source} difficulty={difficulty_level} url={sanitized_url} file={bool(file_bytes)}")
 

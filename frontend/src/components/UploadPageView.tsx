@@ -216,22 +216,11 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
   const detectedArxiv = useMemo(() => {
     const trimmed = url.trim();
     if (!trimmed || !isArxivInput(trimmed)) return null;
-    if (trimmed.includes('1706.03762')) {
-      return { title: 'Attention Is All You Need', authors: 'Ashish Vaswani, Noam Shazeer, et al.' };
-    }
-    if (trimmed.includes('2307.09288')) {
-      return { title: 'Llama 2: Open Foundation and Fine-Tuned Chat Models', authors: 'Hugo Touvron et al.' };
-    }
-    if (trimmed.includes('2312.00752')) {
-      return { title: 'Mamba: Linear-Time Sequence Modeling with Selective State Spaces', authors: 'Albert Gu, Tri Dao' };
-    }
-    if (trimmed.includes('2106.09685')) {
-      return { title: 'LoRA: Low-Rank Adaptation of Large Language Models', authors: 'Edward J. Hu et al.' };
-    }
-    if (trimmed.match(/\d{4}\.\d{4,5}/)) {
-      return { title: `arXiv Paper: ${trimmed}`, authors: 'Ready for parsing, OCR and diagram extraction' };
-    }
-    return null;
+    const match = trimmed.match(/(\d{4}\.\d{4,5}(?:v\d+)?|[a-zA-Z\-]+(?:\.[a-zA-Z\-]+)?\/\d{7}(?:v\d+)?)/)?.[1];
+    return {
+      title: match ? `arXiv:${match}` : 'arXiv Research Paper',
+      authors: 'arXiv paper link verified — ready for extraction and deconstruction',
+    };
   }, [url]);
 
   const handleUrlSubmit = async (e: React.FormEvent) => {
@@ -286,6 +275,17 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
   const handleFileProcess = async (file: File) => {
     // One ingestion at a time: ignore file drops while a URL parse is running.
     if (isProcessing) return;
+
+    if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+      setSubmitError("Invalid file type: Only PDF research papers (.pdf) are supported. Please upload a .pdf file.");
+      return;
+    }
+
+    if (file.size > 25 * 1024 * 1024) {
+      setSubmitError("File too large: Maximum supported paper size is 25MB.");
+      return;
+    }
+
     setIsProcessing(true);
     setSubmitError(null);
     setProgressPercent(1);
@@ -344,7 +344,7 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
       <input
         type="file"
         ref={fileInputRef}
-        accept=".pdf,.md"
+        accept=".pdf,application/pdf"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -469,7 +469,7 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isProcessing}
                 className="flex items-center gap-1.5 border-l-2 border-ink px-3.5 font-mono text-[11px] font-bold tracking-[0.08em] text-ink/70 transition-colors hover:bg-band hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-                title="Attach a PDF or Markdown file"
+                title="Attach a PDF research paper"
               >
                 <Paperclip className="h-4 w-4" />
                 <span className="hidden sm:inline">PDF</span>

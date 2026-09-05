@@ -348,7 +348,13 @@ async def test_pipeline_cache_hit_returns_full_payload():
          patch("app.services.pipeline.rag_service.index_paper", new_callable=AsyncMock):
 
         mock_extraction = MagicMock()
-        mock_extraction.text = "This is a valid research paper text exceeding one hundred characters easily for extraction test purposes."
+        mock_extraction.text = (
+            "Title: Neural Network Transformers\n"
+            "Abstract\nWe present a novel neural architecture based on attention.\n"
+            "1 Introduction\nDeep learning models have excelled [1].\n"
+            "3 Methodology\nThe architecture uses multi-head attention.\n"
+            "References\n[1] Vaswani et al., 2017."
+        )
         mock_extraction.figures = []
         mock_extraction.page_count = 1
         mock_extraction.pages = []
@@ -374,3 +380,35 @@ async def test_pipeline_cache_hit_returns_full_payload():
         assert done_event.get("code_snippets")[0]["title"] == "model.py"
         assert done_event.get("architecture_ir") is not None
         assert done_event.get("bycroft_stages") == []
+
+
+@pytest.mark.asyncio
+async def test_pipeline_rejects_non_academic_upload():
+    from app.services.pipeline import process_paper
+    from unittest.mock import AsyncMock, patch
+
+    mock_db = AsyncMock()
+    with patch("app.services.pipeline.text_extractor.extract_from_pdf_bytes") as mock_extract:
+        mock_extraction = MagicMock()
+        mock_extraction.text = (
+            "TAX INVOICE\n"
+            "Invoice Number: INV-2024-001\n"
+            "Billing Address: 123 Main St\n"
+            "Total Due: $500.00\n"
+            "Payment Method: Credit Card\n"
+        )
+        mock_extraction.figures = []
+        mock_extraction.page_count = 1
+        mock_extraction.pages = []
+        mock_extract.return_value = mock_extraction
+
+        events = []
+        fake_pdf = b"%PDF-1.5 fake pdf invoice"
+        async for event in process_paper(source_type="upload", file_bytes=fake_pdf, url=None, difficulty="intermediate", db=mock_db):
+            events.append(event)
+
+        error_event = next((e for e in events if e.get("stage") == "error"), None)
+        assert error_event is not None
+        assert "not appear to be an academic research paper" in error_event.get("message", "")
+        # Ensure it halted immediately and never completed
+        assert not any(e.get("stage") == "done" for e in events)

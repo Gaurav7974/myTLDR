@@ -100,10 +100,10 @@ export const PaperInputModal: React.FC<PaperInputModalProps> = ({
               <FileUp className="w-4 h-4" />
             </div>
             <p className="text-xs font-semibold text-zinc-800">
-              Drag & drop your PDF or Markdown file here
+              Drag & drop your PDF research paper here
             </p>
             <p className="text-[11px] text-zinc-400 font-mono mt-0.5">
-              Supports .pdf and .md up to 30 pages (max 25MB)
+              Supports PDF research papers up to 30 pages (max 25MB)
             </p>
           </div>
 

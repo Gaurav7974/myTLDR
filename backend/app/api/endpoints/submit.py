@@ -33,6 +33,8 @@ async def submit_paper(
     if source == "upload":
         if not file:
             raise HTTPException(status_code=400, detail="No file provided")
+        if not file.filename or not file.filename.lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail="Invalid file type: Only PDF documents (.pdf) are supported.")
         max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
         total = 0
         chunks = []
@@ -46,21 +48,24 @@ async def submit_paper(
             chunks.append(chunk)
 
         file_bytes = b"".join(chunks)
-        if file_bytes.lstrip()[:5] == b"%PDF-":
-            try:
-                import pymupdf
-                doc = pymupdf.open(stream=file_bytes, filetype="pdf")
-                p_count = len(doc)
-                doc.close()
-                if p_count > settings.MAX_PDF_PAGES:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Paper has {p_count} pages, which exceeds the {settings.MAX_PDF_PAGES}-page limit. Please provide a paper with {settings.MAX_PDF_PAGES} pages or fewer."
-                    )
-            except HTTPException:
-                raise
-            except Exception as e:
-                log.warning(f"Could not inspect PDF page count in submit: {e}")
+        if not file_bytes:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+        if not file_bytes.lstrip().startswith(b"%PDF-"):
+            raise HTTPException(status_code=400, detail="Uploaded file is not a valid PDF (missing %PDF header)")
+        try:
+            import pymupdf
+            doc = pymupdf.open(stream=file_bytes, filetype="pdf")
+            p_count = len(doc)
+            doc.close()
+            if p_count > settings.MAX_PDF_PAGES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Paper has {p_count} pages, which exceeds the {settings.MAX_PDF_PAGES}-page limit. Please provide a paper with {settings.MAX_PDF_PAGES} pages or fewer."
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            log.warning(f"Could not inspect PDF page count in submit: {e}")
 
         return {"status": "received", "source": "upload", "filename": file.filename}
 

@@ -22,6 +22,7 @@ from app.services.graph_merge import (
 )
 from app.services.cache import cache_service, compute_content_hash
 from app.services.rag import rag_service
+from app.services.paper_validator import paper_validator
 
 
 async def process_paper(
@@ -69,6 +70,17 @@ async def process_paper(
     if not full_text or len(full_text.strip()) < 100:
         yield {"stage": "error", "message": "Could not extract meaningful text from the paper"}
         return
+
+    # ── Academic research paper verification (upload gate) ──
+    if source_type == "upload":
+        is_paper, reject_reason = await asyncio.to_thread(paper_validator.validate_research_paper, full_text)
+        if not is_paper:
+            log.warning(f"[PIPELINE] Upload rejected as non-academic: {reject_reason}")
+            yield {
+                "stage": "error",
+                "message": f"Uploaded document does not appear to be an academic research paper: {reject_reason}. Please upload a scientific or academic paper (PDF)."
+            }
+            return
     
     if not metadata.get("title"):
         try: metadata.update(await asyncio.to_thread(text_extractor.extract_paper_metadata_from_text, full_text))

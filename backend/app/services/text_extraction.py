@@ -416,22 +416,22 @@ Respond ONLY with a valid JSON object matching:
                 ]
             )
             return {
-                "title": res.get("title") or "Uploaded Research Paper",
-                "authors": res.get("authors") or ["Lead Author et al."],
+                "title": res.get("title") or "Research Paper",
+                "authors": res.get("authors") or [],
                 "abstract": res.get("abstract") or "",
-                "published": str(res.get("published_year") or "Recent"),
-                "categories": res.get("categories") or ["Artificial Intelligence"]
+                "published": str(res.get("published_year") or ""),
+                "categories": res.get("categories") or []
             }
         except Exception as e:
             log.warning(f"[WARN] LLM metadata extraction failed: {e}")
             lines = [l.strip() for l in first_page.split("\n") if len(l.strip()) > 5]
-            guessed_title = lines[0] if lines else "Uploaded Research Paper"
+            guessed_title = lines[0] if lines else "Research Paper"
             return {
                 "title": guessed_title,
-                "authors": ["Research Team"],
+                "authors": [],
                 "abstract": "",
-                "published": "Recent",
-                "categories": ["Machine Learning"]
+                "published": "",
+                "categories": []
             }
     
     # ── LLM-based architecture section detection (Fix #2) ──────────

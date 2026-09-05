@@ -29,8 +29,8 @@ class IRValidator:
             arch_meta["name"] = "Neural Architecture"
             notices.append("Defaulted missing architecture name")
         if not arch_meta.get("paradigm"):
-            arch_meta["paradigm"] = "transformer"
-            notices.append("Defaulted paradigm to 'transformer'")
+            arch_meta["paradigm"] = "other"
+            notices.append("Set missing paradigm to 'other'")
 
         # 2. Node validation & taxonomy enforcement
         raw_nodes = raw_data.get("nodes", [])

@@ -26,11 +26,11 @@ export async function GET(request: NextRequest) {
       targetUrl = `https://arxiv.org/pdf/${match[1]}.pdf`;
     } else if (arxivId.startsWith('http://') || arxivId.startsWith('https://')) {
       if (!isAllowedUrl(arxivId)) {
-        return NextResponse.json({ error: 'URL not allowed' }, { status: 400 });
+        return NextResponse.json({ error: 'URL not allowed: only arxiv.org is permitted' }, { status: 400 });
       }
       targetUrl = arxivId;
     } else {
-      targetUrl = 'https://arxiv.org/pdf/1706.03762.pdf';
+      return NextResponse.json({ error: `Invalid arXiv identifier: "${arxivId}"` }, { status: 400 });
     }
   } else if (customUrl) {
     const match = customUrl.match(/(\d{4}\.\d{4,5})/);
@@ -38,12 +38,12 @@ export async function GET(request: NextRequest) {
       targetUrl = `https://arxiv.org/pdf/${match[1]}.pdf`;
     } else {
       if (!isAllowedUrl(customUrl)) {
-        return NextResponse.json({ error: 'URL not allowed' }, { status: 400 });
+        return NextResponse.json({ error: 'URL not allowed: only arxiv.org is permitted' }, { status: 400 });
       }
       targetUrl = customUrl;
     }
   } else {
-    targetUrl = 'https://arxiv.org/pdf/1706.03762.pdf';
+    return NextResponse.json({ error: 'Missing parameter: arxivId or url is required' }, { status: 400 });
   }
 
   try {
