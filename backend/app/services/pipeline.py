@@ -30,7 +30,7 @@ async def process_paper(
     file_bytes: bytes | None,
     url: str | None,
     difficulty: str,
-    db: AsyncSession
+    db: AsyncSession | None
 ) -> AsyncGenerator[dict, None]:
     """
     Process a paper through the full pipeline.

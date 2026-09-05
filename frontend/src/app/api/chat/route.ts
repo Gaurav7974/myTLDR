@@ -24,6 +24,7 @@ interface ChatRequestBody {
   query: string;
   history?: Array<{ sender: string; text: string }>;
   difficulty?: string;
+  full_text?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -36,6 +37,7 @@ export async function POST(req: NextRequest) {
       query,
       difficulty = 'intermediate'
     } = body;
+    const full_text = typeof body.full_text === 'string' ? body.full_text.slice(0, 12000) : undefined;
 
     const effectiveHash = paper_hash || paper_id || '';
     const effectiveTitle = paper_title || 'Research Paper';
@@ -75,6 +77,7 @@ export async function POST(req: NextRequest) {
           query: query.trim(),
           history: body.history || [],
           difficulty,
+          ...(full_text ? { full_text } : {}),
         }),
         signal: AbortSignal.timeout(25000), // 25s timeout for deep LLM synthesis
       });

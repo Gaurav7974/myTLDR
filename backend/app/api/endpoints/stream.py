@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import get_db
+from app.core.database import get_db_optional
 from app.core.config import settings
 from app.core.security import limiter, sanitize_arxiv_id, validate_and_sanitize_url, verify_api_key
 from app.core.logger import get_logger
@@ -27,7 +27,7 @@ async def stream_paper(
     url: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     api_key: Optional[str] = Depends(verify_api_key),
-    db: AsyncSession = Depends(get_db)
+    db: Optional[AsyncSession] = Depends(get_db_optional)
 ):
     """
     Stream paper processing results via SSE.

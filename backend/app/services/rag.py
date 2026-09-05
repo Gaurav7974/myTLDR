@@ -417,17 +417,28 @@ class RAGService:
         citations = await self.retrieve_chunks(db, paper_hash, query, top_k=5)
 
         if not citations:
-            # Structured response that the frontend can act on
+            # Distinguish "paper not indexed yet" from "query out of scope":
+            # the frontend shows an indexing spinner only for the former.
+            if paper_hash not in _MEMORY_CHUNK_STORE or not _MEMORY_CHUNK_STORE.get(paper_hash):
+                return {
+                    "answer": (
+                        "I couldn't find relevant passages in this paper for your question. "
+                        "This may be because the paper is still being indexed — please try again in a few seconds. "
+                        "You can also try more specific questions like: "
+                        "\"What is the main contribution?\", \"Explain the training procedure\", or "
+                        "\"What datasets were used?\""
+                    ),
+                    "citations": [],
+                    "indexing_in_progress": True,
+                }
+            safe_title = _sanitize_paper_title(paper_title)
             return {
                 "answer": (
-                    "I couldn't find relevant passages in this paper for your question. "
-                    "This may be because the paper is still being indexed — please try again in a few seconds. "
-                    "You can also try more specific questions like: "
-                    "\"What is the main contribution?\", \"Explain the training procedure\", or "
-                    "\"What datasets were used?\""
+                    f"I can only answer questions about '{safe_title}'. "
+                    "Your question doesn't match any passage in this paper. Try: "
+                    "'What is the main contribution?' or 'Explain the key mechanism.'"
                 ),
                 "citations": [],
-                "indexing_in_progress": True,
             }
 
         # Step 3: Format grounded context for LLM

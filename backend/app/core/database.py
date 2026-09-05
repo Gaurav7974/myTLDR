@@ -57,3 +57,30 @@ async def get_db():
     except Exception as e:
         log.warning(f"DB connection failed: {e}")
         raise HTTPException(status_code=503, detail="Database temporarily unavailable")
+
+
+async def get_db_optional():
+    """Yield a session or None without raising.
+
+    Used by endpoints (e.g. /api/stream) that must run input validation
+    even when the database is down. Cache/rag layers already degrade to
+    in-memory fallbacks when db is None.
+    """
+    try:
+        async with async_session() as session:
+            try:
+                yield session
+            except Exception:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
+                yield None
+            finally:
+                try:
+                    await session.close()
+                except Exception:
+                    pass
+    except Exception as e:
+        log.warning(f"DB connection failed (optional): {e}")
+        yield None

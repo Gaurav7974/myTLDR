@@ -173,12 +173,14 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
 
     try {
       // Always use contentHash — this is the key the backend indexed chunks under.
-      // If contentHash is missing, log a warning (BM25 fallback will still work
-      // if the paper was processed in this session).
-      const paperHash = paper.metadata.contentHash;
+      // Fall back to arxivId so demo papers share one cache entry; when no
+      // hash exists at all, also send paper text so the backend can run
+      // on-the-fly BM25 instead of returning "still being indexed".
+      const paperHash = paper.metadata.contentHash || paper.metadata.arxivId || '';
       if (!paperHash) {
         console.warn('[AIChatTab] contentHash missing from paper metadata — RAG will use BM25 fallback only');
       }
+      const fullText = paper.markdownContent ? paper.markdownContent.slice(0, 12000) : undefined;
 
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -193,6 +195,7 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
             content: m.text,
           })),
           difficulty: 'intermediate',
+          ...(fullText ? { full_text: fullText } : {}),
         })
       });
 
