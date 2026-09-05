@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { PaperData } from '@/types/paper';
 import { TRANSFORMER_PAPER_DATA, MAMBA_PAPER_DATA, generateDynamicPaperData } from '@/lib/mockData';
-import { processPaperStream } from '@/lib/api';
+import { processPaperStream, lookupArxiv, ArxivLookup } from '@/lib/api';
 import { PixelMosaic } from '@/components/PixelMosaic';
 import { PixelHeaderGrid } from '@/components/PixelHeaderGrid';
 import { Reveal } from '@/components/Reveal';
@@ -212,16 +212,55 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
     return trimmed.length > 0 && !isArxivInput(trimmed);
   }, [url]);
 
-  // Detected arXiv preview when typing
-  const detectedArxiv = useMemo(() => {
+  // Identity verification: resolve the typed ID against arXiv (debounced) so
+  // the user confirms the REAL title before we stream a deconstruction.
+  // A typo'd-but-valid ID would otherwise silently decode the wrong paper.
+  const [lookup, setLookup] = useState<ArxivLookup | null>(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+
+  useEffect(() => {
     const trimmed = url.trim();
-    if (!trimmed || !isArxivInput(trimmed)) return null;
-    const match = trimmed.match(/(\d{4}\.\d{4,5}(?:v\d+)?|[a-zA-Z\-]+(?:\.[a-zA-Z\-]+)?\/\d{7}(?:v\d+)?)/)?.[1];
-    return {
-      title: match ? `arXiv:${match}` : 'arXiv Research Paper',
-      authors: 'arXiv paper link verified — ready for extraction and deconstruction',
+    if (!trimmed || !isArxivInput(trimmed) || isProcessing) {
+      setLookup(null);
+      setLookupError(null);
+      setLookupLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLookup(null);
+    setLookupError(null);
+    setLookupLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const meta = await lookupArxiv(trimmed);
+        if (!cancelled) {
+          setLookup(meta);
+          setLookupError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLookup(null);
+          setLookupError(err instanceof Error ? err.message : 'arXiv lookup failed.');
+        }
+      } finally {
+        if (!cancelled) setLookupLoading(false);
+      }
+    }, 600);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
     };
-  }, [url]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url, isProcessing]);
+
+  // Lookup is confirmed only when it resolved AND still matches the input —
+  // typing a new ID after verification must re-verify, never reuse.
+  const isLookupConfirmed = useMemo(() => {
+    if (!lookup || lookupError) return false;
+    const trimmed = url.trim();
+    return !!trimmed && trimmed.includes(lookup.arxiv_id);
+  }, [lookup, lookupError, url]);
 
   const handleUrlSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -229,6 +268,15 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
 
     if (!isArxivInput(url)) {
       setSubmitError("Invalid URL: Only arXiv papers are supported (e.g. 1706.03762 or https://arxiv.org/abs/1706.03762). Please try again.");
+      return;
+    }
+
+    if (!isLookupConfirmed) {
+      setSubmitError(
+        lookupError
+          ? `arXiv lookup failed: ${lookupError} — check the ID for typos and try again.`
+          : "Verifying this arXiv ID… please wait for the paper identity check to finish."
+      );
       return;
     }
 
@@ -476,7 +524,7 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
               </button>
               <button
                 type="submit"
-                disabled={!url.trim() || isInvalidUrl || isProcessing}
+                disabled={!url.trim() || isInvalidUrl || isProcessing || (!!url.trim() && !isInvalidUrl && !isLookupConfirmed)}
                 className="flex items-center gap-2 border-l-2 border-ink bg-ink px-5 font-mono text-xs font-bold tracking-[0.14em] text-white transition-colors hover:bg-volt disabled:cursor-not-allowed disabled:opacity-40 md:px-7"
               >
                 {isProcessing ? 'PARSING' : 'EXPLAIN'}
@@ -492,13 +540,35 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
               </div>
             )}
 
-            {/* Detected paper preview */}
-            {detectedArxiv && !isProcessing && (
-              <div className="flex items-start gap-2.5 border-2 border-ink/20 bg-white px-3.5 py-2.5 animate-fadeIn">
-                <FileText className="mt-0.5 h-4 w-4 shrink-0 text-volt" />
+            {/* Verified paper identity (replaces the old ID-echo preview):
+                shows the REAL title from arXiv so a typo'd ID can't
+                silently deconstruct the wrong paper. */}
+            {lookupLoading && !isProcessing && (
+              <div className="flex items-center gap-2 border-2 border-ink/20 bg-white px-3.5 py-2.5 font-mono text-xs text-fog animate-fadeIn">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-volt opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-volt"></span>
+                </span>
+                <span>Verifying arXiv ID…</span>
+              </div>
+            )}
+            {lookupError && !isProcessing && (
+              <div className="flex items-center gap-2 border-2 border-red-500 bg-red-50 px-3.5 py-2.5 text-xs font-mono text-red-700 animate-fadeIn">
+                <span className="font-bold shrink-0">⚠ ID NOT FOUND:</span>
+                <span>{lookupError}</span>
+              </div>
+            )}
+            {lookup && !lookupError && !isProcessing && (
+              <div className="flex items-start gap-2.5 border-2 border-emerald-600 bg-emerald-50 px-3.5 py-2.5 animate-fadeIn">
+                <FileText className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
                 <div className="min-w-0">
-                  <p className="truncate font-mono text-xs font-bold text-ink">{detectedArxiv.title}</p>
-                  <p className="truncate font-mono text-[11px] text-fog">{detectedArxiv.authors}</p>
+                  <p className="font-mono text-xs font-bold text-ink">Found: {lookup.title}</p>
+                  <p className="truncate font-mono text-[11px] text-fog">
+                    {lookup.authors.slice(0, 3).join(', ')}{lookup.authors.length > 3 ? ' et al.' : ''} · arXiv:{lookup.arxiv_id}
+                  </p>
+                  <p className="font-mono text-[11px] font-bold text-emerald-700">
+                    ✓ Identity verified — EXPLAIN will deconstruct this paper.
+                  </p>
                 </div>
               </div>
             )}

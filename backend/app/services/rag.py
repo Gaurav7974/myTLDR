@@ -198,7 +198,7 @@ def bm25_keyword_search(
         reverse=True,
     )[:top_k]
 
-    return [
+    out = [
         {
             "section_title": r["chunk"]["section_title"] or "Relevant Section",
             "content": r["chunk"]["content"],
@@ -206,6 +206,10 @@ def bm25_keyword_search(
         }
         for r in ranked
     ]
+    # Same relevance floor as the vector paths: weak keyword matches must not
+    # become citations. Below-threshold queries fall through to the refusal
+    # path in answer_question instead of producing forced-fit citations.
+    return [c for c in out if c["similarity"] >= RELEVANCE_THRESHOLD]
 
 
 # ── In-memory chunk store (also used for keyword fallback) ───────────────────
@@ -462,6 +466,11 @@ For out-of-scope, politely decline: "I can only answer questions about '{safe_ti
 <grounding_and_citations>
 Your only truth is the retrieved chunks below. Cite as [Source 1 - Section Title].
 Never invent numbers, architecture details, or results not present in the context.
+Numbers rule: every number, percentage, table value, or measurement in your answer
+MUST appear verbatim in the cited chunk. Never derive, interpolate, or convert
+numbers (e.g. never turn a top-5 error into a top-1 error, never subtract error
+rates across tables). If the exact number is not in the context, say the paper
+does not report it instead of computing it.
 </grounding_and_citations>
 
 <refusal_handling>

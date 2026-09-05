@@ -339,15 +339,39 @@ class TextExtractor:
         return self.download_pdf(url)
     
     def get_arxiv_metadata(self, arxiv_id: str) -> dict:
-        """Fetch paper metadata from arXiv API with sanitized ID."""
+        """Fetch paper metadata from arXiv API with sanitized ID.
+
+        Raises:
+            ValueError: if arXiv returns no entry (nonexistent ID), if the
+                returned entry's canonical ID differs from the requested one
+                (never silently deconstruct the wrong paper), or if no usable
+                title is present.
+        """
         clean_id = sanitize_arxiv_id(arxiv_id)
+        requested_base = re.sub(r'v\d+$', '', clean_id)
         self._rate_limit_arxiv()
         url = f"http://export.arxiv.org/api/query?id_list={clean_id}"
         resp = requests.get(url, timeout=30, headers={
             "User-Agent": settings.ARXIV_USER_AGENT
         })
         resp.raise_for_status()
-        return self._parse_arxiv_xml(resp.text)
+        meta = self._parse_arxiv_xml(resp.text)
+        if not meta.get("arxiv_id_base"):
+            raise ValueError(
+                f"arXiv ID '{clean_id}' does not match any known paper. "
+                "Check the ID for typos and try again."
+            )
+        if meta["arxiv_id_base"] != requested_base:
+            raise ValueError(
+                f"arXiv returned a different paper ({meta['arxiv_id_base']}) "
+                f"than requested ({requested_base}). Refusing to continue."
+            )
+        if not meta.get("title"):
+            raise ValueError(
+                f"arXiv returned no title for '{clean_id}'. "
+                "The paper may be unavailable; try again later."
+            )
+        return meta
     
     def _rate_limit_arxiv(self):
         """Enforce rate limiting for arXiv API (sync — caller must be in to_thread)."""
@@ -367,10 +391,18 @@ class TextExtractor:
         
         root = ET.fromstring(xml_text)
         entry = root.find("atom:entry", ns)
-        
+
         if entry is None:
-            return {"title": "", "authors": [], "abstract": "", "categories": []}
-        
+            return {"title": "", "authors": [], "abstract": "", "categories": [], "arxiv_id": "", "arxiv_id_base": ""}
+
+        id_el = entry.find("atom:id", ns)
+        canonical_id = ""
+        if id_el is not None and id_el.text:
+            # Entry id looks like http://arxiv.org/abs/1512.03386v2
+            id_match = re.search(r'(\d{4}\.\d{4,5})(v\d+)?$', id_el.text.strip())
+            if id_match:
+                canonical_id = id_match.group(1)
+
         title = entry.find("atom:title", ns)
         summary = entry.find("atom:summary", ns)
         
@@ -388,7 +420,9 @@ class TextExtractor:
             "title": title.text.strip() if title is not None else "",
             "authors": authors,
             "abstract": summary.text.strip() if summary is not None else "",
-            "categories": categories
+            "categories": categories,
+            "arxiv_id": canonical_id,
+            "arxiv_id_base": canonical_id,
         }
     
     def extract_paper_metadata_from_text(self, text: str) -> dict:

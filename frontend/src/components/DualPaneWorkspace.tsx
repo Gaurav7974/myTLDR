@@ -349,8 +349,27 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
   const [copiedBibtex, setCopiedBibtex] = useState(false);
   const [citeDropdownOpen, setCiteDropdownOpen] = useState(false);
   const [pdfLoadError, setPdfLoadError] = useState(false);
+  const [pdfLoaded, setPdfLoaded] = useState(false);
   const [pdfPage, setPdfPage] = useState<number>(1);
   const [pdfJumpNotice, setPdfJumpNotice] = useState<string | null>(null);
+
+  // Embedded-PDF watchdog: remote hosts (notably arXiv, X-Frame-Options:
+  // SAMEORIGIN) can block iframing without firing iframe onError, leaving a
+  // permanent blank pane. If onLoad hasn't fired within the window, fall back
+  // to the existing "Open on arXiv / Parsed Text" panel instead of blank.
+  const pdfSrc = paper.metadata.fileBlobUrl || paper.metadata.pdfUrl || null;
+  useEffect(() => {
+    if (leftViewMode !== 'pdf' || !pdfSrc) return;
+    setPdfLoaded(false);
+    setPdfLoadError(false);
+    const timer = setTimeout(() => {
+      setPdfLoaded((loaded) => {
+        if (!loaded) setPdfLoadError(true);
+        return loaded;
+      });
+    }, 12000);
+    return () => clearTimeout(timer);
+  }, [leftViewMode, pdfSrc, pdfPage, paper.metadata.id]);
 
   // Bookmark — persisted to localStorage keyed by paper id / arxivId
   const bookmarkKey = `mytldr_saved_${paper.metadata.id || paper.metadata.arxivId || 'paper'}`;
@@ -785,6 +804,7 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
                 }
                 className={`w-full flex-1 border-0 bg-white ${isDragging ? 'pointer-events-none' : ''}`}
                 title={`Original arXiv PDF - ${paper.metadata.title}`}
+                onLoad={() => setPdfLoaded(true)}
                 onError={() => setPdfLoadError(true)}
               />
             ) : (

@@ -44,7 +44,10 @@ async def process_paper(
     
     if source_type == "arxiv":
         arxiv_id = _extract_arxiv_id(url)
-        metadata = await asyncio.to_thread(text_extractor.get_arxiv_metadata, arxiv_id)
+        try:
+            metadata = await asyncio.to_thread(text_extractor.get_arxiv_metadata, arxiv_id)
+        except ValueError as e:
+            yield {"stage": "error", "message": str(e)}; return
         metadata["pdf_url"] = f"https://arxiv.org/pdf/{sanitize_arxiv_id(arxiv_id)}.pdf"
         metadata["arxiv_id"] = sanitize_arxiv_id(arxiv_id)
         pdf_bytes = await asyncio.to_thread(text_extractor.download_arxiv_pdf, arxiv_id)

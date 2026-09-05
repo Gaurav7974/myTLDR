@@ -112,6 +112,39 @@ export async function processPaperStream(
   }
 }
 
+export interface ArxivLookup {
+  arxiv_id: string;
+  title: string;
+  authors: string[];
+  abstract: string;
+  categories: string[];
+}
+
+/**
+ * Verify an arXiv ID/URL against the backend before deconstructing.
+ * Returns canonical metadata (proves the ID exists and resolves the real
+ * title); throws the backend's 400 detail for unknown/mismatched IDs so the
+ * UI can show "check the ID" instead of streaming the wrong paper.
+ */
+export async function lookupArxiv(input: string): Promise<ArxivLookup> {
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+  const response = await fetch(
+    `${backendUrl}/api/arxiv/lookup?arxiv_id=${encodeURIComponent(input)}`,
+    { signal: AbortSignal.timeout(30000) }
+  );
+  if (!response.ok) {
+    let detail = `arXiv lookup failed (${response.status})`;
+    try {
+      const body = (await response.json()) as { detail?: unknown };
+      if (typeof body?.detail === 'string' && body.detail) detail = body.detail;
+    } catch {
+      // keep default
+    }
+    throw new Error(detail);
+  }
+  return (await response.json()) as ArxivLookup;
+}
+
 function transformBackendPayloadToPaperData(
   payload: Record<string, unknown>,
   url?: string,
