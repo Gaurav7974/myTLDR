@@ -13,6 +13,15 @@ from app.core.logger import get_logger
 log = get_logger(__name__)
 from app.core.security import sanitize_arxiv_id, validate_and_sanitize_url
 
+# Matches "References", "REFERENCES", "Bibliography", "BIBLIOGRAPHY" as a
+# standalone section header at the start of a line, with optional leading
+# digit/dot numbering (e.g. "5 References", "5. References").
+# Only searched in the last 60 % of the document to avoid false positives
+# in the body text (e.g. "As shown in previous references [1–5]...").
+_TAIL_STRIP_RE = re.compile(
+    r"(?m)^[ \t]*(?:\d+\.?\s+)?(?:References|REFERENCES|Bibliography|BIBLIOGRAPHY)[ \t]*(?:\n|$)"
+)
+
 
 @dataclass
 class Figure:
@@ -275,10 +284,53 @@ class TextExtractor:
         """Remove image syntax so base64 payloads never reach the LLM/RAG text path."""
         return re.sub(r"!\[[^\]]*\]\([^)]*\)", "", markdown)
 
+    def strip_tail_sections(self, text: str) -> str:
+        """Strip References / Bibliography and everything after from paper text.
+
+        Strategy:
+        - Only searches the LAST 60% of the document so inline mentions like
+          "as listed in the references [1–5]" in the body are never cut.
+        - Takes the LAST match in that window so a paper whose bibliography
+          section has a sub-heading also titled "References" doesn't get cut
+          at the sub-heading rather than the actual list.
+        - Logs how many chars were saved so we can audit in production.
+        - Returns the original text unchanged when no header is found.
+        """
+        if not text or len(text) < 500:
+            return text
+
+        # Search only in the last 60 % of the document
+        search_from = max(0, int(len(text) * 0.40))
+        tail = text[search_from:]
+
+        last_match = None
+        for m in _TAIL_STRIP_RE.finditer(tail):
+            last_match = m  # keep updating → we want the LAST occurrence
+
+        if last_match is not None:
+            cut = search_from + last_match.start()
+            stripped = text[:cut].rstrip()
+            saved = len(text) - len(stripped)
+            pct = int(100 * saved / len(text)) if len(text) else 0
+            log.info(
+                f"[TEXT] Stripped tail sections at char {cut}/{len(text)} "
+                f"(−{saved} chars / −{pct}%)"
+            )
+            return stripped
+        return text
+
     def _build_result(self, pages: List[PageText], figures: Optional[List[Figure]] = None) -> ExtractionResult:
-        """Join per-page content into the flat text the pipeline consumes."""
+        """Join per-page content into the flat text the pipeline consumes.
+
+        References / bibliography are stripped from the flat ``text`` before it
+        leaves this method — every downstream consumer (LLM calls, RAG indexer)
+        automatically benefits. The per-page ``pages`` list is NOT altered so
+        the frontend Parsed Text reader still shows the full paper.
+        """
         text_parts = [self._strip_images(p.markdown) if p.source == "mistral_ocr" else p.markdown for p in pages]
-        return ExtractionResult(text="\n\n".join(p for p in text_parts if p), figures=figures or [], pages=pages, page_count=len(pages))
+        raw_text = "\n\n".join(p for p in text_parts if p)
+        clean_text = self.strip_tail_sections(raw_text)
+        return ExtractionResult(text=clean_text, figures=figures or [], pages=pages, page_count=len(pages))
     
     def _extract_figure_captions(self, markdown: str) -> dict:
         """Map each image id (referenced as `![id](id)`) to its following caption line."""

@@ -174,31 +174,68 @@ async def process_paper(
         }
         return
     
+    # ── Prep phase: arch section detection + figure classification ────────────
+    # Both are independent of each other, so run them in parallel FIRST.
+    # Having arch_text before the main batch lets equations, IR, and graph
+    # extraction use the focused method section (typically 8-15k chars) instead
+    # of the full 40k paper — a 3-5x token reduction for those calls with no
+    # quality loss since those tasks only care about the architecture section.
     yield {"stage": "explaining", "message": f"Generating explanation & architecture for {paper_title[:40]}..."}
     arch_figure = None
+    keyword_pick = None
+    need_fig_classify = False
+
     if cached_graph is None and figures:
-        # Fast pre-filter: check if keyword picker has high-confidence caption
         keyword_pick = _pick_architecture_figure(figures)
-        if keyword_pick and any(k in (getattr(keyword_pick, "caption", "") or "").lower() for k in ("architecture", "network architecture", "model architecture", "overall architecture")):
-            arch_figure = keyword_pick
+        if keyword_pick and any(
+            k in (getattr(keyword_pick, "caption", "") or "").lower()
+            for k in ("architecture", "network architecture", "model architecture", "overall architecture")
+        ):
+            arch_figure = keyword_pick  # high-confidence keyword match — skip classifier
         else:
-            try: arch_figure = await asyncio.to_thread(pick_architecture_figure_classifier, figures, paper_title)
-            except Exception as e: log.warning(f"classifier pick failed: {e}"); arch_figure = keyword_pick
-        if not arch_figure: arch_figure = keyword_pick
+            need_fig_classify = True
 
-    arch_text = None
+    prep_tasks: dict = {}
+    if cached_graph is None:
+        prep_tasks["arch"] = asyncio.to_thread(text_extractor.find_architecture_section, full_text)
+    if need_fig_classify:
+        prep_tasks["figcls"] = asyncio.to_thread(pick_architecture_figure_classifier, figures, paper_title)
+
+    _prep = (
+        dict(zip(prep_tasks.keys(), await asyncio.gather(*prep_tasks.values(), return_exceptions=True)))
+        if prep_tasks else {}
+    )
+
+    # Unpack: arch section
+    arch_text: str | None = None
     arch_section_missing = False
-
-    def _locate_arch_and_extract_graph():
-        nonlocal arch_text, arch_section_missing
-        arch_text = text_extractor.find_architecture_section(full_text)
-        arch_section_missing = arch_text is None
+    if "arch" in _prep:
+        _ar = _prep["arch"]
+        if isinstance(_ar, Exception):
+            log.warning(f"[PIPELINE] arch section detection raised: {_ar}")
+            arch_section_missing = True
+        else:
+            arch_text = _ar
+            arch_section_missing = arch_text is None
         if arch_section_missing:
             log.warning("[PIPELINE] No architecture section located — text graph extraction skipped")
-            return None
-        return graph_extractor.extract_graph(arch_text, paper_title)
 
-    # Reuse cached analysis (equations, code, IR) if available (e.g. difficulty switch)
+    # Unpack: figure classifier
+    if "figcls" in _prep and arch_figure is None:
+        _fr = _prep["figcls"]
+        if isinstance(_fr, Exception):
+            log.warning(f"[PIPELINE] classifier pick failed: {_fr}")
+            arch_figure = keyword_pick
+        else:
+            arch_figure = _fr or keyword_pick
+    elif need_fig_classify and arch_figure is None:
+        arch_figure = keyword_pick  # fallback to keyword pick if classifier wasn't run
+
+    # focused_text: arch section when found (10-30x smaller than full paper);
+    # fall back to first 20k chars of stripped full_text (methods are in first half).
+    focused_text: str = arch_text if arch_text else full_text[:20000]
+
+    # ── Reuse cached analysis if available (e.g. difficulty switch) ───────────
     equations = cached_analysis.get("equations") if cached_analysis else None
     code_snippets = cached_analysis.get("code_snippets") if cached_analysis else None
     code_note = cached_analysis.get("code_note") if cached_analysis else None
@@ -208,18 +245,24 @@ async def process_paper(
         try: canonical_ir = ArchitectureIR(**cached_analysis["canonical_ir"])
         except Exception: canonical_ir = None
 
-    # Single parallel batch: all independent LLM calls together (dead 3D Bycroft call removed)
-    tasks = {}
+    # ── Main LLM task batch (all parallel) ────────────────────────────────────
+    # expl   → needs broad context: overview + results + conclusion → full_text
+    # eq     → equations live in the method section              → focused_text
+    # code   → PyTorch module from arch description              → arch_text (preferred)
+    # ir     → IR purely from architecture/method section        → focused_text
+    # tgraph → graph extraction from arch section                → arch_text (already scoped)
+    # vgraph → vision graph from figure image                    → no text
+    tasks: dict = {}
     if not cached_explanation:
         tasks["expl"] = asyncio.to_thread(explanation_service.generate, full_text, difficulty)
     if equations is None:
-        tasks["eq"] = asyncio.to_thread(explanation_service.extract_equations, full_text)
+        tasks["eq"] = asyncio.to_thread(explanation_service.extract_equations, focused_text)
     if code_snippets is None:
-        tasks["code"] = asyncio.to_thread(explanation_service.generate_pytorch_code, full_text, paper_title, None)
+        tasks["code"] = asyncio.to_thread(explanation_service.generate_pytorch_code, full_text, paper_title, arch_text)
     if canonical_ir is None:
-        tasks["ir"] = asyncio.to_thread(ir_extractor.extract, full_text, paper_title)
-    if cached_graph is None:
-        tasks["tgraph"] = asyncio.to_thread(_locate_arch_and_extract_graph)
+        tasks["ir"] = asyncio.to_thread(ir_extractor.extract, focused_text, paper_title)
+    if cached_graph is None and not arch_section_missing and arch_text:
+        tasks["tgraph"] = asyncio.to_thread(graph_extractor.extract_graph, arch_text, paper_title)
     if arch_figure:
         tasks["vgraph"] = asyncio.to_thread(figure_extractor.extract_architecture, arch_figure, paper_title)
 
