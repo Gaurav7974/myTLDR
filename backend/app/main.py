@@ -1,5 +1,5 @@
 """FastAPI application."""
-import uuid, time
+import uuid, time, asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
     # problems take the app down — endpoints degrade without it.
     try:
         from app.core.database import init_db
-        await init_db()
+        await asyncio.wait_for(init_db(), timeout=3.0)
         log.info("database initialized")
     except Exception as e:
         log.warning(f"database init skipped (degraded mode): {e}")

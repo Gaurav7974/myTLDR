@@ -192,7 +192,8 @@ Respond ONLY with a valid JSON object matching:
             "}\n"
             "Rules: needs_code=false for surveys, datasets, benchmarks, theory-only or "
             "non-computational papers. When true: max 1 snippet, max 80 lines, only the core "
-            "nn.Module + forward described in THIS paper, well-commented."
+            "nn.Module + forward described in THIS paper. "
+            "CRITICAL FORMATTING RULE: DO NOT use python docstrings (\"\"\"...\"\"\"). Write only clean, single, short human-readable '#' comments explaining key operations."
         )
         try:
             res = groq_client.extract_json(
@@ -212,6 +213,12 @@ Respond ONLY with a valid JSON object matching:
                 code = ((s or {}).get("code") or "").strip()
                 if not code:
                     continue
+                # Sanitize any docstrings into single-line comments
+                code = re.sub(
+                    r'"""([\s\S]*?)"""|\'\'\'([\s\S]*?)\'\'\'',
+                    lambda m: "\n".join(f"# {line.strip()}" for line in (m.group(1) or m.group(2) or "").strip().splitlines() if line.strip()),
+                    code
+                )
                 try:
                     ast.parse(code)
                 except SyntaxError:

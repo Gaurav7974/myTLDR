@@ -111,6 +111,7 @@
 }
 
 html {
+  zoom: 0.9;
   scroll-behavior: smooth;
 }
 

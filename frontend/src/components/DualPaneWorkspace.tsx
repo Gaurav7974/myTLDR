@@ -17,7 +17,6 @@ import {
   ExternalLink,
   BookOpen,
   Share2,
-  Bookmark,
   ArrowLeft,
   ArrowUp,
   Search,
@@ -371,20 +370,6 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
     return () => clearTimeout(timer);
   }, [leftViewMode, pdfSrc, pdfPage, paper.metadata.id]);
 
-  // Bookmark — persisted to localStorage keyed by paper id / arxivId
-  const bookmarkKey = `mytldr_saved_${paper.metadata.id || paper.metadata.arxivId || 'paper'}`;
-  const [isBookmarked, setIsBookmarked] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    try { return localStorage.getItem(bookmarkKey) === '1'; } catch { return false; }
-  });
-
-  const toggleBookmark = useCallback(() => {
-    setIsBookmarked((prev) => {
-      const next = !prev;
-      try { next ? localStorage.setItem(bookmarkKey, '1') : localStorage.removeItem(bookmarkKey); } catch { /* ignore */ }
-      return next;
-    });
-  }, [bookmarkKey]);
 
   const handleJumpToPdfPage = useCallback((page: number, sectionTitle?: string) => {
     setPdfPage(page);
@@ -1033,19 +1018,6 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
             {/* Action buttons */}
             <div className="flex items-center gap-1.5 shrink-0">
 
-              {/* Save / Bookmark (persisted to localStorage) */}
-              <button
-                onClick={toggleBookmark}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-all active:scale-95 ${
-                  isBookmarked
-                    ? 'bg-zinc-900 text-white border-zinc-900'
-                    : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 hover:border-zinc-300'
-                }`}
-                title={isBookmarked ? 'Saved — click to unsave' : 'Save this paper'}
-              >
-                <Bookmark className={`w-3.5 h-3.5 ${isBookmarked ? 'fill-current' : ''}`} />
-                <span className="hidden sm:inline">{isBookmarked ? 'Saved' : 'Save'}</span>
-              </button>
 
               {/* Download Summary .md */}
               <button
@@ -1160,7 +1132,7 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
               }`}
             >
               <Code className="w-3.5 h-3.5" />
-              <span>PyTorch</span>
+              <span>Implementation</span>
             </button>
 
             <button
@@ -1211,29 +1183,10 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
           </TabErrorBoundary>
         </div>
 
-        {/* Floating Bottom Chat Dock — one glass layer done properly: the
-            scrim fades scrolled content underneath, the form alone carries
-            the frost. Pills stay solid (nested blurs compound into mud). */}
+        {/* Floating Bottom Chat Dock — minimal glass chat input */}
         {activeTab !== 'chat' && activeTab !== 'visualizer' && (
-          <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none pt-14 pb-4 px-4 md:px-6 bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA]/90 to-transparent">
-            <div className="max-w-2xl mx-auto w-full space-y-2 pointer-events-auto">
-              
-              {/* Quick Suggested Prompt Pills (Floating Capsules) */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none px-1">
-                <span className="text-[10px] font-mono text-zinc-400 uppercase font-bold shrink-0">
-                  Quick Ask:
-                </span>
-                {quickSuggestions.map((suggestion, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleExecutePrompt(suggestion)}
-                    className="px-2.5 py-1 rounded-full bg-white hover:bg-zinc-50 border border-zinc-200 text-[11px] text-zinc-700 font-medium whitespace-nowrap transition-all shadow-xs hover:shadow-sm active:scale-95 shrink-0"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-
+          <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none pt-8 pb-4 px-4 md:px-6 bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA]/90 to-transparent">
+            <div className="max-w-2xl mx-auto w-full pointer-events-auto">
               {/* LLM Chat Input Form - modern minimal input */}
               <form onSubmit={handleChatSubmit} className="relative flex items-center bg-white/95 backdrop-blur-xl border border-zinc-200 shadow-xl shadow-zinc-950/8 rounded-2xl p-1.5 transition-all focus-within:border-zinc-950/70 focus-within:ring-2 focus-within:ring-zinc-950/10 focus-within:shadow-2xl">
                 <input
@@ -1254,7 +1207,6 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
                   </button>
                 </div>
               </form>
-
             </div>
           </div>
         )}

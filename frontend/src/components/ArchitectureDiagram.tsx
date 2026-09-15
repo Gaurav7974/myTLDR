@@ -157,97 +157,6 @@ function MathText({ value, displayMode = false }: { value: string; displayMode?:
   return <span className="katex-rendered inline-block" dangerouslySetInnerHTML={{ __html: rendered }} />;
 }
 
-interface ComponentTheoryDetails {
-  category: string;
-  whatIsIt: string;
-  whatItDoes: string;
-  theory: string;
-  mathFormula?: string;
-}
-
-function getComponentTheory(node: DiagramNode): ComponentTheoryDetails {
-  const labelLower = (node.label || "").toLowerCase();
-  const typeLower = (node.type || "").toLowerCase();
-  const desc = node.description?.trim();
-  const how = node.how_it_works?.trim();
-  const formula = node.math_formula?.trim();
-
-  // 1. Attention & Multi-Head Attention
-  if (typeLower === "attention" || labelLower.includes("attention") || labelLower.includes("mha")) {
-    return {
-      category: "ATTENTION MECHANISM",
-      whatIsIt: desc || "Attention mechanism sub-layer. Enables dynamic routing and pairwise interaction between sequence positions across the model representation space.",
-      whatItDoes: how || "Computes compatibility scores between Query and Key representations, normalizes them via softmax, and computes a weighted sum over Value states across parallel subspace heads.",
-      theory: "Provides direct pairwise connectivity between all sequence coordinates without requiring sequential recurrence. Allows representations to incorporate global context across the entire input sequence.",
-      mathFormula: formula || undefined,
-    };
-  }
-
-  // 2. Feed-Forward Network / MLP
-  if (typeLower === "feedforward" || labelLower.includes("feed forward") || labelLower.includes("ffn") || labelLower.includes("mlp")) {
-    return {
-      category: "FEED-FORWARD NETWORK",
-      whatIsIt: desc || "Point-wise Feed-Forward Network (FFN / MLP). Transforms hidden representations independently at each sequence position.",
-      whatItDoes: how || "Projects representations into an intermediate higher-dimensional space, applies a non-linear activation function, and projects back to the model hidden dimension.",
-      theory: "Executes non-linear feature transformation and channel-wise mixing, expanding representational capacity and functioning as associative memory across learned features.",
-      mathFormula: formula || undefined,
-    };
-  }
-
-  // 3. Normalization (LayerNorm / RMSNorm / BatchNorm)
-  if (typeLower === "normalization" || labelLower.includes("norm") || labelLower.includes("layernorm") || labelLower.includes("rmsnorm")) {
-    return {
-      category: "NORMALIZATION LAYER",
-      whatIsIt: desc || "Normalization sub-layer. Normalizes intermediate activation distributions across channels or layers.",
-      whatItDoes: how || "Standardizes activation distributions across features to maintain stable variance, followed by learned scaling and shifting parameters.",
-      theory: "Stabilizes forward activations and backward gradient propagation across deep stacked layers, preventing gradient explosion or vanishing during training.",
-      mathFormula: formula || undefined,
-    };
-  }
-
-  // 4. Embedding & Positional Encoding
-  if (typeLower === "embedding" || labelLower.includes("embedding") || labelLower.includes("positional") || labelLower.includes("pe")) {
-    return {
-      category: "EMBEDDING & REPRESENTATION",
-      whatIsIt: desc || "Input/Output Embedding layer. Maps discrete token identifiers or input features into continuous vector space.",
-      whatItDoes: how || "Transforms input indices into dense continuous vectors and incorporates coordinate or positional information to provide spatial awareness.",
-      theory: "Constructs semantic representations in vector space where geometrical proximity reflects functional or semantic relationships.",
-      mathFormula: formula || undefined,
-    };
-  }
-
-  // 5. Residual Shortcut / Skip Connection
-  if (typeLower === "residual" || labelLower.includes("add") || labelLower.includes("residual") || labelLower.includes("skip")) {
-    return {
-      category: "RESIDUAL SHORTCUT",
-      whatIsIt: desc || "Residual Skip Connection. Directly connects preceding activations to subsequent layer outputs.",
-      whatItDoes: how || "Performs an identity addition between the layer input activations and the transformation sub-layer output.",
-      theory: "Creates unimpeded gradient flow paths during backpropagation, eliminating vanishing gradients and enabling stable convergence in very deep networks.",
-      mathFormula: formula || undefined,
-    };
-  }
-
-  // 6. Linear / Output Projection
-  if (typeLower === "output" || typeLower === "linear" || labelLower.includes("linear") || labelLower.includes("softmax") || labelLower.includes("projection")) {
-    return {
-      category: "OUTPUT PROJECTION",
-      whatIsIt: desc || "Linear Projection / Output layer. Maps high-dimensional latent states to target output dimensions.",
-      whatItDoes: how || "Applies affine transformations to intermediate representations to produce output logits or predictions.",
-      theory: "Serves as the final decision boundary or representation projector from latent feature space to task-specific prediction space.",
-      mathFormula: formula || undefined,
-    };
-  }
-
-  // Default fallback for any other architectural block
-  return {
-    category: (node.type || "COMPONENT").toUpperCase(),
-    whatIsIt: desc || `Architectural component of type '${node.type || 'layer'}' in the paper's model pipeline.`,
-    whatItDoes: how || "Executes intermediate representation transformation, dimensional alignment, and feature routing in the forward pass.",
-    theory: "Deconstructs the computational pipeline into modular, verified tensor blocks with bounded complexity, ensuring numerical stability and parameter efficiency across training and inference.",
-    mathFormula: formula || undefined,
-  };
-}
-
 // ── Component ──────────────────────────────────────────────────────
 export default function ArchitectureDiagram({
   nodes: nodesProp,
@@ -409,11 +318,6 @@ export default function ArchitectureDiagram({
   const selectedNode = selectedId ? nodes.find((n) => n.id === selectedId) : null;
   const selectedMeta = selectedId ? positioned.get(selectedId) : null;
 
-  const componentDetails = useMemo(() => {
-    if (!selectedNode) return null;
-    return getComponentTheory(selectedNode);
-  }, [selectedNode]);
-
   // Auto-fit diagram cleanly within viewport
   const fitToView = useCallback(() => {
     const el = containerRef.current;
@@ -455,6 +359,7 @@ export default function ArchitectureDiagram({
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if ((e.target as HTMLElement).closest("[data-node]")) return;
+      if ((e.target as HTMLElement).closest("[data-popup]")) return;
       setIsPanning(true);
       panStart.current = { x: e.clientX - transform.x, y: e.clientY - transform.y };
     },
@@ -496,11 +401,11 @@ export default function ArchitectureDiagram({
   const isAvailable = nodes.length > 0;
 
   return (
-    <div className="flex h-full w-full bg-white rounded-xl border border-zinc-200 overflow-hidden">
+    <div className="relative flex h-full w-full bg-white rounded-xl border border-zinc-200 overflow-hidden">
       {/* ── Canvas ─────────────────────────────────────────────── */}
       <div
         ref={containerRef}
-        className="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing"
+        className="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing w-full h-full"
         style={{ minHeight: height }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -517,8 +422,8 @@ export default function ArchitectureDiagram({
           <rect width="100%" height="100%" fill="url(#grid)" />
         </svg>
 
-        {/* Zoom controls */}
-        <div className="absolute top-3 right-3 z-20 flex flex-col gap-1">
+        {/* Zoom controls (docked at bottom-right) */}
+        <div className="absolute bottom-3 right-3 z-20 flex flex-col gap-1">
           <button
             onClick={() => setTransform((t) => ({ ...t, scale: Math.min(2, t.scale + 0.15) }))}
             className="w-8 h-8 rounded-md bg-white border border-zinc-200 text-zinc-600 flex items-center justify-center text-sm font-medium hover:bg-zinc-50 shadow-sm"
@@ -791,249 +696,101 @@ export default function ArchitectureDiagram({
         )}
       </div>
 
-      {/* ── Inspector Sidebar ──────────────────────────────────── */}
-      <div
-        className="w-full lg:w-[380px] xl:w-[430px] max-w-full border-l border-zinc-200 bg-white flex flex-col shrink-0 overflow-hidden shadow-xs"
-        style={{ height: height }}
-      >
-        {selectedNode ? (
-          <div className="flex flex-col h-full overflow-hidden">
-            {/* Sticky Header */}
-            <div className="p-4 border-b border-zinc-200 bg-zinc-50/80 backdrop-blur-xs shrink-0">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5">
+        {/* Concise Block Info Pop-up Card (Only shown when a node/block is clicked) */}
+        {selectedNode && (
+          <div
+            data-popup
+            className="absolute top-3 right-3 z-30 w-80 sm:w-88 max-w-[calc(100%-1.5rem)] bg-white/95 backdrop-blur-md rounded-xl border border-zinc-200/90 shadow-xl overflow-hidden animate-fadeIn"
+          >
+            {/* Card Header */}
+            <div className="px-4 py-3 border-b border-zinc-100 flex items-start justify-between gap-2 bg-zinc-50/60">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                   <span
-                    className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border shadow-2xs"
+                    className="text-[9px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border shadow-2xs"
                     style={{
                       backgroundColor: getNodeColors(selectedNode.type).bg,
                       color: getNodeColors(selectedNode.type).text,
                       borderColor: getNodeColors(selectedNode.type).border,
                     }}
                   >
-                    {componentDetails?.category || selectedNode.type.toUpperCase()}
+                    {selectedNode.type.toUpperCase()}
                   </span>
                   {selectedNode.confidence !== undefined && (
-                    <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span className="text-[9px] font-mono font-medium px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
                       {(selectedNode.confidence * 100).toFixed(0)}% verified
                     </span>
                   )}
                 </div>
-                <button
-                  onClick={() => setSelectedId(null)}
-                  className="p-1 rounded text-zinc-400 hover:text-zinc-700 hover:bg-zinc-200/60 transition-colors"
-                  title="Close component details (Return to overview)"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <h3 className="text-base font-bold text-zinc-900 leading-snug">
-                {selectedNode.label}
-              </h3>
-              {selectedNode.paper_term && (
-                <p className="text-[11px] font-mono text-zinc-500 mt-0.5">
-                  Paper notation: {selectedNode.paper_term}
-                </p>
-              )}
-            </div>
-
-            {/* Scrollable Body */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* 1. What is it? (Role & Definition) */}
-              <div className="p-3.5 bg-zinc-50 rounded-xl border border-zinc-200/80 space-y-1.5">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-400 block">
-                  01 / WHAT IS IT?
-                </span>
-                <p className="text-xs text-zinc-800 leading-relaxed font-normal">
-                  {componentDetails?.whatIsIt || selectedNode.description}
-                </p>
-              </div>
-
-              {/* 2. What it does & How it works */}
-              <div className="p-3.5 bg-zinc-50 rounded-xl border border-zinc-200/80 space-y-1.5">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-400 block">
-                  02 / WHAT IT DOES & HOW IT WORKS
-                </span>
-                <p className="text-xs text-zinc-800 leading-relaxed font-normal">
-                  {componentDetails?.whatItDoes || selectedNode.how_it_works}
-                </p>
-              </div>
-
-              {/* 3. Theory & Mathematical Formulation */}
-              <div className="p-3.5 bg-zinc-50 rounded-xl border border-zinc-200/80 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-400">
-                    03 / THEORY & MATHEMATICAL MODEL
-                  </span>
-                  {(componentDetails?.mathFormula || selectedNode.math_formula) && (
-                    <span className="text-[9px] font-mono text-zinc-400 font-medium">KaTeX</span>
-                  )}
-                </div>
-
-                {(componentDetails?.mathFormula || selectedNode.math_formula) && (
-                  <div className="p-2.5 bg-white rounded-lg border border-zinc-200/60 text-center overflow-x-auto text-sm text-zinc-900 shadow-2xs">
-                    <MathText value={componentDetails?.mathFormula || selectedNode.math_formula || ""} displayMode={true} />
-                  </div>
-                )}
-
-                <p className="text-xs text-zinc-700 leading-relaxed">
-                  {componentDetails?.theory}
-                </p>
-              </div>
-
-              {/* 4. Parameters & Computation (if present) */}
-              {(selectedNode.parameters || selectedNode.flops) && (
-                <div className="p-3.5 bg-zinc-50 rounded-xl border border-zinc-200/80 space-y-2">
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-400 block">
-                    04 / PARAMETERS & COMPUTATION
-                  </span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {selectedNode.parameters && (
-                      <div className="p-2 bg-white rounded-lg border border-zinc-200/60">
-                        <span className="text-[9px] font-mono uppercase tracking-wider text-zinc-400 block">
-                          Parameters
-                        </span>
-                        <span className="text-xs font-mono font-bold text-zinc-900 mt-0.5 block">
-                          {selectedNode.parameters}
-                        </span>
-                      </div>
-                    )}
-                    {selectedNode.flops && (
-                      <div className="p-2 bg-white rounded-lg border border-zinc-200/60">
-                        <span className="text-[9px] font-mono uppercase tracking-wider text-zinc-400 block">
-                          FLOPs
-                        </span>
-                        <span className="text-xs font-mono font-bold text-zinc-900 mt-0.5 block">
-                          {selectedNode.flops}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Provenance & Page Grounding */}
-              <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-200/80 space-y-1.5">
-                <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                  Paper Grounding & Provenance
+                <h4 className="text-sm font-bold text-zinc-950 leading-snug truncate" title={selectedNode.label}>
+                  {selectedNode.label}
                 </h4>
-                <div className="text-[11px] font-mono text-zinc-600 space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400">Extraction Source:</span>
-                    <span className="font-semibold text-zinc-700">{selectedNode.provenance?.source || (isEffectiveFigureMode ? 'Figure Vision' : 'Graph Pipeline')}</span>
-                  </div>
-                  {(selectedNode.provenance?.figure_page || selectedNode.provenance?.page) && (
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">Original Page:</span>
-                      <span className="font-semibold text-zinc-700">Page {selectedNode.provenance.figure_page || selectedNode.provenance.page}</span>
-                    </div>
-                  )}
-                  {selectedNode.provenance?.figure_id && (
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">Paper Diagram:</span>
-                      <span className="font-semibold text-zinc-700">{selectedNode.provenance.figure_id}</span>
-                    </div>
-                  )}
-                  {selectedNode.provenance?.section && (
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">Section:</span>
-                      <span className="font-semibold text-zinc-700 truncate max-w-[180px]">{selectedNode.provenance.section}</span>
-                    </div>
-                  )}
-                </div>
+                {selectedNode.paper_term && (
+                  <p className="text-[10.5px] font-mono text-zinc-500 mt-0.5 truncate">
+                    Paper term: <span className="text-zinc-700 font-semibold">{selectedNode.paper_term}</span>
+                  </p>
+                )}
               </div>
-            </div>
-          </div>
-        ) : (
-          /* Default Architecture Overview Card (When No Component is Selected) */
-          <div className="flex flex-col h-full overflow-hidden">
-            {/* Header */}
-            <div className="p-4 border-b border-zinc-200 bg-zinc-50/80 backdrop-blur-xs shrink-0">
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-500">
-                ARCHITECTURE OVERVIEW
-              </span>
-              <h3 className="text-base font-bold text-zinc-900 mt-1 truncate" title={paperTitle || 'Model Architecture'}>
-                {paperTitle || (graph?.figure_id ? `Architecture Diagram (${graph.figure_id})` : 'Neural Network Architecture')}
-              </h3>
-              <div className="flex items-center gap-1.5 mt-2">
-                <span className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded border ${
-                  isEffectiveFigureMode ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200'
-                }`}>
-                  {isEffectiveFigureMode ? '✓ Figure-Faithful Reconstruction' : 'Structured Layout (ELK)'}
-                </span>
-              </div>
+              <button
+                onClick={() => setSelectedId(null)}
+                className="p-1 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors shrink-0"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* Stat summary grid */}
-              <div className="grid grid-cols-3 gap-2">
-                <div className="p-2.5 bg-zinc-50 rounded-lg border border-zinc-200/80 text-center">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 block">Nodes</span>
-                  <span className="text-sm font-mono font-bold text-zinc-900 mt-0.5 block">{nodes.length}</span>
+            {/* Card Content - concise info only */}
+            <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto text-left select-text">
+              {/* Description / Role */}
+              {(selectedNode.description || selectedNode.how_it_works) && (
+                <p className="text-xs text-zinc-700 leading-relaxed">
+                  {selectedNode.description || selectedNode.how_it_works}
+                </p>
+              )}
+
+              {/* Mathematical Formula if present */}
+              {selectedNode.math_formula && (
+                <div className="p-2.5 bg-zinc-50 rounded-lg border border-zinc-200/80 text-center overflow-x-auto text-xs text-zinc-900 shadow-2xs">
+                  <MathText value={selectedNode.math_formula} displayMode={true} />
                 </div>
-                <div className="p-2.5 bg-zinc-50 rounded-lg border border-zinc-200/80 text-center">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 block">Edges</span>
-                  <span className="text-sm font-mono font-bold text-zinc-900 mt-0.5 block">{edges.length}</span>
+              )}
+
+              {/* Parameters & FLOPs */}
+              {(selectedNode.parameters || selectedNode.flops) && (
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  {selectedNode.parameters && (
+                    <div className="p-2 rounded-lg bg-zinc-50 border border-zinc-200/70">
+                      <span className="text-[9px] font-mono uppercase text-zinc-400 block">Params</span>
+                      <span className="text-xs font-mono font-bold text-zinc-900 truncate block">
+                        {selectedNode.parameters}
+                      </span>
+                    </div>
+                  )}
+                  {selectedNode.flops && (
+                    <div className="p-2 rounded-lg bg-zinc-50 border border-zinc-200/70">
+                      <span className="text-[9px] font-mono uppercase text-zinc-400 block">FLOPs</span>
+                      <span className="text-xs font-mono font-bold text-zinc-900 truncate block">
+                        {selectedNode.flops}
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <div className="p-2.5 bg-zinc-50 rounded-lg border border-zinc-200/80 text-center">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 block">Modules</span>
-                  <span className="text-sm font-mono font-bold text-zinc-900 mt-0.5 block">
-                    {groups.length > 0 ? groups.length : '1'}
+              )}
+
+              {/* Source Provenance */}
+              {(selectedNode.provenance?.page || selectedNode.provenance?.section || selectedNode.provenance?.figure_id) && (
+                <div className="pt-2 border-t border-zinc-100 flex items-center justify-between text-[10px] font-mono text-zinc-500">
+                  <span>Source:</span>
+                  <span className="font-medium text-zinc-700 truncate max-w-[180px]">
+                    {selectedNode.provenance?.section || selectedNode.provenance?.figure_id || 'Paper'}
+                    {selectedNode.provenance?.page ? ` (p.${selectedNode.provenance.page})` : ''}
                   </span>
                 </div>
-              </div>
-
-              {/* Component Directory */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                    Component Directory ({nodes.length})
-                  </h4>
-                  <span className="text-[9px] font-mono text-zinc-400">click to inspect</span>
-                </div>
-                <div className="space-y-1.5">
-                  {nodes.map((node) => {
-                    const nodeEdgesCount = edges.filter((e) => e.source === node.id || e.target === node.id).length;
-                    const colors = getNodeColors(node.type);
-                    return (
-                      <button
-                        key={node.id}
-                        onClick={() => setSelectedId(node.id)}
-                        className="w-full text-left p-2.5 rounded-lg bg-zinc-50 hover:bg-zinc-100 border border-zinc-200/80 flex items-center justify-between gap-2 transition-all hover:border-zinc-300 group"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span
-                            className="w-2 h-2 rounded-full shrink-0"
-                            style={{ backgroundColor: colors.border }}
-                          />
-                          <span className="text-xs font-semibold text-zinc-800 truncate group-hover:text-blue-600 transition-colors">
-                            {node.label}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="text-[9px] font-mono text-zinc-400 bg-white px-1.5 py-0.5 rounded border border-zinc-200/60">
-                            {nodeEdgesCount} conn
-                          </span>
-                          <ChevronRight className="w-3.5 h-3.5 text-zinc-400 group-hover:translate-x-0.5 transition-transform" />
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Instructions Tip */}
-              <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-200/80 text-xs text-zinc-500 leading-relaxed flex items-start gap-2">
-                <Sparkles className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
-                <p className="text-[11px] text-zinc-600">
-                  Click any component in the diagram or directory to inspect its tensor equations, connections, and paper provenance.
-                </p>
-              </div>
+              )}
             </div>
           </div>
         )}
-      </div>
     </div>
   );
 }

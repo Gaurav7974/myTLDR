@@ -8,11 +8,11 @@ interface CodeWalkthroughTabProps {
   paper: PaperData;
 }
 
-// Lightweight syntax tokenizer for Python / PyTorch
+// Lightweight syntax tokenizer for Python / PyTorch (Light theme)
 function highlightPythonLine(line: string): React.ReactNode {
   // Full-line comments
   if (line.trim().startsWith('#')) {
-    return <span className="text-[#6B8C6B] italic">{line}</span>;
+    return <span className="text-zinc-400 italic">{line}</span>;
   }
 
   const tokenRegex = /(#.*$)|(\b(?:def|class|import|from|as|return|if|else|elif|for|while|in|not|is|None|True|False|with|try|except|finally|raise|yield|async|await|lambda|pass|break|continue)\b)|(\b(?:torch|nn|math|Tensor|F|self|super|Optional|List|Dict|Tuple|Any|Union|scaled_dot_product_attention|matmul|sqrt|softmax|transpose|size|masked_fill|view|reshape|permute|contiguous|zeros|ones|randn|arange|cat|stack|einsum|Linear|Conv2d|LayerNorm|MultiheadAttention|Dropout|ReLU|GELU|Softmax|Parameter|Module|ModuleList|Sequential)\b)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d+(?:\.\d+)?\b)|([()[\]{},.:=+\-*/])/g;
@@ -23,33 +23,44 @@ function highlightPythonLine(line: string): React.ReactNode {
 
   while ((match = tokenRegex.exec(line)) !== null) {
     if (match.index > lastIndex) {
-      parts.push(<span key={`t-${lastIndex}`}>{line.slice(lastIndex, match.index)}</span>);
+      parts.push(<span key={`t-${lastIndex}`} className="text-zinc-800">{line.slice(lastIndex, match.index)}</span>);
     }
 
     const [full, comment, keyword, builtin, string, number, operator] = match;
 
     if (comment) {
-      parts.push(<span key={match.index} className="text-[#6B8C6B] italic">{comment}</span>);
+      parts.push(<span key={match.index} className="text-zinc-400 italic">{comment}</span>);
     } else if (keyword) {
-      parts.push(<span key={match.index} className="text-[#CF7ADB] font-semibold">{keyword}</span>);
+      parts.push(<span key={match.index} className="text-purple-700 font-semibold">{keyword}</span>);
     } else if (builtin) {
-      parts.push(<span key={match.index} className="text-[#79AADB]">{builtin}</span>);
+      parts.push(<span key={match.index} className="text-blue-700 font-medium">{builtin}</span>);
     } else if (string) {
-      parts.push(<span key={match.index} className="text-[#D4A96A]">{string}</span>);
+      parts.push(<span key={match.index} className="text-emerald-700">{string}</span>);
     } else if (number) {
-      parts.push(<span key={match.index} className="text-[#A8D4A0]">{number}</span>);
+      parts.push(<span key={match.index} className="text-amber-700">{number}</span>);
     } else if (operator) {
-      parts.push(<span key={match.index} className="text-[#7DAFCC]">{operator}</span>);
+      parts.push(<span key={match.index} className="text-zinc-500">{operator}</span>);
     }
 
     lastIndex = match.index + full.length;
   }
 
   if (lastIndex < line.length) {
-    parts.push(<span key={`tail-${lastIndex}`}>{line.slice(lastIndex)}</span>);
+    parts.push(<span key={`tail-${lastIndex}`} className="text-zinc-800">{line.slice(lastIndex)}</span>);
   }
 
   return parts;
+}
+
+// Strip docstrings and ensure clean, concise human single-line comments
+function sanitizeCode(code: string): string {
+  return code
+    .replace(/"""([\s\S]*?)"""|'''([\s\S]*?)'''/g, (_, g1, g2) => {
+      const content = (g1 || g2 || '').trim();
+      const firstLine = content.split('\n').map((l: string) => l.trim()).filter(Boolean)[0] || '';
+      return firstLine ? `# ${firstLine}` : '';
+    })
+    .trim();
 }
 
 interface SnippetCardProps {
@@ -61,23 +72,24 @@ interface SnippetCardProps {
 
 function SnippetCard({ snippet, idx, copiedIdx, onCopy }: SnippetCardProps) {
   const [collapsed, setCollapsed] = useState(false);
-  const lines = snippet.code.trim().split('\n');
+  const cleanCode = sanitizeCode(snippet.code);
+  const lines = cleanCode.split('\n');
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-[#0D0D10] overflow-hidden shadow-lg">
+    <div className="rounded-xl border border-zinc-200/90 bg-white overflow-hidden shadow-2xs transition-all">
       
       {/* Header Bar */}
       <button
         onClick={() => setCollapsed((c) => !c)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-[#131317] border-b border-zinc-800/80 hover:bg-[#18181c] transition-colors group"
+        className="w-full flex items-center justify-between px-4 py-2.5 bg-zinc-50/90 border-b border-zinc-200/80 hover:bg-zinc-100/70 transition-colors group text-left"
       >
         <div className="flex items-center gap-3 min-w-0">
-          <Terminal className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-          <span className="font-mono text-[13px] font-semibold text-zinc-100 truncate">{snippet.title}</span>
-          <span className="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/80">
+          <Terminal className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+          <span className="font-mono text-[13px] font-semibold text-zinc-900 truncate">{snippet.title}</span>
+          <span className="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600 border border-zinc-200">
             {lines.length} lines
           </span>
-          <span className="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500 border border-zinc-800">
+          <span className="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-200/70 text-zinc-700 border border-zinc-300/70 font-semibold">
             py
           </span>
         </div>
@@ -86,14 +98,14 @@ function SnippetCard({ snippet, idx, copiedIdx, onCopy }: SnippetCardProps) {
           <span
             role="button"
             tabIndex={0}
-            onClick={(e) => { e.stopPropagation(); onCopy(snippet.code, idx); }}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onCopy(snippet.code, idx); } }}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-mono font-medium transition-all active:scale-95 border border-zinc-700 cursor-pointer"
+            onClick={(e) => { e.stopPropagation(); onCopy(cleanCode, idx); }}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); onCopy(cleanCode, idx); } }}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white hover:bg-zinc-100 text-zinc-700 text-[11px] font-mono font-medium transition-all active:scale-95 border border-zinc-200 shadow-2xs cursor-pointer"
           >
             {copiedIdx === idx ? (
               <>
-                <Check className="w-3 h-3 text-emerald-400" />
-                <span className="text-emerald-400">Copied</span>
+                <Check className="w-3 h-3 text-emerald-600" />
+                <span className="text-emerald-600">Copied</span>
               </>
             ) : (
               <>
@@ -103,26 +115,26 @@ function SnippetCard({ snippet, idx, copiedIdx, onCopy }: SnippetCardProps) {
             )}
           </span>
           {collapsed
-            ? <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
-            : <ChevronDown className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
+            ? <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-zinc-700 transition-colors" />
+            : <ChevronDown className="w-4 h-4 text-zinc-400 group-hover:text-zinc-700 transition-colors" />
           }
         </div>
       </button>
 
       {/* Code Body */}
       {!collapsed && (
-        <div className="overflow-x-auto bg-[#0D0D10]">
-          <table className="w-full border-collapse font-mono text-[12px] leading-[1.65]">
+        <div className="overflow-x-auto bg-[#FBFBFC]">
+          <table className="w-full border-collapse font-mono text-[12px] leading-[1.7]">
             <tbody>
               {lines.map((line, lineIdx) => (
                 <tr
                   key={lineIdx}
-                  className="hover:bg-zinc-800/30 transition-colors group/row"
+                  className="hover:bg-zinc-100/60 transition-colors group/row"
                 >
-                  <td className="w-10 pr-4 pl-4 text-right select-none text-zinc-600 text-[10.5px] border-r border-zinc-800/60 group-hover/row:text-zinc-500 transition-colors">
+                  <td className="w-10 pr-3 pl-3 text-right select-none text-zinc-400 text-[10.5px] border-r border-zinc-200/70 group-hover/row:text-zinc-600 transition-colors bg-zinc-50/40">
                     {String(lineIdx + 1).padStart(2, '0')}
                   </td>
-                  <td className="pl-4 pr-4 whitespace-pre text-zinc-200">
+                  <td className="pl-4 pr-4 whitespace-pre text-zinc-800">
                     {highlightPythonLine(line)}
                   </td>
                 </tr>
@@ -134,7 +146,7 @@ function SnippetCard({ snippet, idx, copiedIdx, onCopy }: SnippetCardProps) {
 
       {/* Collapsed preview pill */}
       {collapsed && (
-        <div className="px-4 py-2 text-[11px] font-mono text-zinc-600 italic bg-[#0D0D10] border-t border-zinc-800/40">
+        <div className="px-4 py-2 text-[11px] font-mono text-zinc-400 italic bg-zinc-50 border-t border-zinc-200/60">
           {lines[0]?.trim().slice(0, 80)}{lines[0]?.trim().length > 80 ? '…' : ''}
         </div>
       )}
@@ -156,7 +168,7 @@ export const CodeWalkthroughTab: React.FC<CodeWalkthroughTabProps> = ({ paper })
   const handleCopyAll = useCallback(() => {
     if (!codeSnippets?.length) return;
     const combined = codeSnippets
-      .map((s) => `# ── ${s.title} ──\n${s.code.trim()}`)
+      .map((s) => `# ── ${s.title} ──\n${sanitizeCode(s.code)}`)
       .join('\n\n\n');
     navigator.clipboard.writeText(combined);
     setCopiedAll(true);
@@ -166,8 +178,8 @@ export const CodeWalkthroughTab: React.FC<CodeWalkthroughTabProps> = ({ paper })
   // Honest empty state
   if (!codeSnippets || codeSnippets.length === 0) {
     return (
-      <div className="p-6 md:p-8 animate-fadeIn max-w-2xl mx-auto pb-36">
-        <div className="rounded-xl border border-zinc-200 bg-white p-10 text-center space-y-4">
+      <div className="p-6 md:p-8 animate-fadeIn max-w-2xl mx-auto pb-52">
+        <div className="rounded-xl border border-zinc-200 bg-white p-10 text-center space-y-4 shadow-xs">
           <div className="w-12 h-12 rounded-xl bg-zinc-100 text-zinc-500 flex items-center justify-center mx-auto">
             <Code className="w-6 h-6" />
           </div>
@@ -185,7 +197,7 @@ export const CodeWalkthroughTab: React.FC<CodeWalkthroughTabProps> = ({ paper })
   }
 
   return (
-    <div className="p-6 md:p-8 space-y-5 animate-fadeIn max-w-4xl mx-auto pb-36">
+    <div className="p-6 md:p-8 space-y-5 animate-fadeIn max-w-4xl mx-auto pb-52">
       
       {/* Tab Header */}
       <div className="flex items-center justify-between gap-4">
@@ -195,10 +207,10 @@ export const CodeWalkthroughTab: React.FC<CodeWalkthroughTabProps> = ({ paper })
           </div>
           <div className="min-w-0">
             <h4 className="font-bold text-zinc-950 text-xs font-mono uppercase tracking-wide">
-              PyTorch Reference Implementation
+              Model Implementation
             </h4>
             <p className="text-[11px] text-zinc-500 truncate">
-              AI-generated from this paper&apos;s architecture — review before use
+              Reference architecture implementation — review before use
             </p>
           </div>
         </div>
@@ -212,7 +224,7 @@ export const CodeWalkthroughTab: React.FC<CodeWalkthroughTabProps> = ({ paper })
           {/* Copy All button */}
           <button
             onClick={handleCopyAll}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white text-[11px] font-mono font-medium transition-all active:scale-95 shadow-xs"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white text-[11px] font-mono font-medium transition-all active:scale-95 shadow-xs cursor-pointer"
             title={`Copy all ${codeSnippets.length} snippet${codeSnippets.length > 1 ? 's' : ''}`}
           >
             {copiedAll ? (
@@ -235,7 +247,7 @@ export const CodeWalkthroughTab: React.FC<CodeWalkthroughTabProps> = ({ paper })
         <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 font-semibold">
           {codeSnippets.length} snippet{codeSnippets.length > 1 ? 's' : ''}
         </span>
-        <div className="flex-1 h-px bg-zinc-100" />
+        <div className="flex-1 h-px bg-zinc-200/80" />
       </div>
 
       {/* Code Snippet Cards */}

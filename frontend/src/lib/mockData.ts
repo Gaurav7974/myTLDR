@@ -601,20 +601,20 @@ import torch.nn as nn
 import math
 
 def scaled_dot_product_attention(query, key, value, mask=None):
-    # query, key, value shapes: [batch_size, num_heads, seq_len, d_k]
+    # Shape: [batch, heads, seq, d_k]
     d_k = query.size(-1)
     
-    # 1. MatMul Q and K^T -> Scores shape: [batch_size, num_heads, seq_len, seq_len]
+    # Compute scaled attention affinity matrix
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
     
-    # 2. Apply causal mask if provided
+    # Apply causal or padding mask
     if mask is not None:
         scores = scores.masked_fill(mask == 0, -1e9)
         
-    # 3. Softmax along last dimension
+    # Normalize probabilities across tokens
     attention_weights = torch.softmax(scores, dim=-1)
     
-    # 4. Multiply by Value matrix
+    # Aggregate values by attention weights
     output = torch.matmul(attention_weights, value)
     return output, attention_weights`
     }
@@ -1931,7 +1931,7 @@ export function generateDynamicPaperData(title: string, arxivId?: string, text?:
         {
           title: 'flash_attention_tiled.py',
           language: 'python',
-          code: `import torch\nimport math\n\ndef flash_attention_forward(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, block_size: int = 64) -> torch.Tensor:\n    """Reference exact implementation of FlashAttention tiled forward pass."""\n    B, N, d = Q.shape\n    scale = 1.0 / math.sqrt(d)\n    O = torch.zeros_like(Q)\n    l = torch.zeros(B, N, 1, device=Q.device)\n    m = torch.full((B, N, 1), float('-inf'), device=Q.device)\n\n    # Split into SRAM blocks\n    for j in range(0, N, block_size):\n        K_j = K[:, j:j+block_size, :]  # [B, Bc, d]\n        V_j = V[:, j:j+block_size, :]  # [B, Bc, d]\n\n        for i in range(0, N, block_size):\n            Q_i = Q[:, i:i+block_size, :]  # [B, Br, d]\n            S_ij = torch.matmul(Q_i, K_j.transpose(-2, -1)) * scale  # [B, Br, Bc]\n\n            # Online Softmax update\n            m_prev = m[:, i:i+block_size, :]\n            l_prev = l[:, i:i+block_size, :]\n            m_curr = torch.maximum(m_prev, S_ij.max(dim=-1, keepdim=True).values)\n            P_ij = torch.exp(S_ij - m_curr)\n            l_curr = torch.exp(m_prev - m_curr) * l_prev + P_ij.sum(dim=-1, keepdim=True)\n\n            # Output tile accumulation in fast SRAM\n            O_prev = O[:, i:i+block_size, :]\n            O[:, i:i+block_size, :] = (torch.exp(m_prev - m_curr) * l_prev * O_prev + torch.matmul(P_ij, V_j)) / l_curr\n            m[:, i:i+block_size, :] = m_curr\n            l[:, i:i+block_size, :] = l_curr\n\n    return O`
+          code: `import torch\nimport math\n\ndef flash_attention_forward(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, block_size: int = 64) -> torch.Tensor:\n    # Tiled forward pass executed in SRAM\n    B, N, d = Q.shape\n    scale = 1.0 / math.sqrt(d)\n    O = torch.zeros_like(Q)\n    l = torch.zeros(B, N, 1, device=Q.device)\n    m = torch.full((B, N, 1), float('-inf'), device=Q.device)\n\n    # Split into SRAM blocks\n    for j in range(0, N, block_size):\n        K_j = K[:, j:j+block_size, :]  # [B, Bc, d]\n        V_j = V[:, j:j+block_size, :]  # [B, Bc, d]\n\n        for i in range(0, N, block_size):\n            Q_i = Q[:, i:i+block_size, :]  # [B, Br, d]\n            S_ij = torch.matmul(Q_i, K_j.transpose(-2, -1)) * scale  # [B, Br, Bc]\n\n            # Online Softmax update\n            m_prev = m[:, i:i+block_size, :]\n            l_prev = l[:, i:i+block_size, :]\n            m_curr = torch.maximum(m_prev, S_ij.max(dim=-1, keepdim=True).values)\n            P_ij = torch.exp(S_ij - m_curr)\n            l_curr = torch.exp(m_prev - m_curr) * l_prev + P_ij.sum(dim=-1, keepdim=True)\n\n            # Accumulate output tile in SRAM\n            O_prev = O[:, i:i+block_size, :]\n            O[:, i:i+block_size, :] = (torch.exp(m_prev - m_curr) * l_prev * O_prev + torch.matmul(P_ij, V_j)) / l_curr\n            m[:, i:i+block_size, :] = m_curr\n            l[:, i:i+block_size, :] = l_curr\n\n    return O`
         }
       ],
       bycroftStages: [

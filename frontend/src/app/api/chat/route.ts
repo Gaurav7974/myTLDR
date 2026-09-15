@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8002';
+    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
     // Forward real client IP so backend rate limiter works per-user
     const forwarded = req.headers.get('x-forwarded-for');

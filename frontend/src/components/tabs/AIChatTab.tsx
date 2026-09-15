@@ -249,52 +249,22 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
 
   const starterCards = [
     {
-      tag: 'SUMMARY',
       title: 'Executive Summary',
       prompt: `Explain ${paper.metadata.title} in 2 minutes for a researcher.`
     },
     {
-      tag: 'BOTTLENECK',
-      title: 'Core Bottleneck',
+      title: 'Core Bottleneck Solved',
       prompt: 'What fundamental limitation of prior architectures does this paper solve?'
     },
     {
-      tag: 'TENSOR MATH',
       title: 'Math & Tensor Shapes',
       prompt: 'Break down the mathematical formulation and tensor shapes step-by-step.'
     },
     {
-      tag: 'ENGINEERING',
       title: 'Engineering Tradeoffs',
       prompt: 'What are the main hardware limitations and compute tradeoffs mentioned by the authors?'
     }
   ];
-
-  const quickPrompts = useMemo(() => {
-    const kws = paper.metadata.keywords || [];
-    if (kws.length >= 4) {
-      return [
-        `Explain ${kws[0].term.replace(/^#/, '')} in 1 min`,
-        `Why is ${kws[1].term.replace(/^#/, '')} needed?`,
-        `What are the tensor shapes?`,
-        `How does ${kws[2].term.replace(/^#/, '')} work?`
-      ];
-    }
-    if (kws.length > 0) {
-      return [
-        `Explain ${kws[0].term.replace(/^#/, '')} in 1 min`,
-        `Summarize ${paper.metadata.title} for a researcher`,
-        `What are the tensor shapes?`,
-        `What are the limitations?`
-      ];
-    }
-    return [
-      `Summarize ${paper.metadata.title} in 2 min`,
-      'What is the core contribution?',
-      'What are the tensor shapes?',
-      'What are the limitations?'
-    ];
-  }, [paper.metadata.keywords, paper.metadata.title]);
 
   return (
     <div className="flex flex-col h-full bg-[#FAFAFA] animate-fadeIn relative overflow-hidden">
@@ -303,54 +273,30 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
       <div className="flex-1 overflow-y-auto px-4 md:px-8 pt-6 pb-36 space-y-6">
         <div className="max-w-3xl mx-auto w-full space-y-6">
 
-          {/* Empty State / Welcome Greeting */}
+          {/* Empty State / Centered Welcome Greeting */}
           {messages.length === 0 && (
-            <div className="pt-4 pb-4 space-y-5 animate-fadeIn">
-              <div className="p-6 rounded-2xl bg-white border border-zinc-200/90 shadow-2xs space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-400">
-                    RESEARCH ASSISTANT // GROUNDED RAG
-                  </span>
-                  <span className="text-[10px] font-mono text-zinc-400 truncate max-w-[200px]">
-                    {paper.metadata.arxivId ? `arXiv:${paper.metadata.arxivId}` : 'VERIFIED CORPUS'}
-                  </span>
-                </div>
-                <h3 className="text-base font-bold text-zinc-950 tracking-tight">
-                  myTLDR AI Assistant
+            <div className="flex flex-col items-center justify-center min-h-[48vh] text-center px-4 py-8 space-y-4 animate-fadeIn max-w-lg mx-auto">
+              <div className="w-12 h-12 rounded-2xl bg-zinc-950 text-white flex items-center justify-center shadow-md">
+                <Sparkles className="w-6 h-6 text-zinc-100" />
+              </div>
+              <div className="space-y-1.5">
+                <h3 className="text-xl font-bold text-zinc-950 tracking-tight">
+                  Deep dive with AI Assistant
                 </h3>
-                <p className="text-xs text-zinc-600 leading-relaxed font-normal">
-                  Ask any question regarding the paper&apos;s mathematical formulation, architecture design, PyTorch implementation, or benchmark results. Responses are strictly grounded in <span className="font-semibold text-zinc-900">{paper.metadata.title}</span>.
+                <p className="text-xs text-zinc-500 leading-relaxed max-w-md">
+                  Ask anything about the architecture, mathematical formulations, or experimental results in <span className="font-semibold text-zinc-800">{paper.metadata.title}</span>.
                 </p>
-                {!paper.metadata.contentHash && (
-                  <div className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span>Paper index hash unavailable — using keyword search fallback. Semantic search requires re-processing this paper.</span>
-                  </div>
-                )}
               </div>
 
-              {/* Starter Suggestion Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Clean starter prompt pills */}
+              <div className="flex flex-wrap items-center justify-center gap-2 pt-2 max-w-md">
                 {starterCards.map((card, idx) => (
                   <button
                     key={idx}
                     onClick={() => executeMessage(card.prompt)}
-                    className="p-4 rounded-xl bg-white hover:bg-zinc-50 border border-zinc-200/90 text-left transition-all shadow-2xs hover:shadow-sm hover:border-zinc-300 group flex flex-col justify-between space-y-2"
+                    className="px-3.5 py-1.5 rounded-full bg-white hover:bg-zinc-50 border border-zinc-200 text-xs text-zinc-700 font-medium transition-all shadow-2xs hover:border-zinc-300 active:scale-95 cursor-pointer"
                   >
-                    <div className="flex items-center justify-between w-full">
-                      <span className="text-[10px] font-mono font-bold text-zinc-400 group-hover:text-zinc-950 transition-colors">
-                        0{idx + 1} // {card.tag}
-                      </span>
-                      <ArrowRight className="w-3.5 h-3.5 text-zinc-300 group-hover:text-zinc-950 group-hover:translate-x-0.5 transition-all" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-xs text-zinc-900 group-hover:text-zinc-950">
-                        {card.title}
-                      </h4>
-                      <p className="text-[11px] text-zinc-500 line-clamp-2 mt-0.5 leading-relaxed">
-                        {card.prompt}
-                      </p>
-                    </div>
+                    {card.title}
                   </button>
                 ))}
               </div>
@@ -511,22 +457,6 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
               ))}
             </div>
           )}
-
-          {/* Quick Suggestion Chips */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none px-1">
-            <span className="text-[10px] font-mono uppercase font-bold text-zinc-400 shrink-0">
-              Quick Ask:
-            </span>
-            {quickPrompts.map((prompt, idx) => (
-              <button
-                key={idx}
-                onClick={() => executeMessage(prompt)}
-                className="px-2.5 py-1 rounded-full bg-white/95 hover:bg-white border border-zinc-200/90 text-[11px] text-zinc-700 font-medium whitespace-nowrap transition-all shadow-xs hover:shadow-sm active:scale-95 shrink-0 backdrop-blur-md"
-              >
-                {prompt}
-              </button>
-            ))}
-          </div>
 
           {/* Floating Input Capsule Bar */}
           <form onSubmit={handleSend} className="relative flex items-center bg-white/95 backdrop-blur-xl border border-zinc-200/90 shadow-xl shadow-zinc-950/8 rounded-2xl p-1.5 transition-all focus-within:border-zinc-950/70 focus-within:ring-2 focus-within:ring-zinc-950/10 focus-within:shadow-2xl">

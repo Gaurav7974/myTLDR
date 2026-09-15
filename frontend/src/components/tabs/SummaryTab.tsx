@@ -33,7 +33,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ paper, onAskAI, onJumpTo
     return (
       <article className="w-full max-w-3xl mx-auto px-6 md:px-8 py-8 pb-32 space-y-6 text-zinc-900 leading-relaxed">
         <header className="space-y-3">
-          <p className="font-mono text-[11px] uppercase tracking-widest text-zinc-400">Executive Brief • arXiv:{metadata.arxivId||'PENDING'}{metadata.publishedDate?` • ${metadata.publishedDate}`:''}</p>
+          <p className="font-mono text-[11px] uppercase tracking-widest text-zinc-400">{metadata.arxivId ? `arXiv:${metadata.arxivId}` : 'RESEARCH PAPER'}{metadata.publishedDate ? ` • ${metadata.publishedDate}` : ''}</p>
           <h1 className="font-serif text-[26px] md:text-[30px] font-bold tracking-tight leading-tight">{metadata.title}</h1>
           {metadata.authors?.length>0 && <p className="text-xs font-mono text-zinc-500">{metadata.authors.join(', ')}</p>}
         </header>
@@ -52,7 +52,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ paper, onAskAI, onJumpTo
     <article className="w-full max-w-3xl mx-auto px-6 md:px-8 py-8 pb-32 space-y-10 text-zinc-900 leading-relaxed">
       {/* header — paper identity, no summary text here */}
       <header className="space-y-3">
-        <p className="font-mono text-[11px] uppercase tracking-widest text-zinc-400">Executive Brief • arXiv:{metadata.arxivId||'PENDING'}{metadata.publishedDate?` • ${metadata.publishedDate}`:''}</p>
+        <p className="font-mono text-[11px] uppercase tracking-widest text-zinc-400">{metadata.arxivId ? `arXiv:${metadata.arxivId}` : 'RESEARCH PAPER'}{metadata.publishedDate ? ` • ${metadata.publishedDate}` : ''}</p>
         <h1 className="font-serif text-[26px] md:text-[30px] font-bold tracking-tight leading-tight">{metadata.title}</h1>
         {metadata.authors?.length>0 && <p className="text-xs font-mono text-zinc-500">{metadata.authors.join(', ')}</p>}
         {(metadata.keywords?.length||0)>0 && (
