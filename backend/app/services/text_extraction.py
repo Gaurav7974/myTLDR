@@ -350,7 +350,7 @@ class TextExtractor:
         clean_id = sanitize_arxiv_id(arxiv_id)
         requested_base = re.sub(r'v\d+$', '', clean_id)
         self._rate_limit_arxiv()
-        url = f"http://export.arxiv.org/api/query?id_list={clean_id}"
+        url = f"https://export.arxiv.org/api/query?id_list={clean_id}"
         resp = requests.get(url, timeout=30, headers={
             "User-Agent": settings.ARXIV_USER_AGENT
         })
