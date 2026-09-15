@@ -51,20 +51,12 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     )
 
 
-# CORS — explicit origins, vercel regex, no wildcard with credentials
-import os as _os
-_cors_origins = [o.strip() for o in _os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip() and o.strip() != "*"]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
-)
-
-app.include_router(router, prefix="/api")
-
+# ── HTTP middleware (request-id / logging) ───────────────────────────────────
+# IMPORTANT: @app.middleware("http") decorators are prepended to the stack, so
+# the LAST decorator registered becomes the OUTERMOST wrapper. We register
+# add_request_id BEFORE CORSMiddleware so that CORS ends up outermost and can
+# always set Access-Control-Allow-Origin headers — even when inner middleware
+# raises an exception.
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):
     rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:8]
@@ -78,6 +70,33 @@ async def add_request_id(request: Request, call_next):
     except Exception as e:
         log.error(f"Unhandled {request.url.path}: {e}", exc_info=True)
         raise
+
+# ── CORS ─────────────────────────────────────────────────────────────────────
+# Registered AFTER the HTTP middleware so it sits OUTERMOST in the stack and
+# always runs first on both preflight OPTIONS and regular requests.
+# allow_origin_regex covers any *.vercel.app preview/prod URL.
+# Explicit origins are the authoritative list; CORS_ORIGINS env var can extend
+# it (comma-separated). Wildcard "*" is stripped — incompatible with credentials.
+import os as _os
+_cors_origins = [
+    o.strip()
+    for o in _os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:3000,https://my-tldr.vercel.app",
+    ).split(",")
+    if o.strip() and o.strip() != "*"
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+app.include_router(router, prefix="/api")
+
 
 @app.get("/health")
 async def health():
