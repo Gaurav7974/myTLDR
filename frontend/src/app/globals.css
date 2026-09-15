@@ -136,30 +136,6 @@ html {
   animation: stripes 0.75s linear infinite;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .marquee-track {
-    animation: none;
-  }
-  .cursor-blink {
-    animation: none;
-  }
-  .progress-stripes {
-    animation: none;
-  }
-  .mosaic-cell {
-    animation: none;
-    opacity: 1;
-    transform: none;
-  }
-  .reveal {
-    opacity: 1;
-    transform: none;
-    transition: none;
-  }
-  html {
-    scroll-behavior: auto;
-  }
-}
 
 body {
   background-color: var(--background);

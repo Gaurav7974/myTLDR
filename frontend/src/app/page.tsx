@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Navbar } from '@/components/Navbar';
 import { DualPaneWorkspace } from '@/components/DualPaneWorkspace';
@@ -39,20 +39,23 @@ function HomePageInner() {
 
   // Deep-link restore: ?paper=<slug> reopens the decoded paper when this
   // browser still holds it in sessionStorage (refresh/back-button safe).
-  const [currentPaper, setCurrentPaper] = useState<PaperData>(() => {
+  const [currentPaper, setCurrentPaper] = useState<PaperData>(TRANSFORMER_PAPER_DATA);
+  const [viewState, setViewState] = useState<'workspace' | 'upload'>('upload');
+
+  useEffect(() => {
     try {
       const slug = searchParams.get(PAPER_PARAM);
       if (slug && SLUG_RE.test(slug)) {
-        return readCachedPaper(slug) ?? TRANSFORMER_PAPER_DATA;
+        const cached = readCachedPaper(slug);
+        if (cached) {
+          setCurrentPaper(cached);
+          setViewState('workspace');
+        }
       }
     } catch {
       // storage unavailable — fall through to default
     }
-    return TRANSFORMER_PAPER_DATA;
-  });
-  const [viewState, setViewState] = useState<'workspace' | 'upload'>(() =>
-    currentPaper !== TRANSFORMER_PAPER_DATA ? 'workspace' : 'upload'
-  );
+  }, [searchParams]);
 
   const syncUrlToPaper = (paper: PaperData | null) => {
     const slug = paper ? paperSlug(paper) : null;

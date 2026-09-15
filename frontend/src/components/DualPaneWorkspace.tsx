@@ -1089,10 +1089,10 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
           <div className="flex items-center overflow-x-auto scrollbar-none px-3 max-lg:[mask-image:linear-gradient(to_right,black_calc(100%-1.5rem),transparent)]">
             <button
               onClick={() => handleTabClick('summary')}
-              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
+              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-0 border-b-2 transition-colors whitespace-nowrap bg-transparent cursor-pointer ${
                 activeTab === 'summary'
-                  ? 'border-zinc-950 text-zinc-950 bg-white font-semibold shadow-2xs'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/60'
+                  ? 'border-b-zinc-950 text-zinc-950 font-semibold'
+                  : 'border-b-transparent text-zinc-500 hover:text-zinc-900 hover:border-b-zinc-300'
               }`}
             >
               <Lightbulb className="w-3.5 h-3.5" />
@@ -1101,10 +1101,10 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
 
             <button
               onClick={() => handleTabClick('visualizer')}
-              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
+              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-0 border-b-2 transition-colors whitespace-nowrap bg-transparent cursor-pointer ${
                 activeTab === 'visualizer'
-                  ? 'border-zinc-950 text-zinc-950 bg-white font-semibold shadow-2xs'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/60'
+                  ? 'border-b-zinc-950 text-zinc-950 font-semibold'
+                  : 'border-b-transparent text-zinc-500 hover:text-zinc-900 hover:border-b-zinc-300'
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
@@ -1113,10 +1113,10 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
 
             <button
               onClick={() => handleTabClick('math')}
-              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
+              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-0 border-b-2 transition-colors whitespace-nowrap bg-transparent cursor-pointer ${
                 activeTab === 'math'
-                  ? 'border-zinc-950 text-zinc-950 bg-white font-semibold shadow-2xs'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/60'
+                  ? 'border-b-zinc-950 text-zinc-950 font-semibold'
+                  : 'border-b-transparent text-zinc-500 hover:text-zinc-900 hover:border-b-zinc-300'
               }`}
             >
               <Calculator className="w-3.5 h-3.5" />
@@ -1125,10 +1125,10 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
 
             <button
               onClick={() => handleTabClick('code')}
-              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
+              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-0 border-b-2 transition-colors whitespace-nowrap bg-transparent cursor-pointer ${
                 activeTab === 'code'
-                  ? 'border-zinc-950 text-zinc-950 bg-white font-semibold shadow-2xs'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/60'
+                  ? 'border-b-zinc-950 text-zinc-950 font-semibold'
+                  : 'border-b-transparent text-zinc-500 hover:text-zinc-900 hover:border-b-zinc-300'
               }`}
             >
               <Code className="w-3.5 h-3.5" />
@@ -1137,10 +1137,10 @@ export const DualPaneWorkspace: React.FC<DualPaneWorkspaceProps> = ({ paper, onG
 
             <button
               onClick={() => handleTabClick('chat')}
-              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
+              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium border-0 border-b-2 transition-colors whitespace-nowrap bg-transparent cursor-pointer ${
                 activeTab === 'chat'
-                  ? 'border-zinc-950 text-zinc-950 bg-white font-semibold shadow-2xs'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/60'
+                  ? 'border-b-zinc-950 text-zinc-950 font-semibold'
+                  : 'border-b-transparent text-zinc-500 hover:text-zinc-900 hover:border-b-zinc-300'
               }`}
             >
               <MessageSquare className="w-3.5 h-3.5" />

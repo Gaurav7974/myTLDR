@@ -55,14 +55,6 @@ export const PixelMosaic: React.FC<{ className?: string }> = ({ className = '' }
     const container = containerRef.current;
     if (!container) return;
     const els = cellRefs.current.filter((el): el is HTMLDivElement => el !== null);
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    if (reduced) {
-      els.forEach((el, i) => {
-        el.style.opacity = String(CELLS[i].base);
-      });
-      return;
-    }
 
     const header = container.closest('header');
     let mx = -99999;

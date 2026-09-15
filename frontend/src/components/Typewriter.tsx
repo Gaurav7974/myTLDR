@@ -15,21 +15,8 @@ export const Typewriter: React.FC<{ className?: string }> = ({ className = '' })
   const [text, setText] = useState('');
   const [wordIndex, setWordIndex] = useState(0);
   const [deleting, setDeleting] = useState(false);
-  const [reduced, setReduced] = useState(false);
 
   useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setReduced(mq.matches);
-    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
-
-  useEffect(() => {
-    if (reduced) {
-      setText(WORDS[0]);
-      return;
-    }
     const word = WORDS[wordIndex % WORDS.length];
     let t: ReturnType<typeof setTimeout>;
 
@@ -44,7 +31,7 @@ export const Typewriter: React.FC<{ className?: string }> = ({ className = '' })
       t = setTimeout(() => setText(next), deleting ? DELETE_MS : TYPE_MS);
     }
     return () => clearTimeout(t);
-  }, [text, deleting, wordIndex, reduced]);
+  }, [text, deleting, wordIndex]);
 
   return (
     <span className={className} aria-label="decoded, explained, simplified">
@@ -55,7 +42,7 @@ export const Typewriter: React.FC<{ className?: string }> = ({ className = '' })
 
 /**
  * Types a single line of text once it scrolls into view.
- * Used for the terminal strip. Reduced motion prints instantly.
+ * Used for the terminal strip.
  */
 export const TypeOnce: React.FC<{ text: string; speed?: number; className?: string }> = ({
   text,
@@ -84,11 +71,6 @@ export const TypeOnce: React.FC<{ text: string; speed?: number; className?: stri
 
   useEffect(() => {
     if (!started) return;
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduced) {
-      setOut(text);
-      return;
-    }
     let i = 0;
     const id = setInterval(() => {
       i += 1;
