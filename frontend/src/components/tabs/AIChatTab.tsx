@@ -180,7 +180,11 @@ export const AIChatTab: React.FC<AIChatTabProps> = ({ paper, initialPrompt, onPr
       if (!paperHash) {
         console.warn('[AIChatTab] contentHash missing from paper metadata — RAG will use BM25 fallback only');
       }
-      const fullText = paper.markdownContent ? paper.markdownContent.slice(0, 12000) : undefined;
+      const fullText = (
+        paper.markdownContent ||
+        paper.parsedDocument?.pages?.map((p) => p.markdown).join('\n\n') ||
+        ''
+      ).slice(0, 60000) || undefined;
 
       const res = await fetch('/api/chat', {
         method: 'POST',

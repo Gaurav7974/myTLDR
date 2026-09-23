@@ -88,7 +88,7 @@ function HomePageInner() {
   }
 
   return (
-    <main className="h-screen flex flex-col overflow-hidden bg-[#FAFAFA] text-zinc-900 selection:bg-zinc-200">
+    <main className="h-[calc(100vh/0.9)] flex flex-col overflow-hidden bg-[#FAFAFA] text-zinc-900 selection:bg-zinc-200">
       {/* Top Minimal Navigation */}
       <Navbar
         activePaperTitle={currentPaper.metadata.title}

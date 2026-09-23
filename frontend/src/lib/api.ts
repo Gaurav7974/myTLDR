@@ -195,7 +195,10 @@ function transformBackendPayloadToPaperData(
       commonQuestions: explanation.commonQuestions as PaperData['eli5Summary']['commonQuestions'],
       knowledgeCheck: explanation.knowledgeCheck as PaperData['eli5Summary']['knowledgeCheck'],
     },
-    markdownContent: (explanation.markdown as string) || '',
+    markdownContent:
+      (explanation.markdown as string) ||
+      (parsedDocument?.pages ? parsedDocument.pages.map((p) => p.markdown).join('\n\n') : '') ||
+      '',
     parsedDocument,
     architectureNodes: (payload.architecture_nodes as PaperData['architectureNodes']) || [],
     equations: (payload.equations as PaperData['equations']) || [],

@@ -473,12 +473,6 @@ export default function ArchitectureDiagram({
               Paper Figure (Spatial)
             </button>
           )}
-          {isUnverified && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-mono font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-              <span>Unverified</span>
-            </div>
-          )}
         </div>
 
         {/* SVG Canvas */}
@@ -552,13 +546,13 @@ export default function ArchitectureDiagram({
             })}
 
             {/* Edges */}
-            {edgePaths.map((e) => {
+            {edgePaths.map((e, idx) => {
               const isActive =
                 selectedId && (e.source === selectedId || e.target === selectedId);
               const { stroke, dasharray, width, marker } = resolveEdgeStyleImpl(e, !!isActive);
               const labelW = e.label ? Math.max(50, e.label.length * 6.2 + 16) : 0;
               return (
-                <g key={`${e.source}-${e.target}`}>
+                <g key={e.id ? `edge-${e.id}-${idx}` : `edge-${e.source}-${e.target}-${idx}`}>
                   <path
                     d={e.path}
                     fill="none"

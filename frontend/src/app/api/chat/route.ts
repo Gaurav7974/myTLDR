@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
       query,
       difficulty = 'intermediate'
     } = body;
-    const full_text = typeof body.full_text === 'string' ? body.full_text.slice(0, 12000) : undefined;
+    const full_text = typeof body.full_text === 'string' ? body.full_text.slice(0, 60000) : undefined;
 
     const effectiveHash = paper_hash || paper_id || '';
     const effectiveTitle = paper_title || 'Research Paper';

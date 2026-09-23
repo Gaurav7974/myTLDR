@@ -473,6 +473,29 @@ We consider three desiderata when comparing self-attention to recurrent and conv
 1. **Total computational complexity per layer**: $\\mathcal{O}(n^2 \\cdot d)$ vs $\\mathcal{O}(n \\cdot d^2)$
 2. **Amount of computation that can be parallelized**: Measured by the minimum number of sequential operations $\\mathcal{O}(1)$.
 3. **Path length between long-range dependencies in the network**: $\\mathcal{O}(1)$ maximum path length across all tokens.
+
+## 5. Training
+### 5.1 Training Data and Batching
+We trained on the standard WMT 2014 English-German dataset consisting of about 4.5 million sentence pairs. Sentences were encoded using byte-pair encoding, which has a shared source-target vocabulary of about 37000 tokens. For English-French, we used the significantly larger WMT 2014 English-French dataset consisting of 36M sentences and split tokens into a 32000 word-piece vocabulary. Sentence pairs were batched together by approximate sequence length. Each training batch contained a set of sentence pairs containing approximately 25000 source tokens and 25000 target tokens.
+
+### 5.2 Hardware and Schedule
+We trained our models on one machine with 8 NVIDIA P100 GPUs. For our base models using the hyperparameters described throughout the paper, each training step took about 0.4 seconds. We trained the base models for a total of 100,000 steps or 12 hours. For our big models, step time was 1.0 seconds. The big models were trained for 300,000 steps (3.5 days).
+
+### 5.3 Optimizer
+We used the Adam optimizer with $\\beta_1 = 0.9, \\beta_2 = 0.98$ and $\\epsilon = 10^{-9}$. We varied the learning rate over the course of training, according to the formula: $lrate = d_{\\text{model}}^{-0.5} \\cdot \\min(step\\_num^{-0.5}, step\\_num \\cdot warmup\\_steps^{-1.5})$. We used $warmup\\_steps = 4000$.
+
+### 5.4 Regularization
+We employ three types of regularization during training:
+- **Residual Dropout**: We apply dropout to the output of each sub-layer, before it is added to the sub-layer input and normalized ($P_{drop} = 0.1$).
+- **Embeddings and Positional Encodings Dropout**: We apply dropout to sums of the embeddings and the positional encodings in both the encoder and decoder stacks ($P_{drop} = 0.1$).
+- **Label Smoothing**: During training, we employed label smoothing of value $\\epsilon_{ls} = 0.1$.
+
+## 6. Results
+### 6.1 Machine Translation
+On the WMT 2014 English-to-German translation task, the big transformer model (Transformer (big)) outperforms the best previously reported models (including ensembles) by more than 2.0 BLEU, establishing a new state-of-the-art BLEU score of 28.4. On the WMT 2014 English-to-French translation task, our big model achieves a BLEU score of 41.0, outperforming all previously published single models.
+
+## 7. Conclusion
+In this work, we presented the Transformer, the first sequence transduction model based entirely on attention, replacing the recurrent layers most commonly used in encoder-decoder architectures with multi-headed self-attention. For translation tasks, the Transformer can be trained significantly faster than architectures based on recurrent or convolutional layers.
 `,
   architectureNodes: [
     {

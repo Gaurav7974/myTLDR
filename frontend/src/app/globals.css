@@ -112,6 +112,14 @@
 
 html {
   scroll-behavior: smooth;
+  zoom: 0.9;
+  height: 100%;
+  background-color: #FAFAFA;
+}
+
+body {
+  height: 100%;
+  background-color: #FAFAFA;
 }
 
 /* Marching stripes for processing bar */

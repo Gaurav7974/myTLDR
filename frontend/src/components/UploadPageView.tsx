@@ -387,7 +387,7 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
   );
 
   return (
-    <div className="flex min-h-screen flex-col bg-paper-warm font-sans text-ink">
+    <div className="flex min-h-[calc(100vh/0.9)] flex-col bg-paper-warm font-sans text-ink">
       {/* Hidden file input for PDF uploads */}
       <input
         type="file"
