@@ -95,10 +95,6 @@ Respond strictly with valid JSON:
         if h_result is False:
             log.info(f"[PAPER_VALIDATOR] Rejected by heuristics: {h_reason}")
             return False, h_reason
-        if h_result is True:
-            # Clear academic structure identified in 4ms — fast-path without wasting LLM round-trip
-            log.info(f"[PAPER_VALIDATOR] Fast-path passed by heuristics: {h_reason}")
-            return True, h_reason
 
         # 2. LLM Classifier Gate (for ambiguous or borderline documents)
         sample = text[:3500].strip()

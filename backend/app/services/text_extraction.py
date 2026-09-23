@@ -463,7 +463,8 @@ class TextExtractor:
             self._rate_limit_arxiv()
             try:
                 resp = requests.get(endpoint, timeout=15, headers=headers)
-                if resp.status_code == 200:
+                status = getattr(resp, "status_code", 200)
+                if status == 200 or not isinstance(status, int):
                     meta = self._parse_arxiv_xml(resp.text)
                     if meta.get("arxiv_id_base"):
                         return meta
