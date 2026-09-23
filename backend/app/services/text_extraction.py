@@ -7,6 +7,7 @@ import requests
 import pymupdf  # PyMuPDF
 from dataclasses import dataclass, field
 from typing import List, Optional
+from html.parser import HTMLParser
 from urllib.parse import urljoin
 from app.core.config import settings
 from app.core.logger import get_logger
@@ -53,6 +54,58 @@ class ExtractionResult:
     figures: List[Figure] = field(default_factory=list)
     pages: List[PageText] = field(default_factory=list)
     page_count: int = 0
+
+
+class _ArxivAbsParser(HTMLParser):
+    """Parse title, authors, abstract, and subjects from arXiv /abs/{id} HTML."""
+
+    def __init__(self):
+        super().__init__()
+        self.title = ""
+        self.authors: List[str] = []
+        self.abstract = ""
+        self.categories: List[str] = []
+        self._in_abstract = False
+        self._abstract_chunks: List[str] = []
+        self._in_subject = False
+        self._subject_chunks: List[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        attr_dict = dict(attrs)
+        if tag == "meta":
+            name = attr_dict.get("name", "")
+            content = attr_dict.get("content", "")
+            if name == "citation_title" and not self.title:
+                self.title = content.strip()
+            elif name == "citation_author":
+                author_name = content.strip()
+                if author_name and author_name not in self.authors:
+                    self.authors.append(author_name)
+        elif tag == "blockquote" and "abstract" in attr_dict.get("class", ""):
+            self._in_abstract = True
+        elif tag == "td" and "subjects" in attr_dict.get("class", ""):
+            self._in_subject = True
+
+    def handle_endtag(self, tag):
+        if tag == "blockquote" and self._in_abstract:
+            self._in_abstract = False
+            raw = "".join(self._abstract_chunks)
+            raw = re.sub(r"^\s*Title:\s*", "", raw, flags=re.I)
+            raw = re.sub(r"^\s*Abstract:\s*", "", raw, flags=re.I)
+            self.abstract = re.sub(r"\s+", " ", raw).strip()
+        elif tag == "td" and self._in_subject:
+            self._in_subject = False
+            raw = "".join(self._subject_chunks)
+            matches = re.findall(r"\(([a-zA-Z\-]+(?:\.[a-zA-Z\-]+)?)\)", raw)
+            if not matches:
+                matches = re.findall(r"\b([a-z\-]+(?:\.[A-Z\-]+))\b", raw)
+            self.categories = matches
+
+    def handle_data(self, data):
+        if self._in_abstract:
+            self._abstract_chunks.append(data)
+        elif self._in_subject:
+            self._subject_chunks.append(data)
 
 
 class TextExtractor:
@@ -360,7 +413,11 @@ class TextExtractor:
                 timeout=30,
                 stream=True,
                 allow_redirects=False,
-                headers={"User-Agent": settings.ARXIV_USER_AGENT}
+                headers={
+                    "User-Agent": settings.ARXIV_USER_AGENT,
+                    "Accept": "application/pdf,application/octet-stream,*/*",
+                    "Accept-Language": "en-US,en;q=0.9",
+                }
             )
             if resp.status_code in (301, 302, 303, 307, 308):
                 loc = resp.headers.get("Location")
@@ -390,25 +447,96 @@ class TextExtractor:
         url = f"https://arxiv.org/pdf/{clean_id}.pdf"
         return self.download_pdf(url)
     
+    def _fetch_arxiv_atom(self, clean_id: str) -> Optional[dict]:
+        """Fetch metadata from arXiv Atom API with mirror redundancy and proper Accept headers."""
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "application/atom+xml, application/xml, text/xml, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        endpoints = [
+            f"https://export.arxiv.org/api/query?id_list={clean_id}",
+            f"https://arxiv.org/api/query?id_list={clean_id}",
+            f"http://export.arxiv.org/api/query?id_list={clean_id}",
+        ]
+        for endpoint in endpoints:
+            self._rate_limit_arxiv()
+            try:
+                resp = requests.get(endpoint, timeout=15, headers=headers)
+                if resp.status_code == 200:
+                    meta = self._parse_arxiv_xml(resp.text)
+                    if meta.get("arxiv_id_base"):
+                        return meta
+                log.warning(f"arXiv Atom query {endpoint} returned status {resp.status_code}")
+            except Exception as e:
+                log.warning(f"arXiv Atom query {endpoint} failed: {e}")
+        return None
+
+    def _fetch_arxiv_html(self, clean_id: str) -> Optional[dict]:
+        """Fallback: Scrape canonical Highwire Press metadata from https://arxiv.org/abs/{clean_id}."""
+        requested_base = re.sub(r'v\d+$', '', clean_id)
+        url = f"https://arxiv.org/abs/{clean_id}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        try:
+            resp = requests.get(url, timeout=15, headers=headers)
+            if resp.status_code == 404:
+                raise ValueError(
+                    f"arXiv ID '{clean_id}' does not match any known paper. "
+                    "Check the ID for typos and try again."
+                )
+            if resp.status_code == 200:
+                parser = _ArxivAbsParser()
+                parser.feed(resp.text)
+                if parser.title:
+                    cleaned_authors = []
+                    for a in parser.authors:
+                        if "," in a:
+                            parts = [p.strip() for p in a.split(",", 1)]
+                            cleaned_authors.append(f"{parts[1]} {parts[0]}")
+                        else:
+                            cleaned_authors.append(a)
+                    return {
+                        "title": parser.title,
+                        "authors": cleaned_authors if cleaned_authors else parser.authors,
+                        "abstract": parser.abstract,
+                        "categories": parser.categories,
+                        "arxiv_id": clean_id,
+                        "arxiv_id_base": requested_base,
+                    }
+        except ValueError:
+            raise
+        except Exception as e:
+            log.warning(f"arXiv abs HTML fetch failed for {clean_id}: {e}")
+        return None
+
     def get_arxiv_metadata(self, arxiv_id: str) -> dict:
-        """Fetch paper metadata from arXiv API with sanitized ID.
+        """Fetch paper metadata from arXiv API or HTML abstract page with sanitized ID.
+
+        Uses a resilient multi-tier fallback:
+        1. Query export.arxiv.org/api/query (Atom 1.0 XML) with RFC-compliant headers.
+        2. Failover to mirrors: arxiv.org/api/query and http://export.arxiv.org/api/query.
+        3. Failover to Highwire Press HTML metadata scraper on arxiv.org/abs/{clean_id}.
 
         Raises:
             ValueError: if arXiv returns no entry (nonexistent ID), if the
-                returned entry's canonical ID differs from the requested one
-                (never silently deconstruct the wrong paper), or if no usable
-                title is present.
+                returned entry's canonical ID differs from the requested one,
+                or if no usable title is present.
         """
         clean_id = sanitize_arxiv_id(arxiv_id)
         requested_base = re.sub(r'v\d+$', '', clean_id)
-        self._rate_limit_arxiv()
-        url = f"https://export.arxiv.org/api/query?id_list={clean_id}"
-        resp = requests.get(url, timeout=30, headers={
-            "User-Agent": settings.ARXIV_USER_AGENT
-        })
-        resp.raise_for_status()
-        meta = self._parse_arxiv_xml(resp.text)
-        if not meta.get("arxiv_id_base"):
+        
+        # Tier 1 & 2: Atom XML API (export.arxiv.org / arxiv.org mirrors)
+        meta = self._fetch_arxiv_atom(clean_id)
+        
+        # Tier 3: HTML abstract page fallback (bypasses 406/429/WAF issues on export.arxiv.org)
+        if not meta or not meta.get("title"):
+            meta = self._fetch_arxiv_html(clean_id)
+
+        if not meta or not meta.get("arxiv_id_base"):
             raise ValueError(
                 f"arXiv ID '{clean_id}' does not match any known paper. "
                 "Check the ID for typos and try again."
