@@ -16,13 +16,13 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _isolate_in_memory_caches():
-    """Reset the cache service's module-level in-memory dicts around every
-    test so cache hits from one test do not leak into another."""
-    from app.services import cache
-    cache._IN_MEMORY_GRAPHS.clear()
-    cache._IN_MEMORY_EXPLANATIONS.clear()
-    cache._IN_MEMORY_PARSED_TEXT.clear()
+    """Reset the RAG service's module-level in-memory dicts around every
+    test so vectors/chunks from one test do not leak into another."""
+    from app.services import rag
+    rag._MEMORY_VECTOR_STORE.clear()
+    rag._MEMORY_CHUNK_STORE.clear()
+    rag._embedding_cache.clear()
     yield
-    cache._IN_MEMORY_GRAPHS.clear()
-    cache._IN_MEMORY_EXPLANATIONS.clear()
-    cache._IN_MEMORY_PARSED_TEXT.clear()
+    rag._MEMORY_VECTOR_STORE.clear()
+    rag._MEMORY_CHUNK_STORE.clear()
+    rag._embedding_cache.clear()

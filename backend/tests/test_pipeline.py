@@ -1,10 +1,9 @@
-"""Pipeline + figure-picker + merge + cache tests (Todos 5, 6, 12).
+"""Pipeline + figure-picker + merge tests.
 
 Locks the trust-first policy in the pipeline:
 - Verified vision graph wins.
 - Verified text graph is used when no verified vision graph.
 - No verified graph => diagram_available=False.
-- Legacy cache payloads are downgraded so they never masquerade.
 """
 from unittest.mock import patch, AsyncMock, MagicMock
 
@@ -18,9 +17,6 @@ from app.services.graph_merge import (
     merge_graph_metadata, should_render_reconstruction,
 )
 from app.services.pipeline import _pick_architecture_figure
-from app.services.cache import (
-    _downgrade_legacy_graph, _is_rich_figure_graph,
-)
 
 
 # ── figure picker ──────────────────────────────────────────────────
@@ -189,55 +185,6 @@ def test_should_render_only_for_verified_vision_figure():
 
     assert should_render_reconstruction(None) is False
 
-
-# ── cache version policy ──────────────────────────────────────────
-def test_legacy_payload_downgraded():
-    legacy = {"nodes": [{"id": "a", "label": "A", "type": "attention"}], "edges": []}
-    downgraded = _downgrade_legacy_graph(legacy)
-    assert downgraded["layout_mode"] == "auto"
-    assert downgraded["source"] == "legacy"
-    assert downgraded["version"] == "legacy"
-    assert _is_rich_figure_graph(downgraded) is False
-
-
-def test_old_version_downgraded():
-    old = {"version": "1.0", "source": "vision", "layout_mode": "figure",
-           "nodes": [], "edges": [],
-           "verification": {"valid": True, "confidence": 0.9}}
-    downgraded = _downgrade_legacy_graph(old)
-    assert downgraded["layout_mode"] == "auto"
-    assert downgraded["version"] == "legacy"
-
-
-def test_hallucinated_payload_downgraded():
-    hal = {"version": GRAPH_PAYLOAD_VERSION, "source": "vision", "layout_mode": "figure",
-           "nodes": [], "edges": [],
-           "verification": {"valid": True, "confidence": 0.99, "hallucinations": ["x"]}}
-    downgraded = _downgrade_legacy_graph(hal)
-    assert downgraded["layout_mode"] == "auto"
-
-
-def test_valid_rich_payload_survives():
-    valid = {
-        "version": GRAPH_PAYLOAD_VERSION, "source": "vision", "layout_mode": "figure",
-        "nodes": [], "edges": [],
-        "verification": {"valid": True, "confidence": 0.92, "hallucinations": []},
-    }
-    downgraded = _downgrade_legacy_graph(valid)
-    assert downgraded["layout_mode"] == "figure"
-    assert _is_rich_figure_graph(downgraded) is True
-
-
-def test_low_confidence_downgraded():
-    low = {
-        "version": GRAPH_PAYLOAD_VERSION, "source": "vision", "layout_mode": "figure",
-        "nodes": [], "edges": [],
-        "verification": {"valid": True, "confidence": 0.3, "hallucinations": []},
-    }
-    downgraded = _downgrade_legacy_graph(low)
-    assert downgraded["layout_mode"] == "auto"
-
-
 # ── pipeline decision matrix ──────────────────────────────────────
 def test_pipeline_decision_verified_vision_wins():
     """Mirrors the decision block in pipeline.py stage 4."""
@@ -313,75 +260,6 @@ def test_pipeline_decision_no_verified_returns_no_diagram():
     assert available is False
     assert reason == "no_verified_graph"
 
-
-@pytest.mark.asyncio
-async def test_pipeline_cache_hit_returns_full_payload():
-    from app.services.pipeline import process_paper
-    from unittest.mock import AsyncMock, patch
-
-    mock_db = AsyncMock()
-    cached_expl = {"overview": {"one_sentence": "Test paper summary"}}
-    cached_g = {
-        "version": GRAPH_PAYLOAD_VERSION,
-        "source": "text",
-        "layout_mode": "auto",
-        "nodes": [{"id": "n1", "label": "Encoder", "type": "encoder"}],
-        "edges": [],
-    }
-    cached_analysis = {
-        "equations": [{"id": "eq1", "latex": "y = Wx + b"}],
-        "code_snippets": [{"title": "model.py", "code": "class Model: pass"}],
-        "code_note": None,
-        "canonical_ir": {
-            "version": "1.0",
-            "architecture": {"name": "TestNet", "paradigm": "transformer"},
-            "nodes": [{"id": "n1", "label": "Encoder", "type": "encoder"}],
-            "edges": []
-        }
-    }
-
-    with patch("app.services.pipeline.text_extractor.extract_from_pdf_bytes") as mock_extract, \
-         patch("app.services.pipeline.cache_service.get_parsed_text", new_callable=AsyncMock) as mock_parsed, \
-         patch("app.services.pipeline.cache_service.get_explanation", new_callable=AsyncMock) as mock_get_expl, \
-         patch("app.services.pipeline.cache_service.get_graph", new_callable=AsyncMock) as mock_get_graph, \
-         patch("app.services.pipeline.cache_service.get_analysis", new_callable=AsyncMock) as mock_get_analysis, \
-         patch("app.services.pipeline.rag_service.index_paper", new_callable=AsyncMock):
-
-        mock_extraction = MagicMock()
-        mock_extraction.text = (
-            "Title: Neural Network Transformers\n"
-            "Abstract\nWe present a novel neural architecture based on attention.\n"
-            "1 Introduction\nDeep learning models have excelled [1].\n"
-            "3 Methodology\nThe architecture uses multi-head attention.\n"
-            "References\n[1] Vaswani et al., 2017."
-        )
-        mock_extraction.figures = []
-        mock_extraction.page_count = 1
-        mock_extraction.pages = []
-        mock_extract.return_value = mock_extraction
-
-        mock_parsed.return_value = {"page_count": 1, "pages": [], "figures": []}
-        mock_get_expl.return_value = cached_expl
-        mock_get_graph.return_value = cached_g
-        mock_get_analysis.return_value = cached_analysis
-
-        events = []
-        fake_pdf = b"%PDF-1.5 fake pdf content here"
-        async for event in process_paper(source_type="upload", file_bytes=fake_pdf, url=None, difficulty="intermediate", db=mock_db):
-            events.append(event)
-
-        done_event = next((e for e in events if e.get("stage") == "done"), None)
-        assert done_event is not None
-        assert done_event.get("cached") is True
-        assert done_event.get("explanation") == cached_expl
-        assert len(done_event.get("equations")) == 1
-        assert done_event.get("equations")[0]["latex"] == "y = Wx + b"
-        assert len(done_event.get("code_snippets")) == 1
-        assert done_event.get("code_snippets")[0]["title"] == "model.py"
-        assert done_event.get("architecture_ir") is not None
-        assert done_event.get("bycroft_stages") == []
-
-
 @pytest.mark.asyncio
 async def test_pipeline_rejects_non_academic_upload():
     from app.services.pipeline import process_paper
@@ -412,3 +290,66 @@ async def test_pipeline_rejects_non_academic_upload():
         assert "not appear to be an academic research paper" in error_event.get("message", "")
         # Ensure it halted immediately and never completed
         assert not any(e.get("stage") == "done" for e in events)
+
+
+@pytest.mark.asyncio
+async def test_pipeline_fresh_execution_no_cache():
+    """Verify that paper processing runs completely fresh without caching."""
+    from app.services.pipeline import process_paper
+    from app.models.architecture_ir import ArchitectureIR, ArchitectureMetadata, SceneGraph3D
+    from unittest.mock import AsyncMock, patch
+
+    mock_db = AsyncMock()
+    fake_ir = ArchitectureIR(
+        architecture=ArchitectureMetadata(name="TestNet", paradigm="transformer"),
+        nodes=[],
+        edges=[]
+    )
+    fake_scene = SceneGraph3D(nodes_3d=[], edges_3d=[])
+    fake_graph = ArchitectureGraph(
+        source="text", layout_mode="auto", version=GRAPH_PAYLOAD_VERSION,
+        nodes=[GraphNode(id="n1", label="Encoder", type="encoder")], edges=[],
+    )
+
+    with patch("app.services.pipeline.text_extractor.extract_from_pdf_bytes") as mock_extract, \
+         patch("app.services.pipeline.rag_service.index_paper", new_callable=AsyncMock) as mock_index, \
+         patch("app.services.pipeline.explanation_service.generate") as mock_expl, \
+         patch("app.services.pipeline.explanation_service.extract_equations") as mock_eq, \
+         patch("app.services.pipeline.explanation_service.generate_pytorch_code") as mock_code, \
+         patch("app.services.pipeline.ir_extractor.extract") as mock_ir, \
+         patch("app.services.pipeline.graph_extractor.extract_graph") as mock_tgraph, \
+         patch("app.services.pipeline.graph_extractor.verify_graph") as mock_tverify:
+
+        mock_extraction = MagicMock()
+        mock_extraction.text = (
+            "Title: Fresh Paper Analysis\n"
+            "Abstract\nWe propose an innovative machine learning approach.\n"
+            "1 Introduction\nTransformers have reshaped sequence modeling [1].\n"
+            "3 Methodology\nOur novel pipeline processes papers without stale state.\n"
+            "References\n[1] Vaswani et al., 2017."
+        )
+        mock_extraction.figures = []
+        mock_extraction.page_count = 1
+        mock_extraction.pages = []
+        mock_extract.return_value = mock_extraction
+
+        mock_expl.return_value = {"overview": {"one_sentence": "Fresh summary without cache."}}
+        mock_eq.return_value = []
+        mock_code.return_value = {"snippets": [], "needs_code": True}
+        mock_ir.return_value = (fake_ir, fake_scene)
+        mock_tgraph.return_value = fake_graph
+        mock_tverify.return_value = {"valid": True, "confidence": 0.95}
+
+        events = []
+        fake_pdf = b"%PDF-1.5 fresh paper pdf content"
+        async for event in process_paper(source_type="upload", file_bytes=fake_pdf, url=None, difficulty="intermediate", db=mock_db):
+            events.append(event)
+
+        done_event = next((e for e in events if e.get("stage") == "done"), None)
+        assert done_event is not None
+        assert done_event.get("cached") is False
+        assert done_event.get("explanation") == {"overview": {"one_sentence": "Fresh summary without cache."}}
+        assert done_event.get("architecture_ir") is not None
+        assert done_event.get("content_hash") is not None
+        assert mock_index.called
+

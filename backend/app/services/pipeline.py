@@ -20,9 +20,15 @@ from app.services.graph_merge import (
     merge_graph_metadata,
     should_render_reconstruction,
 )
-from app.services.cache import cache_service, compute_content_hash
+import hashlib
 from app.services.rag import rag_service
 from app.services.paper_validator import paper_validator
+
+
+def compute_content_hash(text: str) -> str:
+    """Compute SHA256 hash of normalized text for RAG indexing and frontend references."""
+    normalized = text_extractor.normalize_text(text)
+    return hashlib.sha256(normalized.encode()).hexdigest()
 
 
 async def process_paper(
@@ -95,27 +101,22 @@ async def process_paper(
     content_hash = compute_content_hash(full_text)
 
     # ── Parsed text for the frontend reader (per-page, images inlined) ──
-    cached_parsed = await cache_service.get_parsed_text(db, content_hash)
-    if cached_parsed:
-        parsed_text = cached_parsed
-    else:
-        parsed_text = {
-            "page_count": extraction.page_count,
-            "pages": [
-                {
-                    "page_number": p.page_number,
-                    "markdown": p.markdown,
-                    "source": p.source,
-                }
-                for p in extraction.pages
-            ],
-            "figures": [
-                {"id": f.id, "page": f.page, "caption": f.caption}
-                for f in figures
-            ],
-        }
-        await cache_service.store_parsed_text(db, content_hash, parsed_text)
-    
+    parsed_text = {
+        "page_count": extraction.page_count,
+        "pages": [
+            {
+                "page_number": p.page_number,
+                "markdown": p.markdown,
+                "source": p.source,
+            }
+            for p in extraction.pages
+        ],
+        "figures": [
+            {"id": f.id, "page": f.page, "caption": f.caption}
+            for f in figures
+        ],
+    }
+
     # ── Index paper chunks into pgvector for RAG Q&A ──
     async def _index_rag_background(hash_key: str, text_key: str):
         from app.core.database import async_session
@@ -126,54 +127,7 @@ async def process_paper(
             log.warning(f"[WARN] Background RAG indexing failed: {e}")
 
     asyncio.create_task(_index_rag_background(content_hash, full_text))
-    
-    # Check caches: explanation, graph, and difficulty-independent analysis bundle
-    cached_explanation = await cache_service.get_explanation(db, content_hash, difficulty)
-    cached_graph = await cache_service.get_graph(db, content_hash)
-    cached_analysis = await cache_service.get_analysis(db, content_hash)
-    
-    if cached_explanation and cached_graph is not None and cached_analysis is not None:
-        # Full cache hit
-        from app.models.graph import ArchitectureGraph
-        from app.models.architecture_ir import ArchitectureIR, ArchitectureMetadata, SceneGraph3D
-        graph = ArchitectureGraph(**cached_graph) if cached_graph else None
-        if graph is not None and not should_render_reconstruction(graph):
-            if graph.layout_mode == "figure":
-                graph.layout_mode = "auto"
-            if graph.source is None:
-                graph.source = "legacy"
-        diagram_available = graph is not None and len(graph.nodes) > 0
-        graph_payload = graph.model_dump() if graph and diagram_available else None
-        
-        c_eqs = cached_analysis.get("equations", [])
-        c_snippets = cached_analysis.get("code_snippets", [])
-        c_note = cached_analysis.get("code_note")
-        c_ir_data = cached_analysis.get("canonical_ir") or {}
-        c_ir = ArchitectureIR(**c_ir_data) if c_ir_data and "architecture" in c_ir_data else ArchitectureIR(version="1.0", architecture=ArchitectureMetadata(name=paper_title, paradigm="other"), nodes=[], edges=[])
 
-        yield {
-            "stage": "done",
-            "explanation": cached_explanation,
-            "graph": graph_payload,
-            "architecture_ir": c_ir.model_dump(),
-            "scene_graph_3d": SceneGraph3D(nodes_3d=[], edges_3d=[]).model_dump(),
-            "bycroft_stages": [],
-            "bycroft_highways": [],
-            "attention_heatmap": {"tokens": [], "matrix": []},
-            "next_token_predictions": [],
-            "equations": c_eqs,
-            "code_snippets": c_snippets,
-            "code_note": c_note,
-            "architecture_nodes": [n.model_dump() for n in c_ir.nodes] if hasattr(c_ir, "nodes") else [],
-            "diagram_available": diagram_available,
-            "summary_available": cached_explanation is not None,
-            "metadata": metadata,
-            "parsed_text": parsed_text,
-            "content_hash": content_hash,
-            "cached": True
-        }
-        return
-    
     # ── Prep phase: arch section detection + figure classification ────────────
     # Both are independent of each other, so run them in parallel FIRST.
     # Having arch_text before the main batch lets equations, IR, and graph
@@ -185,7 +139,7 @@ async def process_paper(
     keyword_pick = None
     need_fig_classify = False
 
-    if cached_graph is None and figures:
+    if figures:
         keyword_pick = _pick_architecture_figure(figures)
         if keyword_pick and any(
             k in (getattr(keyword_pick, "caption", "") or "").lower()
@@ -195,9 +149,9 @@ async def process_paper(
         else:
             need_fig_classify = True
 
-    prep_tasks: dict = {}
-    if cached_graph is None:
-        prep_tasks["arch"] = asyncio.to_thread(text_extractor.find_architecture_section, full_text)
+    prep_tasks: dict = {
+        "arch": asyncio.to_thread(text_extractor.find_architecture_section, full_text)
+    }
     if need_fig_classify:
         prep_tasks["figcls"] = asyncio.to_thread(pick_architecture_figure_classifier, figures, paper_title)
 
@@ -235,16 +189,6 @@ async def process_paper(
     # fall back to first 20k chars of stripped full_text (methods are in first half).
     focused_text: str = arch_text if arch_text else full_text[:20000]
 
-    # ── Reuse cached analysis if available (e.g. difficulty switch) ───────────
-    equations = cached_analysis.get("equations") if cached_analysis else None
-    code_snippets = cached_analysis.get("code_snippets") if cached_analysis else None
-    code_note = cached_analysis.get("code_note") if cached_analysis else None
-    canonical_ir = None
-    if cached_analysis and cached_analysis.get("canonical_ir"):
-        from app.models.architecture_ir import ArchitectureIR
-        try: canonical_ir = ArchitectureIR(**cached_analysis["canonical_ir"])
-        except Exception: canonical_ir = None
-
     # ── Main LLM task batch (all parallel) ────────────────────────────────────
     # expl   → needs broad context: overview + results + conclusion → full_text
     # eq     → equations live in the method section              → focused_text
@@ -252,16 +196,13 @@ async def process_paper(
     # ir     → IR purely from architecture/method section        → focused_text
     # tgraph → graph extraction from arch section                → arch_text (already scoped)
     # vgraph → vision graph from figure image                    → no text
-    tasks: dict = {}
-    if not cached_explanation:
-        tasks["expl"] = asyncio.to_thread(explanation_service.generate, full_text, difficulty)
-    if equations is None:
-        tasks["eq"] = asyncio.to_thread(explanation_service.extract_equations, focused_text)
-    if code_snippets is None:
-        tasks["code"] = asyncio.to_thread(explanation_service.generate_pytorch_code, full_text, paper_title, arch_text)
-    if canonical_ir is None:
-        tasks["ir"] = asyncio.to_thread(ir_extractor.extract, focused_text, paper_title)
-    if cached_graph is None and not arch_section_missing and arch_text:
+    tasks: dict = {
+        "expl": asyncio.to_thread(explanation_service.generate, full_text, difficulty),
+        "eq": asyncio.to_thread(explanation_service.extract_equations, focused_text),
+        "code": asyncio.to_thread(explanation_service.generate_pytorch_code, full_text, paper_title, arch_text),
+        "ir": asyncio.to_thread(ir_extractor.extract, focused_text, paper_title),
+    }
+    if not arch_section_missing and arch_text:
         tasks["tgraph"] = asyncio.to_thread(graph_extractor.extract_graph, arch_text, paper_title)
     if arch_figure:
         tasks["vgraph"] = asyncio.to_thread(figure_extractor.extract_architecture, arch_figure, paper_title)
@@ -269,42 +210,25 @@ async def process_paper(
     results = dict(zip(tasks.keys(), await asyncio.gather(*tasks.values(), return_exceptions=True))) if tasks else {}
     def _ok(k): v = results.get(k); return None if isinstance(v, Exception) else v
 
-    explanation = cached_explanation or _ok("expl")
-    if explanation and not cached_explanation:
-        try: await cache_service.store_explanation(db, content_hash, difficulty, explanation)
-        except Exception: pass
-
-    if equations is None:
-        equations = _ok("eq") or []
-    if code_snippets is None:
-        code_res = _ok("code") or {}
-        code_snippets, code_note = [], None
-        if isinstance(code_res, dict):
-            code_snippets = code_res.get("snippets", []) or []
-            if not code_res.get("needs_code", True):
-                code_note = code_res.get("reason") or "This paper has no implementable architecture to show as code."
+    explanation = _ok("expl")
+    equations = _ok("eq") or []
+    code_res = _ok("code") or {}
+    code_snippets, code_note = [], None
+    if isinstance(code_res, dict):
+        code_snippets = code_res.get("snippets", []) or []
+        if not code_res.get("needs_code", True):
+            code_note = code_res.get("reason") or "This paper has no implementable architecture to show as code."
 
     from app.models.architecture_ir import ArchitectureIR, ArchitectureMetadata, SceneGraph3D
     scene_graph = SceneGraph3D(nodes_3d=[], edges_3d=[])
-    if canonical_ir is None:
-        ir_res = _ok("ir")
-        if isinstance(ir_res, tuple):
-            canonical_ir, _ = ir_res
-        elif isinstance(ir_res, ArchitectureIR):
-            canonical_ir = ir_res
+    canonical_ir = None
+    ir_res = _ok("ir")
+    if isinstance(ir_res, tuple):
+        canonical_ir, _ = ir_res
+    elif isinstance(ir_res, ArchitectureIR):
+        canonical_ir = ir_res
     if canonical_ir is None:
         canonical_ir = ArchitectureIR(version="1.0", architecture=ArchitectureMetadata(name=paper_title, paradigm="other"), nodes=[], edges=[])
-
-    # Store analysis bundle in cache for future difficulty switches or instant loads
-    if not cached_analysis:
-        analysis_payload = {
-            "equations": equations,
-            "code_snippets": code_snippets,
-            "code_note": code_note,
-            "canonical_ir": canonical_ir.model_dump(),
-        }
-        try: await cache_service.store_analysis(db, content_hash, analysis_payload)
-        except Exception as e: log.warning(f"[WARN] Failed storing analysis cache: {e}")
 
     text_graph, vision_graph = _ok("tgraph"), _ok("vgraph")
     # Parallel verification (both independent)
@@ -329,86 +253,64 @@ async def process_paper(
     diagram_available = False
     diagram_reason = "not_attempted"
 
-    if cached_graph is not None:
-        from app.models.graph import ArchitectureGraph
-        graph = ArchitectureGraph(**cached_graph)
-        # Only honor the cached graph if it is still a verifiable rich graph.
-        if graph.source in ("vision", "merged") and is_verified_vision_graph(graph):
-            diagram_available = True
-            diagram_reason = "cached_verified_vision"
-        elif graph.layout_mode == "figure" and not is_verified_vision_graph(graph):
-            graph.layout_mode = "auto"
-            graph.source = "legacy"
-            diagram_available = True
-            diagram_reason = "cached_downgraded_to_auto"
-        else:
-            diagram_available = len(graph.nodes) > 0
-            diagram_reason = "cached_text_or_auto"
-    else:
-        # Explicit failure propagation (Fix #2): no architecture section + no vision = no diagram
-        if arch_section_missing and not vision_graph:
-            graph, diagram_available, diagram_reason = None, False, "no_architecture_section"
-        elif is_verified_vision_graph(vision_graph):
-            graph = merge_graph_metadata(vision_graph, text_graph, prefer="vision") if text_verified and text_graph else vision_graph
-            diagram_available, diagram_reason = True, "verified_vision"
-        elif vision_graph and len(vision_graph.nodes) > 0:
-            if text_graph and len(text_graph.nodes) > 0:
-                try: graph = merge_graph_metadata(vision_graph, text_graph, prefer="vision")
-                except Exception: graph = vision_graph
-            else: graph = vision_graph
-            diagram_available, diagram_reason = True, "unverified_vision"
-        elif text_verified and text_graph and len(text_graph.nodes) > 0:
-            graph, diagram_available, diagram_reason = text_graph, True, "verified_text"
-        elif text_graph and len(text_graph.nodes) > 0:
-            text_graph.layout_mode, text_graph.source = "auto", "text"
-            graph, diagram_available, diagram_reason = text_graph, True, "text_auto_fallback"
-        elif arch_section_missing:
-            graph, diagram_available, diagram_reason = None, False, "no_architecture_section"
-        else: graph, diagram_available, diagram_reason = None, False, "no_verified_graph"
+    # Explicit failure propagation (Fix #2): no architecture section + no vision = no diagram
+    if arch_section_missing and not vision_graph:
+        graph, diagram_available, diagram_reason = None, False, "no_architecture_section"
+    elif is_verified_vision_graph(vision_graph):
+        graph = merge_graph_metadata(vision_graph, text_graph, prefer="vision") if text_verified and text_graph else vision_graph
+        diagram_available, diagram_reason = True, "verified_vision"
+    elif vision_graph and len(vision_graph.nodes) > 0:
+        if text_graph and len(text_graph.nodes) > 0:
+            try: graph = merge_graph_metadata(vision_graph, text_graph, prefer="vision")
+            except Exception: graph = vision_graph
+        else: graph = vision_graph
+        diagram_available, diagram_reason = True, "unverified_vision"
+    elif text_verified and text_graph and len(text_graph.nodes) > 0:
+        graph, diagram_available, diagram_reason = text_graph, True, "verified_text"
+    elif text_graph and len(text_graph.nodes) > 0:
+        text_graph.layout_mode, text_graph.source = "auto", "text"
+        graph, diagram_available, diagram_reason = text_graph, True, "text_auto_fallback"
+    elif arch_section_missing:
+        graph, diagram_available, diagram_reason = None, False, "no_architecture_section"
+    else: graph, diagram_available, diagram_reason = None, False, "no_verified_graph"
 
-        if diagram_available and graph is not None:
-            # Inline-enrich from canonical_ir (zero API latency)
-            if canonical_ir and hasattr(canonical_ir, "nodes") and canonical_ir.nodes:
-                ir_nodes_by_id = {str(n.id).lower().strip(): n for n in canonical_ir.nodes if n.id}
-                ir_nodes_by_label = {str(n.label).lower().strip(): n for n in canonical_ir.nodes if n.label}
-                for node in graph.nodes:
-                    nid = str(node.id).lower().strip()
-                    nlbl = str(node.label).lower().strip()
-                    match = ir_nodes_by_id.get(nid) or ir_nodes_by_label.get(nlbl)
-                    if not match:
-                        for k, v in ir_nodes_by_label.items():
-                            if nlbl in k or k in nlbl:
-                                match = v
-                                break
-                    if match:
-                        if not node.description and getattr(match, "description", None):
-                            node.description = str(match.description)
-                        if not node.math_formula and getattr(match, "math_formula", None):
-                            node.math_formula = str(match.math_formula)
-                        if not getattr(node, "paper_term", None) and getattr(match, "paper_term", None):
-                            node.paper_term = str(match.paper_term)
-                        if not getattr(node, "parameters", None) and getattr(match, "parameters", None):
-                            node.parameters = str(match.parameters)
-                        if not getattr(node, "flops", None) and getattr(match, "flops", None):
-                            node.flops = str(match.flops)
+    if diagram_available and graph is not None:
+        # Inline-enrich from canonical_ir (zero API latency)
+        if canonical_ir and hasattr(canonical_ir, "nodes") and canonical_ir.nodes:
+            ir_nodes_by_id = {str(n.id).lower().strip(): n for n in canonical_ir.nodes if n.id}
+            ir_nodes_by_label = {str(n.label).lower().strip(): n for n in canonical_ir.nodes if n.label}
+            for node in graph.nodes:
+                nid = str(node.id).lower().strip()
+                nlbl = str(node.label).lower().strip()
+                match = ir_nodes_by_id.get(nid) or ir_nodes_by_label.get(nlbl)
+                if not match:
+                    for k, v in ir_nodes_by_label.items():
+                        if nlbl in k or k in nlbl:
+                            match = v
+                            break
+                if match:
+                    if not node.description and getattr(match, "description", None):
+                        node.description = str(match.description)
+                    if not node.math_formula and getattr(match, "math_formula", None):
+                        node.math_formula = str(match.math_formula)
+                    if not getattr(node, "paper_term", None) and getattr(match, "paper_term", None):
+                        node.paper_term = str(match.paper_term)
+                    if not getattr(node, "parameters", None) and getattr(match, "parameters", None):
+                        node.parameters = str(match.parameters)
+                    if not getattr(node, "flops", None) and getattr(match, "flops", None):
+                        node.flops = str(match.flops)
 
-            # Only call LLM enrichment if nodes still lack descriptions
-            if any(not n.description for n in graph.nodes):
-                try:
-                    graph = await asyncio.to_thread(
-                        graph_extractor.enrich_nodes,
-                        graph,
-                        arch_text or full_text,
-                        paper_title,
-                    )
-                except Exception as e:
-                    log.warning(f"[WARN] Dynamic node enrichment skipped: {e}")
-
-            await cache_service.store_graph(
-                db, content_hash, graph.model_dump(), True
-            )
-        else:
-            await cache_service.store_graph(db, content_hash, None, False)
+        # Only call LLM enrichment if nodes still lack descriptions
+        if any(not n.description for n in graph.nodes):
+            try:
+                graph = await asyncio.to_thread(
+                    graph_extractor.enrich_nodes,
+                    graph,
+                    arch_text or full_text,
+                    paper_title,
+                )
+            except Exception as e:
+                log.warning(f"[WARN] Dynamic node enrichment skipped: {e}")
 
     if graph is not None and not should_render_reconstruction(graph):
         graph.layout_mode = "auto"

@@ -27,7 +27,7 @@ backend/
     api/endpoints/    # FastAPI routes (chat, stream, submit)
     core/             # Security, config
     models/           # DB models, IR models, graph models
-    services/         # LLM, RAG, pipeline, layout, graph, cache
+    services/         # LLM, RAG, pipeline, layout, graph
     main.py           # FastAPI app entry
     config.py         # Settings
     database.py       # DB connection
@@ -50,7 +50,7 @@ frontend/
 - ArchitectureIR extraction/validation in `services/ir_extraction.py` + `ir_validator.py`
 - 3D forward-pass stage extraction in `services/forward_pass.py`
 - Layout: React Flow positions in `services/flow_layout.py`; 3D SceneGraph in `services/scene_layout.py`
-- Orchestration in `services/pipeline.py`; caching in `services/cache.py`
+- Orchestration in `services/pipeline.py`
 
 ### Frontend
 - Next.js App Router

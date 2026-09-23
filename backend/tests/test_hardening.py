@@ -149,27 +149,24 @@ def test_cors_no_wildcard_with_credentials():
 
 
 def test_orm_uniqueness_constraints_exist():
-    from app.models.orm import PaperCache, PaperChunk
-    # Check UniqueConstraint present
-    assert any(
-        any(col.name == "content_hash" for col in c.columns) and any(col.name == "difficulty_level" for col in c.columns)
-        for c in PaperCache.__table_args__ if hasattr(c, "columns")
-    )
+    from app.models.orm import PaperChunk
+    # Check UniqueConstraint present on PaperChunk
     assert any(
         any(col.name == "paper_hash" for col in c.columns) and any(col.name == "chunk_index" for col in c.columns)
         for c in PaperChunk.__table_args__ if hasattr(c, "columns")
     )
 
 
-def test_cache_bounded_not_unbounded():
-    from app.services import cache
+def test_rag_cache_bounded_not_unbounded():
+    from app.services import rag
     # Should be LRUCache if cachetools available
     try:
         from cachetools import LRUCache
 
-        assert isinstance(cache._IN_MEMORY_GRAPHS, LRUCache)
-        assert cache._IN_MEMORY_GRAPHS.maxsize == 100
-        assert isinstance(cache._IN_MEMORY_EXPLANATIONS, LRUCache)
+        assert isinstance(rag._MEMORY_VECTOR_STORE, LRUCache)
+        assert rag._MEMORY_VECTOR_STORE.maxsize == 100
+        assert isinstance(rag._embedding_cache, LRUCache)
+        assert rag._embedding_cache.maxsize == 512
     except ImportError:
         pass  # plain dict fallback ok in CI without cachetools
 
@@ -179,39 +176,6 @@ def test_vision_debug_dump_only_when_debug():
     import pathlib
     # If DEBUG false, code path should not write
     assert isinstance(settings.DEBUG, bool)
-
-
-@pytest.mark.asyncio
-async def test_cache_write_only_after_commit(monkeypatch):
-    from unittest.mock import AsyncMock, MagicMock
-    from app.services import cache
-
-    # Simulate DB that fails commit the first time then succeeds second
-    class FailDB:
-        def add(self, obj):
-            pass
-
-        async def commit(self):
-            raise Exception("commit failed")
-
-        async def rollback(self):
-            pass
-
-        async def execute(self, *a, **kw):
-            class R:
-                def scalar_one_or_none(self):
-                    return None
-
-            return R()
-
-    cache._IN_MEMORY_GRAPHS.pop("test_commit_order", None)
-    fail_db = FailDB()
-    # This will try request session and fail, then fall back to own session which may also fail in test env but should not leave stale memory?
-    # At least verify it doesn't raise
-    try:
-        await cache.cache_service.store_graph(fail_db, "test_commit_order", {"nodes": [], "edges": []}, False)
-    except Exception:
-        pytest.fail("store_graph should not propagate exception")
 
 
 def test_explanation_no_fabricated_fallback_on_failure():
