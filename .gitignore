@@ -33,6 +33,7 @@ railway.toml
 .playwright-mcp/
 test/
 tests/
+testing/
 logs/
 backend/logs/
 backend/app/logs/
