@@ -103,7 +103,7 @@ export const PaperInputModal: React.FC<PaperInputModalProps> = ({
               Drag & drop your PDF research paper here
             </p>
             <p className="text-[11px] text-zinc-400 font-mono mt-0.5">
-              Supports PDF research papers up to 30 pages (max 25MB)
+              Supports PDF research papers up to 60 pages (max 25MB)
             </p>
           </div>
 

@@ -1,0 +1,102 @@
+[
+  {
+    "filename": "1706.03762.pdf",
+    "ir_extraction": {
+      "success": true,
+      "latency_sec": 71.243,
+      "paradigm": "transformer",
+      "nodes_count": 20,
+      "edges_count": 21,
+      "scene_3d_nodes": 20
+    },
+    "graph_extraction": {
+      "success": true,
+      "latency_sec": 21.469,
+      "nodes_count": 11,
+      "edges_count": 25,
+      "verified": false,
+      "verification_reason": "While most nodes and edges are correctly represented, some fields and edge types are not explicitly ",
+      "verification_time_sec": 31.263
+    }
+  },
+  {
+    "filename": "2307.06435.pdf",
+    "ir_extraction": {
+      "success": true,
+      "latency_sec": 42.298,
+      "paradigm": "transformer",
+      "nodes_count": 18,
+      "edges_count": 15,
+      "scene_3d_nodes": 18
+    },
+    "graph_extraction": {
+      "success": true,
+      "latency_sec": 28.687,
+      "nodes_count": 16,
+      "edges_count": 11,
+      "verified": false,
+      "verification_reason": "The graph contains hallucinated nodes and edges, missing major components, and some fields lack expl",
+      "verification_time_sec": 27.241
+    }
+  },
+  {
+    "filename": "2309.16609.pdf",
+    "ir_extraction": {
+      "success": true,
+      "latency_sec": 35.755,
+      "paradigm": "transformer",
+      "nodes_count": 10,
+      "edges_count": 9,
+      "scene_3d_nodes": 10
+    },
+    "graph_extraction": {
+      "success": true,
+      "latency_sec": 12.978,
+      "nodes_count": 7,
+      "edges_count": 8,
+      "verified": false,
+      "verification_reason": "The provided graph contains several hallucinated nodes and edges that are not explicitly supported b",
+      "verification_time_sec": 20.698
+    }
+  },
+  {
+    "filename": "2412.19437.pdf",
+    "ir_extraction": {
+      "success": true,
+      "latency_sec": 34.504,
+      "paradigm": "transformer",
+      "nodes_count": 12,
+      "edges_count": 14,
+      "scene_3d_nodes": 12
+    },
+    "graph_extraction": {
+      "success": true,
+      "latency_sec": 31.053,
+      "nodes_count": 10,
+      "edges_count": 11,
+      "verified": false,
+      "verification_reason": "The extracted graph contains several hallucinated nodes and edges, particularly those related to the",
+      "verification_time_sec": 23.367
+    }
+  },
+  {
+    "filename": "2511.21631.pdf",
+    "ir_extraction": {
+      "success": true,
+      "latency_sec": 46.292,
+      "paradigm": "transformer",
+      "nodes_count": 14,
+      "edges_count": 13,
+      "scene_3d_nodes": 14
+    },
+    "graph_extraction": {
+      "success": true,
+      "latency_sec": 18.918,
+      "nodes_count": 8,
+      "edges_count": 10,
+      "verified": false,
+      "verification_reason": "The graph is mostly accurate but contains hallucinated nodes (deepstack_merger_2 and deepstack_merge",
+      "verification_time_sec": 27.398
+    }
+  }
+]

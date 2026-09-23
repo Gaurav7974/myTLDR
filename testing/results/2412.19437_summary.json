@@ -1,0 +1,63 @@
+{
+  "paper_id": "2412.19437",
+  "page_count": 53,
+  "total_time_sec": 98.93,
+  "diagram": {
+    "available": true,
+    "source": "merged",
+    "layout_mode": "auto",
+    "nodes_count": 6,
+    "edges_count": 6,
+    "sample_nodes": [
+      "",
+      "",
+      "",
+      "",
+      ""
+    ]
+  },
+  "architecture_ir": {
+    "paradigm": "transformer",
+    "nodes_count": 15,
+    "edges_count": 18,
+    "sample_nodes": [
+      "Input Embedding Layer",
+      "MLP Block (Feed-Forward Network)",
+      "Multi-Head Latent Attention (MLA)",
+      "MoE Router",
+      "Shared Expert 1"
+    ]
+  },
+  "math_and_code": {
+    "equations_extracted": 4,
+    "code_snippets_extracted": 1,
+    "sample_equation": "['$c_{\\\\text{KV}}^t = W_{\\\\text{DKV}} h_t,$', '$[k_{\\\\text{C",
+    "sample_code_title": "MultiHeadLatentAttention.py"
+  },
+  "pedagogical_summary": {
+    "one_sentence": "DeepSeek-V3 introduces a 671B-parameter Mixture-of-Experts (MoE) model with auxiliary-loss-free load balancing and multi-token prediction, achieving cost-efficient training and state-of-the-art performance on open-source benchmarks.",
+    "problem": "Large language models face bottlenecks in training efficiency, expert load imbalance, and high computational costs, limiting scalability and performance gains despite architectural advancements.",
+    "solution": "DeepSeek-V3 employs Multi-Head Latent Attention (MLA), DeepSeekMoE with auxiliary-loss-free load balancing, multi-token prediction training, and FP8 mixed-precision training to optimize inference, training stability, and cost-effectiveness.",
+    "specs_count": 13,
+    "contributions_count": 5,
+    "findings_count": 4,
+    "limitations_count": 4,
+    "cited_pages": [
+      1,
+      5,
+      6,
+      7,
+      8,
+      10,
+      11,
+      12,
+      13,
+      14,
+      16,
+      19,
+      20,
+      23
+    ],
+    "max_cited_page": 23
+  }
+}

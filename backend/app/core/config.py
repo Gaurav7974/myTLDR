@@ -86,21 +86,20 @@ class Settings:
     
     # Processing
     MAX_UPLOAD_SIZE_MB: int = 25
-    MAX_PDF_PAGES: int = 30  # Maximum page limit for uploaded/linked papers to prevent OCR starvation
+    MAX_PDF_PAGES: int = 60  # Maximum page limit for uploaded/linked papers to prevent OCR starvation
     MAX_SECTION_CHARS: int = 18000  # legacy flat cap — retained for compat, use SECTION_CHAR_CEILING for new paths
     # LLM-based architecture section detection: how much of the paper to send to the locator
-    ARCH_SECTION_LLM_MAX_CHARS: int = 50000
-    # Dynamic ceiling for any section fed to LLM — based on mistral-small-latest 32k tokens (~96k chars)
-    # Minus prompt overhead (~4k tokens) and JSON schema, safe usable ~28k tokens ≈ 40000 chars.
-    # Groq llama-3.3-70b has 128k tokens, so this ceiling is conservative for both.
-    SECTION_CHAR_CEILING: int = 40000
+    ARCH_SECTION_LLM_MAX_CHARS: int = 80000
+    # Dynamic ceiling for any section fed to LLM — safely accommodates up to 60-page papers
+    # while keeping JSON structured outputs reliable.
+    SECTION_CHAR_CEILING: int = 60000
     LLM_MAX_RETRIES: int = 4
     LLM_RETRY_BACKOFF_BASE: int = 3  # seconds
 
     @property
     def max_section_ceiling(self) -> int:
         """Ceiling for dynamic section sizing — prefer SECTION_CHAR_CEILING, fallback to legacy."""
-        return getattr(self, "SECTION_CHAR_CEILING", 40000)
+        return getattr(self, "SECTION_CHAR_CEILING", 60000)
 
     def dynamic_section_limit(self, detected_len: int) -> int:
         """Size limit to actual section length up to ceiling (Fix #3)."""

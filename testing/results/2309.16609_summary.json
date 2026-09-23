@@ -1,0 +1,60 @@
+{
+  "paper_id": "2309.16609",
+  "page_count": 59,
+  "total_time_sec": 95.51,
+  "diagram": {
+    "available": true,
+    "source": "text",
+    "layout_mode": "auto",
+    "nodes_count": 6,
+    "edges_count": 6,
+    "sample_nodes": [
+      "Untied Embedding and Output Projection",
+      "Rotary Positional Embedding (RoPE)",
+      "Bias in QKV Layer",
+      "Pre-Normalization with RMSNorm",
+      "SwiGLU Activation"
+    ]
+  },
+  "architecture_ir": {
+    "paradigm": "transformer",
+    "nodes_count": 9,
+    "edges_count": 8,
+    "sample_nodes": [
+      "Untied Input Embedding",
+      "Rotary Positional Embedding (RoPE)",
+      "Pre-Normalization (RMSNorm)",
+      "Multi-Head Self-Attention (8 Heads)",
+      "Residual Skip Connection (Pre-Attn)"
+    ]
+  },
+  "math_and_code": {
+    "equations_extracted": 3,
+    "code_snippets_extracted": 1,
+    "sample_equation": "$\\theta_{pos} = \\begin{bmatrix} \\cos(\\theta_{i}) & -\\sin(\\th",
+    "sample_code_title": "qwen_transformer_block.py"
+  },
+  "pedagogical_summary": {
+    "one_sentence": "QWEN introduces a series of open-source large language models (1.8B, 7B, and 14B parameters) with specialized variants for coding and mathematics, achieving competitive performance on benchmarks while enabling tool-use and agent capabilities.",
+    "problem": "Existing large language models lack reproducibility, steerability, and accessibility, with proprietary models dominating performance benchmarks while open-source alternatives struggle with alignment, scalability, and domain-specific tasks.",
+    "solution": "QWEN combines extensive pretraining on 3 trillion tokens with supervised fine-tuning (SFT) and reinforcement learning from human feedback (RLHF), alongside specialized domain adaptations for coding and mathematics, ensuring open accessibility and strong performance.",
+    "specs_count": 7,
+    "contributions_count": 5,
+    "findings_count": 4,
+    "limitations_count": 4,
+    "cited_pages": [
+      3,
+      4,
+      6,
+      7,
+      8,
+      11,
+      12,
+      13,
+      16,
+      18,
+      20
+    ],
+    "max_cited_page": 20
+  }
+}

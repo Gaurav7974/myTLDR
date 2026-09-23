@@ -1,0 +1,3552 @@
+{
+  "stage": "done",
+  "explanation": {
+    "overview": {
+      "one_sentence": "The Transformer replaces recurrent and convolutional layers in sequence transduction with pure attention mechanisms, enabling parallelization and achieving state-of-the-art translation performance with reduced training time.",
+      "problem": "Recurrent and convolutional neural networks in sequence transduction suffer from sequential computation bottlenecks, limiting parallelization and scalability, especially for long sequences and long-range dependencies.",
+      "solution": "A novel architecture called the Transformer uses stacked self-attention and position-wise feed-forward layers, eliminating recurrence and convolutions while enabling constant-time path lengths and full parallelization.",
+      "why_it_matters": "The Transformer achieves new state-of-the-art BLEU scores in machine translation (e.g., 28.4 on WMT 2014 English-to-German) while training 3\u201310\u00d7 faster than prior models, demonstrating efficiency and scalability."
+    },
+    "key_specs": [
+      {
+        "label": "Encoder & Decoder Layers",
+        "value": "N = 6",
+        "source": {
+          "page": 3,
+          "section": "3.1",
+          "figure": null
+        }
+      },
+      {
+        "label": "Model Dimension (d_model)",
+        "value": "512 (base), 1024 (big)",
+        "source": {
+          "page": 3,
+          "section": "3.1",
+          "figure": null
+        }
+      },
+      {
+        "label": "Feed-Forward Inner Dimension (d_ff)",
+        "value": "2048 (base), 4096 (big)",
+        "source": {
+          "page": 5,
+          "section": "3.3",
+          "figure": null
+        }
+      },
+      {
+        "label": "Attention Heads (h)",
+        "value": "8 (base), 16 (big)",
+        "source": {
+          "page": 4,
+          "section": "3.2.2",
+          "figure": null
+        }
+      },
+      {
+        "label": "Attention Key/Value Dimension (d_k/d_v)",
+        "value": "64 (base), 64 (big)",
+        "source": {
+          "page": 4,
+          "section": "3.2.2",
+          "figure": null
+        }
+      },
+      {
+        "label": "Positional Encoding Type",
+        "value": "Sinusoidal (fixed)",
+        "source": {
+          "page": 5,
+          "section": "3.5",
+          "figure": null
+        }
+      },
+      {
+        "label": "Training Steps (Base Model)",
+        "value": "100,000 (12 hours)",
+        "source": {
+          "page": 7,
+          "section": "5.2",
+          "figure": null
+        }
+      },
+      {
+        "label": "Training Steps (Big Model)",
+        "value": "300,000 (3.5 days)",
+        "source": {
+          "page": 7,
+          "section": "5.2",
+          "figure": null
+        }
+      }
+    ],
+    "contributions": [
+      {
+        "title": "Scaled Dot-Product Attention",
+        "summary": "Introduces a computationally efficient attention mechanism scaling dot-products by \u221adk to stabilize softmax gradients, enabling stable training with high-dimensional queries/keys.",
+        "category": "novel",
+        "importance": "Replaces slower additive attention while maintaining performance, reducing memory/CPU overhead for large-scale training.",
+        "source": {
+          "page": 4,
+          "section": "3.2.1",
+          "figure": null
+        }
+      },
+      {
+        "title": "Multi-Head Attention",
+        "summary": "Parallelizes attention across h=8 subspaces (d_k=d_v=d_model/h=64), allowing the model to attend to different representation types simultaneously without increasing computational cost.",
+        "category": "novel",
+        "importance": "Mitigates information loss from single-head averaging by enabling diverse attention patterns (e.g., syntactic vs. semantic alignment).",
+        "source": {
+          "page": 4,
+          "section": "3.2.2",
+          "figure": null
+        }
+      },
+      {
+        "title": "Positional Encoding via Sinusoids",
+        "summary": "Injects absolute/relative positional information using learned sinusoidal functions with geometrically spaced wavelengths, enabling generalization to unseen sequence lengths.",
+        "category": "novel",
+        "importance": "Avoids learned embeddings\u2019 limitations (fixed vocabulary size) while outperforming them empirically with minimal architectural overhead.",
+        "source": {
+          "page": 5,
+          "section": "3.5",
+          "figure": null
+        }
+      },
+      {
+        "title": "Full Parallelization via Self-Attention",
+        "summary": "Eliminates sequential dependencies by replacing RNNs/convolutions with attention, enabling O(1) path length for long-range dependencies and full batch parallelism.",
+        "category": "architectural",
+        "importance": "Reduces training time from days/weeks to hours/days while improving translation quality (e.g., 28.4 BLEU vs. prior SOTA).",
+        "source": {
+          "page": 6,
+          "section": "4",
+          "figure": null
+        }
+      },
+      {
+        "title": "Generalization to Non-Translation Tasks",
+        "summary": "Demonstrates strong performance on English constituency parsing (92.7 F1 in semi-supervised setting) with minimal task-specific tuning, showcasing attention\u2019s versatility.",
+        "category": "experimental",
+        "importance": "Validates Transformer\u2019s applicability beyond translation, opening avenues for multimodal and structured prediction tasks.",
+        "source": {
+          "page": 9,
+          "section": "6.3",
+          "figure": null
+        }
+      }
+    ],
+    "key_findings": [
+      {
+        "title": "WMT 2014 English-to-German Translation",
+        "summary": "Transformer (big) achieves new SOTA BLEU score surpassing all prior models (including ensembles) with 3.5 days of training on 8 P100 GPUs.",
+        "metric_value": "28.4 BLEU (+2.0 over prior SOTA)",
+        "source": {
+          "page": 8,
+          "section": "6.1",
+          "figure": null
+        }
+      },
+      {
+        "title": "WMT 2014 English-to-French Translation",
+        "summary": "Transformer (big) sets new single-model SOTA BLEU with 1/4 the training cost of prior best models, trained in 3.5 days on 8 GPUs.",
+        "metric_value": "41.8 BLEU (vs. 41.29 for ConvS2S ensemble)",
+        "source": {
+          "page": 8,
+          "section": "6.1",
+          "figure": null
+        }
+      },
+      {
+        "title": "Training Efficiency vs. Prior Models",
+        "summary": "Transformer (base) achieves 27.3 BLEU in 12 hours (100K steps) on 8 GPUs, requiring 3\u201310\u00d7 fewer FLOPs than competitive models (e.g., 3.3\u00d710\u00b9\u2078 vs. 7.7\u00d710\u00b9\u2079 for ConvS2S).",
+        "metric_value": "3.3\u00d710\u00b9\u2078 FLOPs (vs. 7.7\u00d710\u00b9\u2079 for ConvS2S ensemble)",
+        "source": {
+          "page": 8,
+          "section": "6.1",
+          "figure": null
+        }
+      },
+      {
+        "title": "Constituency Parsing Performance",
+        "summary": "4-layer Transformer (d_model=1024) achieves 92.7 F1 in semi-supervised English parsing, outperforming prior SOTA (92.1) with no task-specific tuning.",
+        "metric_value": "92.7 F1 (vs. 92.1 for BerkeleyParser ensemble)",
+        "source": {
+          "page": 9,
+          "section": "6.3",
+          "figure": null
+        }
+      }
+    ],
+    "limitations": [
+      {
+        "title": "Quadratic Memory Complexity",
+        "summary": "Self-attention requires O(N\u00b2) memory for sequence length N, limiting batch size and sequence length due to GPU memory constraints.",
+        "details": "Restricted attention (e.g., local windows) or sparse matrices may be needed for very long sequences (e.g., documents >1024 tokens).",
+        "source": {
+          "page": 6,
+          "section": "3.5",
+          "figure": null
+        }
+      },
+      {
+        "title": "Computational Overhead for Long Sequences",
+        "summary": "Self-attention\u2019s O(N\u00b2d) complexity per layer becomes prohibitive for N > 1024, unlike convolutions (O(kNd) with k < N).",
+        "details": "Future work may explore sparse or hierarchical attention to mitigate this scaling issue.",
+        "source": {
+          "page": 6,
+          "section": "4",
+          "figure": null
+        }
+      },
+      {
+        "title": "Hyperparameter Sensitivity",
+        "summary": "Performance degrades with suboptimal attention heads (e.g., single-head: 24.9 BLEU vs. 25.8 BLEU with 8 heads) or key dimensions (e.g., d_k=32: 25.3 BLEU).",
+        "details": "Requires careful tuning of h and d_k/d_v for optimal compatibility function design.",
+        "source": {
+          "page": 8,
+          "section": "6.2 (Table 3, rows A\u2013C)",
+          "figure": null
+        }
+      },
+      {
+        "title": "Limited Evaluation on Non-Text Modalities",
+        "summary": "Transformer\u2019s applicability to audio/video/image tasks remains unexplored, despite its potential for parallelizing long-range dependencies in these domains.",
+        "details": "Authors plan future work on extending attention to non-text modalities but did not provide empirical results.",
+        "source": {
+          "page": 10,
+          "section": "7",
+          "figure": null
+        }
+      }
+    ]
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": "input_embedding",
+        "label": "Input Embedding",
+        "type": "embedding",
+        "description": "Learned token embeddings for input sequence. Shared with output embedding.",
+        "how_it_works": null,
+        "math_formula": "E(x) = W_e x + b_e",
+        "paper_term": null,
+        "parameters": "null (learned)",
+        "flops": "0",
+        "group_id": "encoder_group",
+        "bbox": {
+          "x": 0.15,
+          "y": 0.85,
+          "w": 0.25,
+          "h": 0.08
+        },
+        "shape": "rect",
+        "style": {
+          "fill": "#FFD700",
+          "border": "#000",
+          "text": "#000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.98,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Attention Is All You Need",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-128",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "pos_encoding_input",
+        "label": "Positional Encoding",
+        "type": "other",
+        "description": "Sinusoidal positional encoding added to input embeddings.",
+        "how_it_works": null,
+        "math_formula": "PE(pos,2i) = \\sin\\left(\\frac{pos}{10000^{2i/d_{model}}}\\right), \\quad PE(pos,2i+1) = \\cos\\left(\\frac{pos}{10000^{2i/d_{model}}}\\right)",
+        "paper_term": null,
+        "parameters": "null (fixed sinusoidal function)",
+        "flops": "0",
+        "group_id": "encoder_group",
+        "bbox": {
+          "x": 0.1,
+          "y": 0.9,
+          "w": 0.15,
+          "h": 0.05
+        },
+        "shape": "rounded",
+        "style": {
+          "fill": "#FFFFFF",
+          "border": "#000",
+          "text": "#000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.95,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Attention Is All You Need",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-128",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "encoder_attention_1",
+        "label": "Multi-Head Attention",
+        "type": "attention",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": "encoder_group",
+        "bbox": {
+          "x": 0.15,
+          "y": 0.65,
+          "w": 0.25,
+          "h": 0.08
+        },
+        "shape": "rect",
+        "style": {
+          "fill": "#FFA07A",
+          "border": "#000",
+          "text": "#000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.98,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Attention Is All You Need",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-128",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "encoder_attention_norm_1",
+        "label": "Add & Norm",
+        "type": "normalization",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": "encoder_group",
+        "bbox": {
+          "x": 0.15,
+          "y": 0.75,
+          "w": 0.25,
+          "h": 0.08
+        },
+        "shape": "rect",
+        "style": {
+          "fill": "#87CEFA",
+          "border": "#000",
+          "text": "#000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.98,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Attention Is All You Need",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-128",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "encoder_ff_1",
+        "label": "Feed Forward",
+        "type": "feedforward",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": "encoder_group",
+        "bbox": {
+          "x": 0.15,
+          "y": 0.5,
+          "w": 0.25,
+          "h": 0.08
+        },
+        "shape": "rect",
+        "style": {
+          "fill": "#87CEFA",
+          "border": "#000",
+          "text": "#000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.98,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Attention Is All You Need",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-128",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "encoder_attention_norm_2",
+        "label": "Add & Norm",
+        "type": "normalization",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": "encoder_group",
+        "bbox": {
+          "x": 0.15,
+          "y": 0.58,
+          "w": 0.25,
+          "h": 0.08
+        },
+        "shape": "rect",
+        "style": {
+          "fill": "#87CEFA",
+          "border": "#000",
+          "text": "#000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.98,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Attention Is All You Need",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-128",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "decoder_embedding",
+        "label": "Output Embedding",
+        "type": "embedding",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": "decoder_group",
+        "bbox": {
+          "x": 0.55,
+          "y": 0.85,
+          "w": 0.25,
+          "h": 0.08
+        },
+        "shape": "rect",
+        "style": {
+          "fill": "#FFD700",
+          "border": "#000",
+          "text": "#000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.98,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Attention Is All You Need",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-128",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "pos_encoding_output",
+        "label": "Positional Encoding",
+        "type": "other",
+        "description": "Sinusoidal positional encoding added to input embeddings.",
+        "how_it_works": null,
+        "math_formula": "PE(pos,2i) = \\sin\\left(\\frac{pos}{10000^{2i/d_{model}}}\\right), \\quad PE(pos,2i+1) = \\cos\\left(\\frac{pos}{10000^{2i/d_{model}}}\\right)",
+        "paper_term": null,
+        "parameters": "null (fixed sinusoidal function)",
+        "flops": "0",
+        "group_id": "decoder_group",
+        "bbox": {
+          "x": 0.75,
+          "y": 0.9,
+          "w": 0.15,
+          "h": 0.05
+        },
+        "shape": "rounded",
+        "style": {
+          "fill": "#FFFFFF",
+          "border": "#000",
+          "text": "#000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.95,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Attention Is All You Need",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-128",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "decoder_self_attention",
+        "label": "Masked Multi-Head Attention",
+        "type": "attention",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": "decoder_group",
+        "bbox": {
+          "x": 0.55,
+          "y": 0.65,
+          "w": 0.25,
+          "h": 0.08
+        },
+        "shape": "rect",
+        "style": {
+          "fill": "#FFA07A",
+          "border": "#000",
+          "text": "#000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.98,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Attention Is All You Need",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-128",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "decoder_self_attention_norm",
+        "label": "Add & Norm",
+        "type": "normalization",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": "decoder_group",
+        "bbox": {
+          "x": 0.55,
+          "y": 0.75,
+          "w": 0.25,
+          "h": 0.08
+        },
+        "shape": "rect",
+        "style": {
+          "fill": "#87CEFA",
+          "border": "#000",
+          "text": "#000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.98,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Attention Is All You Need",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-128",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "decoder_encoder_attention",
+        "label": "Multi-Head Attention",
+        "type": "attention",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": "decoder_group",
+        "bbox": {
+          "x": 0.55,
+          "y": 0.5,
+          "w": 0.25,
+          "h": 0.08
+        },
+        "shape": "rect",
+        "style": {
+          "fill": "#FFA07A",
+          "border": "#000",
+          "text": "#000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.98,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Attention Is All You Need",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-128",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "decoder_encoder_attention_norm",
+        "label": "Add & Norm",
+        "type": "normalization",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": "decoder_group",
+        "bbox": {
+          "x": 0.55,
+          "y": 0.58,
+          "w": 0.25,
+          "h": 0.08
+        },
+        "shape": "rect",
+        "style": {
+          "fill": "#87CEFA",
+          "border": "#000",
+          "text": "#000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.98,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Attention Is All You Need",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-128",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "decoder_ff",
+        "label": "Feed Forward",
+        "type": "feedforward",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": "decoder_group",
+        "bbox": {
+          "x": 0.55,
+          "y": 0.35,
+          "w": 0.25,
+          "h": 0.08
+        },
+        "shape": "rect",
+        "style": {
+          "fill": "#87CEFA",
+          "border": "#000",
+          "text": "#000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.98,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Attention Is All You Need",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-128",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "decoder_ff_norm",
+        "label": "Add & Norm",
+        "type": "normalization",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": "decoder_group",
+        "bbox": {
+          "x": 0.55,
+          "y": 0.43,
+          "w": 0.25,
+          "h": 0.08
+        },
+        "shape": "rect",
+        "style": {
+          "fill": "#87CEFA",
+          "border": "#000",
+          "text": "#000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.98,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Attention Is All You Need",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-128",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "linear_layer",
+        "label": "Linear",
+        "type": "other",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": "decoder_group",
+        "bbox": {
+          "x": 0.7,
+          "y": 0.2,
+          "w": 0.15,
+          "h": 0.08
+        },
+        "shape": "rect",
+        "style": {
+          "fill": "#E0F7FA",
+          "border": "#000",
+          "text": "#000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.98,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Attention Is All You Need",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-128",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "softmax_layer",
+        "label": "Softmax",
+        "type": "output",
+        "description": "Linear transformation followed by softmax for token probability distribution.",
+        "how_it_works": null,
+        "math_formula": "P(y_t|y_{<t}) = \\text{softmax}(W_o x_t + b_o)",
+        "paper_term": null,
+        "parameters": "512 \u00d7 V = 512 \u00d7 V params",
+        "flops": "512 \u00d7 V \u00d7 L",
+        "group_id": "decoder_group",
+        "bbox": {
+          "x": 0.7,
+          "y": 0.1,
+          "w": 0.15,
+          "h": 0.08
+        },
+        "shape": "rect",
+        "style": {
+          "fill": "#E8F5E9",
+          "border": "#000",
+          "text": "#000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.98,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Attention Is All You Need",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-128",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "input_embedding",
+        "target": "encoder_attention_1",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.15,
+            "y": 0.85
+          },
+          {
+            "x": 0.15,
+            "y": 0.75
+          },
+          {
+            "x": 0.15,
+            "y": 0.65
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.95
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.05
+        },
+        "style": {
+          "stroke": "#000",
+          "width": 1.5,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "default"
+        }
+      },
+      {
+        "source": "encoder_attention_1",
+        "target": "encoder_attention_norm_1",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.15,
+            "y": 0.65
+          },
+          {
+            "x": 0.15,
+            "y": 0.75
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.95
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.05
+        },
+        "style": {
+          "stroke": "#000",
+          "width": 1.5,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "default"
+        }
+      },
+      {
+        "source": "encoder_attention_norm_1",
+        "target": "encoder_ff_1",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.15,
+            "y": 0.75
+          },
+          {
+            "x": 0.15,
+            "y": 0.65
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.95
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.05
+        },
+        "style": {
+          "stroke": "#000",
+          "width": 1.5,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "default"
+        }
+      },
+      {
+        "source": "encoder_ff_1",
+        "target": "encoder_attention_norm_2",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.15,
+            "y": 0.5
+          },
+          {
+            "x": 0.15,
+            "y": 0.58
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.95
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.05
+        },
+        "style": {
+          "stroke": "#000",
+          "width": 1.5,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "default"
+        }
+      },
+      {
+        "source": "encoder_attention_norm_2",
+        "target": "encoder_attention_1",
+        "label": null,
+        "type": "residual_skip",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.15,
+            "y": 0.58
+          },
+          {
+            "x": 0.15,
+            "y": 0.65
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.95
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.05
+        },
+        "style": {
+          "stroke": "#000",
+          "width": 1.5,
+          "dasharray": null,
+          "name": "residual",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "residual"
+        }
+      },
+      {
+        "source": "decoder_embedding",
+        "target": "decoder_self_attention",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.55,
+            "y": 0.85
+          },
+          {
+            "x": 0.55,
+            "y": 0.75
+          },
+          {
+            "x": 0.55,
+            "y": 0.65
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.95
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.05
+        },
+        "style": {
+          "stroke": "#000",
+          "width": 1.5,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "default"
+        }
+      },
+      {
+        "source": "decoder_self_attention",
+        "target": "decoder_self_attention_norm",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.55,
+            "y": 0.65
+          },
+          {
+            "x": 0.55,
+            "y": 0.75
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.95
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.05
+        },
+        "style": {
+          "stroke": "#000",
+          "width": 1.5,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "default"
+        }
+      },
+      {
+        "source": "decoder_self_attention_norm",
+        "target": "decoder_encoder_attention",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.55,
+            "y": 0.75
+          },
+          {
+            "x": 0.55,
+            "y": 0.58
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.95
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.05
+        },
+        "style": {
+          "stroke": "#000",
+          "width": 1.5,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "default"
+        }
+      },
+      {
+        "source": "encoder_attention_norm_2",
+        "target": "decoder_encoder_attention",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.15,
+            "y": 0.58
+          },
+          {
+            "x": 0.35,
+            "y": 0.58
+          },
+          {
+            "x": 0.55,
+            "y": 0.58
+          }
+        ],
+        "source_anchor": {
+          "x": 0.9,
+          "y": 0.5
+        },
+        "target_anchor": {
+          "x": 0.1,
+          "y": 0.5
+        },
+        "style": {
+          "stroke": "#000",
+          "width": 1.5,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "default"
+        }
+      },
+      {
+        "source": "decoder_encoder_attention",
+        "target": "decoder_encoder_attention_norm",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.55,
+            "y": 0.5
+          },
+          {
+            "x": 0.55,
+            "y": 0.58
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.95
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.05
+        },
+        "style": {
+          "stroke": "#000",
+          "width": 1.5,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "default"
+        }
+      },
+      {
+        "source": "decoder_encoder_attention_norm",
+        "target": "decoder_ff",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.55,
+            "y": 0.58
+          },
+          {
+            "x": 0.55,
+            "y": 0.43
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.95
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.05
+        },
+        "style": {
+          "stroke": "#000",
+          "width": 1.5,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "default"
+        }
+      },
+      {
+        "source": "decoder_ff",
+        "target": "decoder_ff_norm",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.55,
+            "y": 0.35
+          },
+          {
+            "x": 0.55,
+            "y": 0.43
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.95
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.05
+        },
+        "style": {
+          "stroke": "#000",
+          "width": 1.5,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "default"
+        }
+      },
+      {
+        "source": "decoder_ff_norm",
+        "target": "decoder_self_attention",
+        "label": null,
+        "type": "residual_skip",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.55,
+            "y": 0.43
+          },
+          {
+            "x": 0.55,
+            "y": 0.65
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.95
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.05
+        },
+        "style": {
+          "stroke": "#000",
+          "width": 1.5,
+          "dasharray": null,
+          "name": "residual",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "residual"
+        }
+      },
+      {
+        "source": "decoder_ff_norm",
+        "target": "linear_layer",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.55,
+            "y": 0.43
+          },
+          {
+            "x": 0.55,
+            "y": 0.3
+          },
+          {
+            "x": 0.7,
+            "y": 0.3
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.95
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.05
+        },
+        "style": {
+          "stroke": "#000",
+          "width": 1.5,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "default"
+        }
+      },
+      {
+        "source": "linear_layer",
+        "target": "softmax_layer",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.7,
+            "y": 0.2
+          },
+          {
+            "x": 0.7,
+            "y": 0.1
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.95
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.05
+        },
+        "style": {
+          "stroke": "#000",
+          "width": 1.5,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "default"
+        }
+      },
+      {
+        "source": "decoder_self_attention_norm",
+        "target": "decoder_self_attention",
+        "label": null,
+        "type": "residual_skip",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.55,
+            "y": 0.75
+          },
+          {
+            "x": 0.55,
+            "y": 0.65
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.95
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.05
+        },
+        "style": {
+          "stroke": "#000",
+          "width": 1.5,
+          "dasharray": null,
+          "name": "residual",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "residual"
+        }
+      }
+    ],
+    "version": "2.0",
+    "source": "vision",
+    "figure_id": "fig-3-128",
+    "figure_page": 3,
+    "confidence": 0.95,
+    "verification": {
+      "valid": true,
+      "confidence": 0.9,
+      "hallucinations": [],
+      "missing_elements": [
+        "encoder_block_repeat label 'Nx'",
+        "decoder_block_repeat label 'Nx'",
+        "encoder_attention_norm_2->encoder_attention_1 residual connection",
+        "decoder_self_attention_norm->decoder_self_attention residual connection"
+      ],
+      "node_verification": [
+        {
+          "node_id": "input_embedding",
+          "label": "Input Embedding",
+          "status": "match",
+          "note": "Correctly labeled and positioned."
+        },
+        {
+          "node_id": "pos_encoding_input",
+          "label": "Positional Encoding",
+          "status": "match",
+          "note": "Correctly labeled but missing explicit residual connection."
+        },
+        {
+          "node_id": "encoder_attention_1",
+          "label": "Multi-Head Attention",
+          "status": "match",
+          "note": "Correctly labeled and positioned."
+        },
+        {
+          "node_id": "encoder_attention_norm_1",
+          "label": "Add & Norm",
+          "status": "match",
+          "note": "Correctly labeled and positioned."
+        },
+        {
+          "node_id": "encoder_ff_1",
+          "label": "Feed Forward",
+          "status": "match",
+          "note": "Correctly labeled and positioned."
+        },
+        {
+          "node_id": "encoder_attention_norm_2",
+          "label": "Add & Norm",
+          "status": "match",
+          "note": "Correctly labeled and positioned."
+        },
+        {
+          "node_id": "decoder_embedding",
+          "label": "Output Embedding",
+          "status": "match",
+          "note": "Correctly labeled and positioned."
+        },
+        {
+          "node_id": "pos_encoding_output",
+          "label": "Positional Encoding",
+          "status": "match",
+          "note": "Correctly labeled but missing explicit residual connection."
+        },
+        {
+          "node_id": "decoder_self_attention",
+          "label": "Masked Multi-Head Attention",
+          "status": "match",
+          "note": "Correctly labeled and positioned."
+        },
+        {
+          "node_id": "decoder_self_attention_norm",
+          "label": "Add & Norm",
+          "status": "match",
+          "note": "Correctly labeled and positioned."
+        },
+        {
+          "node_id": "decoder_encoder_attention",
+          "label": "Multi-Head Attention",
+          "status": "match",
+          "note": "Correctly labeled and positioned."
+        },
+        {
+          "node_id": "decoder_encoder_attention_norm",
+          "label": "Add & Norm",
+          "status": "match",
+          "note": "Correctly labeled and positioned."
+        },
+        {
+          "node_id": "decoder_ff",
+          "label": "Feed Forward",
+          "status": "match",
+          "note": "Correctly labeled and positioned."
+        },
+        {
+          "node_id": "decoder_ff_norm",
+          "label": "Add & Norm",
+          "status": "match",
+          "note": "Correctly labeled and positioned."
+        },
+        {
+          "node_id": "linear_layer",
+          "label": "Linear",
+          "status": "match",
+          "note": "Correctly labeled and positioned."
+        },
+        {
+          "node_id": "softmax_layer",
+          "label": "Softmax",
+          "status": "match",
+          "note": "Correctly labeled and positioned."
+        }
+      ],
+      "edge_verification": [
+        {
+          "edge": "input_embedding->encoder_attention_1",
+          "status": "match",
+          "note": "Correctly connected."
+        },
+        {
+          "edge": "encoder_attention_1->encoder_attention_norm_1",
+          "status": "match",
+          "note": "Correctly connected."
+        },
+        {
+          "edge": "encoder_attention_norm_1->encoder_ff_1",
+          "status": "match",
+          "note": "Correctly connected."
+        },
+        {
+          "edge": "encoder_ff_1->encoder_attention_norm_2",
+          "status": "match",
+          "note": "Correctly connected."
+        },
+        {
+          "edge": "decoder_embedding->decoder_self_attention",
+          "status": "match",
+          "note": "Correctly connected."
+        },
+        {
+          "edge": "decoder_self_attention->decoder_self_attention_norm",
+          "status": "match",
+          "note": "Correctly connected."
+        },
+        {
+          "edge": "decoder_self_attention_norm->decoder_encoder_attention",
+          "status": "match",
+          "note": "Correctly connected."
+        },
+        {
+          "edge": "encoder_attention_norm_2->decoder_encoder_attention",
+          "status": "match",
+          "note": "Correctly connected."
+        },
+        {
+          "edge": "decoder_encoder_attention->decoder_encoder_attention_norm",
+          "status": "match",
+          "note": "Correctly connected."
+        },
+        {
+          "edge": "decoder_encoder_attention_norm->decoder_ff",
+          "status": "match",
+          "note": "Correctly connected."
+        },
+        {
+          "edge": "decoder_ff->decoder_ff_norm",
+          "status": "match",
+          "note": "Correctly connected."
+        },
+        {
+          "edge": "decoder_ff_norm->linear_layer",
+          "status": "match",
+          "note": "Correctly connected."
+        },
+        {
+          "edge": "linear_layer->softmax_layer",
+          "status": "match",
+          "note": "Correctly connected."
+        },
+        {
+          "edge": "encoder_attention_norm_2->encoder_attention_1",
+          "status": "hallucinated",
+          "note": "Residual connection missing in the provided edges."
+        },
+        {
+          "edge": "decoder_self_attention_norm->decoder_self_attention",
+          "status": "hallucinated",
+          "note": "Residual connection missing in the provided edges."
+        },
+        {
+          "edge": "decoder_ff_norm->decoder_self_attention",
+          "status": "hallucinated",
+          "note": "Residual connection missing in the provided edges."
+        }
+      ],
+      "reason": "The graph structure is mostly accurate with some missing residual connections and explicit positional encoding connections."
+    },
+    "groups": [
+      {
+        "id": "encoder_group",
+        "label": "Encoder",
+        "bbox": {
+          "x": 0.05,
+          "y": 0.2,
+          "w": 0.35,
+          "h": 0.65
+        },
+        "color": null,
+        "confidence": 0.98
+      },
+      {
+        "id": "decoder_group",
+        "label": "Decoder",
+        "bbox": {
+          "x": 0.45,
+          "y": 0.2,
+          "w": 0.45,
+          "h": 0.75
+        },
+        "color": null,
+        "confidence": 0.98
+      },
+      {
+        "id": "encoder_block_repeat",
+        "label": "N\u00d7",
+        "bbox": {
+          "x": 0.05,
+          "y": 0.25,
+          "w": 0.05,
+          "h": 0.6
+        },
+        "color": null,
+        "confidence": 0.95
+      },
+      {
+        "id": "decoder_block_repeat",
+        "label": "N\u00d7",
+        "bbox": {
+          "x": 0.85,
+          "y": 0.25,
+          "w": 0.05,
+          "h": 0.7
+        },
+        "color": null,
+        "confidence": 0.95
+      }
+    ],
+    "layout_mode": "auto",
+    "paper_title": "Attention Is All You Need",
+    "metadata": null
+  },
+  "architecture_ir": {
+    "version": "1.0",
+    "architecture": {
+      "name": "Transformer",
+      "paradigm": "transformer",
+      "primary_paper_id": null,
+      "author_summary": null
+    },
+    "nodes": [
+      {
+        "id": "input_embedding",
+        "type": "embedding",
+        "label": "Input Token Embedding",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "null (learned)",
+        "flops": "0",
+        "repetitions": 1,
+        "description": "Learned token embeddings for input sequence. Shared with output embedding.",
+        "math_formula": "E(x) = W_e x + b_e",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 5,
+          "section": "3.4 Embeddings and Softmax",
+          "figure_id": null,
+          "citation": "Similarly to other sequence transduction models, we use learned embeddings to convert the input tokens...",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "pos_encoding",
+        "type": "custom",
+        "label": "Positional Encoding",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "null (fixed sinusoidal function)",
+        "flops": "0",
+        "repetitions": 1,
+        "description": "Sinusoidal positional encoding added to input embeddings.",
+        "math_formula": "PE(pos,2i) = \\sin\\left(\\frac{pos}{10000^{2i/d_{model}}}\\right), \\quad PE(pos,2i+1) = \\cos\\left(\\frac{pos}{10000^{2i/d_{model}}}\\right)",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 5,
+          "section": "3.5 Positional Encoding",
+          "figure_id": null,
+          "citation": "We add 'positional encodings' to the input embeddings at the bottoms of the encoder and decoder stacks...",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "encoder_stack",
+        "type": "encoder",
+        "label": "Encoder Stack (N=6 layers)",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "null (composite)",
+        "flops": "null (composite)",
+        "repetitions": 6,
+        "description": "Stack of 6 identical encoder layers.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "3.1 Encoder and Decoder Stacks",
+          "figure_id": null,
+          "citation": "The encoder is composed of a stack of N = 6 identical layers.",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "encoder_layer_1",
+        "type": "transformer_block",
+        "label": "Encoder Layer 1",
+        "parent_id": "encoder_stack",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "null (composite)",
+        "flops": "null (composite)",
+        "repetitions": 1,
+        "description": "Single encoder layer with multi-head self-attention and feed-forward sub-layers.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "3.1 Encoder and Decoder Stacks",
+          "figure_id": null,
+          "citation": "Each layer has two sub-layers: multi-head self-attention and a feed-forward network.",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "encoder_self_attn_1",
+        "type": "multi_head_attention",
+        "label": "Multi-Head Self-Attention (8 Heads)",
+        "parent_id": "encoder_layer_1",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": 512,
+          "num_heads": 8,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "4 \u00d7 512 \u00d7 512 = 1.05M params per head \u00d7 8 = 8.4M params",
+        "flops": "6.29 MFLOPs per head \u00d7 8 = 50.32 MFLOPs",
+        "repetitions": 1,
+        "description": "Computes parallel multi-head self-attention across 8 heads.",
+        "math_formula": "Attention(Q,K,V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right) V \\quad \\text{with} \\quad d_k = 64",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 4,
+          "section": "3.2 Attention",
+          "figure_id": null,
+          "citation": "MultiHead(Q, K, V) = Concat(head1, ..., headh)W^O \\quad \\text{where} \\quad head_i = Attention(QW^Q_i, KW^K_i, VW^V_i)",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "encoder_ffn_1",
+        "type": "feed_forward",
+        "label": "Position-wise Feed-Forward Network",
+        "parent_id": "encoder_layer_1",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": 2048,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "2 \u00d7 512 \u00d7 2048 + 2048 = 4.1M params",
+        "flops": "2 \u00d7 512 \u00d7 2048 \u00d7 L = 4.1M \u00d7 L",
+        "repetitions": 1,
+        "description": "Two linear transformations with ReLU activation.",
+        "math_formula": "FFN(x) = \\max(0, xW_1 + b_1)W_2 + b_2",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 5,
+          "section": "3.3 Position-wise Feed-Forward Networks",
+          "figure_id": null,
+          "citation": "This consists of two linear transformations with a ReLU activation in between.",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "encoder_layer_norm_1",
+        "type": "layer_norm",
+        "label": "Layer Normalization (Post-Self-Attn)",
+        "parent_id": "encoder_layer_1",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "2 \u00d7 512 = 1K params",
+        "flops": "0",
+        "repetitions": 1,
+        "description": "Layer normalization applied after self-attention sub-layer.",
+        "math_formula": "LayerNorm(x + Sublayer(x))",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "3.1 Encoder and Decoder Stacks",
+          "figure_id": null,
+          "citation": "We employ a residual connection around each of the two sub-layers, followed by layer normalization.",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "encoder_residual_1",
+        "type": "residual",
+        "label": "Residual Connection (Post-Self-Attn)",
+        "parent_id": "encoder_layer_1",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "0",
+        "flops": "0",
+        "repetitions": 1,
+        "description": "Residual connection around self-attention sub-layer.",
+        "math_formula": "x + Sublayer(x)",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "3.1 Encoder and Decoder Stacks",
+          "figure_id": null,
+          "citation": "We employ a residual connection around each of the two sub-layers...",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "encoder_layer_norm_2",
+        "type": "layer_norm",
+        "label": "Layer Normalization (Post-FFN)",
+        "parent_id": "encoder_layer_1",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "2 \u00d7 512 = 1K params",
+        "flops": "0",
+        "repetitions": 1,
+        "description": "Layer normalization applied after feed-forward sub-layer.",
+        "math_formula": "LayerNorm(x + Sublayer(x))",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "3.1 Encoder and Decoder Stacks",
+          "figure_id": null,
+          "citation": "We employ a residual connection around each of the two sub-layers, followed by layer normalization.",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "encoder_residual_2",
+        "type": "residual",
+        "label": "Residual Connection (Post-FFN)",
+        "parent_id": "encoder_layer_1",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "0",
+        "flops": "0",
+        "repetitions": 1,
+        "description": "Residual connection around feed-forward sub-layer.",
+        "math_formula": "x + Sublayer(x)",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "3.1 Encoder and Decoder Stacks",
+          "figure_id": null,
+          "citation": "We employ a residual connection around each of the two sub-layers...",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "decoder_stack",
+        "type": "decoder",
+        "label": "Decoder Stack (N=6 layers)",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "null (composite)",
+        "flops": "null (composite)",
+        "repetitions": 6,
+        "description": "Stack of 6 identical decoder layers.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "3.1 Encoder and Decoder Stacks",
+          "figure_id": null,
+          "citation": "The decoder is also composed of a stack of N = 6 identical layers.",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "decoder_layer_1",
+        "type": "transformer_block",
+        "label": "Decoder Layer 1",
+        "parent_id": "decoder_stack",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "null (composite)",
+        "flops": "null (composite)",
+        "repetitions": 1,
+        "description": "Single decoder layer with masked self-attention, encoder-decoder attention, and feed-forward sub-layers.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "3.1 Encoder and Decoder Stacks",
+          "figure_id": null,
+          "citation": "In addition to the two sub-layers in each encoder layer, the decoder inserts a third sub-layer...",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "decoder_self_attn_1",
+        "type": "multi_head_attention",
+        "label": "Masked Multi-Head Self-Attention (8 Heads)",
+        "parent_id": "decoder_layer_1",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": 512,
+          "num_heads": 8,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "4 \u00d7 512 \u00d7 512 = 1.05M params per head \u00d7 8 = 8.4M params",
+        "flops": "6.29 MFLOPs per head \u00d7 8 = 50.32 MFLOPs",
+        "repetitions": 1,
+        "description": "Computes parallel multi-head self-attention with masking to prevent leftward information flow.",
+        "math_formula": "Attention(Q,K,V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right) V \\quad \\text{with masking}",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 4,
+          "section": "3.2.3 Applications of Attention in our Model",
+          "figure_id": null,
+          "citation": "We implement this inside of scaled dot-product attention by masking out (setting to \u2212\u221e) all values in the input of the softmax which correspond to illegal connections.",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "decoder_encoder_attn_1",
+        "type": "cross_attention",
+        "label": "Multi-Head Encoder-Decoder Attention (8 Heads)",
+        "parent_id": "decoder_layer_1",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L_dec, 512], [B, L_enc, 512]",
+          "output_shape": "[B, L_dec, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": 512,
+          "num_heads": 8,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "4 \u00d7 512 \u00d7 512 = 1.05M params per head \u00d7 8 = 8.4M params",
+        "flops": "6.29 MFLOPs per head \u00d7 8 = 50.32 MFLOPs",
+        "repetitions": 1,
+        "description": "Computes cross-attention between decoder and encoder outputs.",
+        "math_formula": "Attention(Q_dec, K_enc, V_enc) = \\text{softmax}\\left(\\frac{Q_{dec}K_{enc}^T}{\\sqrt{d_k}}\\right) V_{enc}",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 4,
+          "section": "3.2.3 Applications of Attention in our Model",
+          "figure_id": null,
+          "citation": "In 'encoder-decoder attention' layers, the queries come from the previous decoder layer, and the memory keys and values come from the output of the encoder.",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "decoder_ffn_1",
+        "type": "feed_forward",
+        "label": "Position-wise Feed-Forward Network",
+        "parent_id": "decoder_layer_1",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, Lo, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": 2048,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "2 \u00d7 512 \u00d7 2048 + 2048 = 4.1M params",
+        "flops": "2 \u00d7 512 \u00d7 2048 \u00d7 L = 4.1M \u00d7 L",
+        "repetitions": 1,
+        "description": "Two linear transformations with ReLU activation.",
+        "math_formula": "FFN(x) = \\max(0, xW_1 + b_1)W_2 + b_2",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 5,
+          "section": "3.3 Position-wise Feed-Forward Networks",
+          "figure_id": null,
+          "citation": "This consists of two linear transformations with a ReLU activation in between.",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "decoder_layer_norm_1",
+        "type": "layer_norm",
+        "label": "Layer Normalization (Post-Self-Attn)",
+        "parent_id": "decoder_layer_1",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "2 \u00d7 512 = 1K params",
+        "flops": "0",
+        "repetitions": 1,
+        "description": "Layer normalization applied after masked self-attention sub-layer.",
+        "math_formula": "LayerNorm(x + Sublayer(x))",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "3.1 Encoder and Decoder Stacks",
+          "figure_id": null,
+          "citation": "We employ a residual connection around each of the two sub-layers, followed by layer normalization.",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "decoder_residual_1",
+        "type": "residual",
+        "label": "Residual Connection (Post-Self-Attn)",
+        "parent_id": "decoder_layer_1",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "0",
+        "flops": "0",
+        "repetitions": 1,
+        "description": "Residual connection around masked self-attention sub-layer.",
+        "math_formula": "x + Sublayer(x)",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "3.1 Encoder and Decoder Stacks",
+          "figure_id": null,
+          "citation": "We employ a residual connection around each of the two sub-layers...",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "decoder_layer_norm_2",
+        "type": "layer_norm",
+        "label": "Layer Normalization (Post-Encoder-Decoder-Attn)",
+        "parent_id": "decoder_layer_1",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "2 \u00d7 512 = 1K params",
+        "flops": "0",
+        "repetitions": 1,
+        "description": "Layer normalization applied after encoder-decoder attention sub-layer.",
+        "math_formula": "LayerNorm(x + Sublayer(x))",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "3.1 Encoder and Decoder Stacks",
+          "figure_id": null,
+          "citation": "We employ a residual connection around each of the two sub-layers, followed by layer normalization.",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "decoder_residual_2",
+        "type": "residual",
+        "label": "Residual Connection (Post-Encoder-Decoder-Attn)",
+        "parent_id": "decoder_layer_1",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "0",
+        "flops": "0",
+        "repetitions": 1,
+        "description": "Residual connection around encoder-decoder attention sub-layer.",
+        "math_formula": "x + Sublayer(x)",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "3.1 Encoder and Decoder Stacks",
+          "figure_id": null,
+          "citation": "We employ a residual connection around each of the two sub-layers...",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "decoder_layer_norm_3",
+        "type": "layer_norm",
+        "label": "Layer Normalization (Post-FFN)",
+        "parent_id": "decoder_layer_1",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "2 \u00d7 512 = 1K params",
+        "flops": "0",
+        "repetitions": 1,
+        "description": "Layer normalization applied after feed-forward sub-layer.",
+        "math_formula": "LayerNorm(x + Sublayer(x))",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "3.1 Encoder and Decoder Stacks",
+          "figure_id": null,
+          "citation": "We employ a residual connection around each of the two sub-layers, followed by layer normalization.",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "decoder_residual_3",
+        "type": "residual",
+        "label": "Residual Connection (Post-FFN)",
+        "parent_id": "decoder_layer_1",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "0",
+        "flops": "0",
+        "repetitions": 1,
+        "description": "Residual connection around feed-forward sub-layer.",
+        "math_formula": "x + Sublayer(x)",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "3.1 Encoder and Decoder Stacks",
+          "figure_id": null,
+          "citation": "We employ a residual connection around each of the two sub-layers...",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "output_embedding",
+        "type": "embedding",
+        "label": "Output Token Embedding",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "null (learned, shared with input embedding)",
+        "flops": "0",
+        "repetitions": 1,
+        "description": "Learned token embeddings for output sequence, shared with input embedding.",
+        "math_formula": "E(y) = W_e y + b_e",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 5,
+          "section": "3.4 Embeddings and Softmax",
+          "figure_id": null,
+          "citation": "We also use the usual learned linear transformation and softmax function to convert the decoder output to predicted next-token probabilities...",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "output_softmax",
+        "type": "classifier",
+        "label": "Softmax Classifier",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, V]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": "512 \u00d7 V = 512 \u00d7 V params",
+        "flops": "512 \u00d7 V \u00d7 L",
+        "repetitions": 1,
+        "description": "Linear transformation followed by softmax for token probability distribution.",
+        "math_formula": "P(y_t|y_{<t}) = \\text{softmax}(W_o x_t + b_o)",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 5,
+          "section": "3.4 Embeddings and Softmax",
+          "figure_id": null,
+          "citation": "We also use the usual learned linear transformation and softmax function to convert the decoder output to predicted next-token probabilities.",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "source": "input_embedding",
+        "target": "pos_encoding",
+        "type": "data_flow",
+        "label": "Add Positional Encoding",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e2",
+        "source": "pos_encoding",
+        "target": "encoder_stack",
+        "type": "data_flow",
+        "label": "Encoder Input",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e3",
+        "source": "encoder_stack",
+        "target": "decoder_encoder_attn_1",
+        "type": "cross_attention",
+        "label": "Encoder Output to Decoder Attention",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e4",
+        "source": "input_embedding",
+        "target": "encoder_self_attn_1",
+        "type": "data_flow",
+        "label": "Encoder Input to Self-Attention",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e5",
+        "source": "encoder_self_attn_1",
+        "target": "encoder_layer_norm_1",
+        "type": "data_flow",
+        "label": "Post-Self-Attention",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e6",
+        "source": "encoder_residual_1",
+        "target": "encoder_self_attn_1",
+        "type": "residual_skip",
+        "label": "Residual Connection (Pre-Self-Attn)",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e7",
+        "source": "encoder_layer_norm_1",
+        "target": "encoder_ffn_1",
+        "type": "data_flow",
+        "label": "Post-Self-Attn Norm to FFN",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e8",
+        "source": "encoder_ffn_1",
+        "target": "encoder_layer_norm_2",
+        "type": "data_flow",
+        "label": "Post-FFN",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e9",
+        "source": "encoder_residual_2",
+        "target": "encoder_ffn_1",
+        "type": "residual_skip",
+        "label": "Residual Connection (Pre-FFN)",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e10",
+        "source": "encoder_layer_norm_2",
+        "target": "encoder_layer_1",
+        "type": "data_flow",
+        "label": "Layer Output",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e12",
+        "source": "output_embedding",
+        "target": "decoder_self_attn_1",
+        "type": "data_flow",
+        "label": "Decoder Input to Self-Attention",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e13",
+        "source": "decoder_self_attn_1",
+        "target": "decoder_layer_norm_1",
+        "type": "data_flow",
+        "label": "Post-Self-Attention",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e14",
+        "source": "decoder_residual_1",
+        "target": "decoder_self_attn_1",
+        "type": "residual_skip",
+        "label": "Residual Connection (Pre-Self-Attn)",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e15",
+        "source": "decoder_layer_norm_1",
+        "target": "decoder_encoder_attn_1",
+        "type": "data_flow",
+        "label": "Post-Self-Attn Norm to Encoder-Decoder Attention",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e16",
+        "source": "decoder_encoder_attn_1",
+        "target": "decoder_layer_norm_2",
+        "type": "data_flow",
+        "label": "Post-Encoder-Decoder Attention",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e17",
+        "source": "decoder_residual_2",
+        "target": "decoder_encoder_attn_1",
+        "type": "residual_skip",
+        "label": "Residual Connection (Pre-Encoder-Decoder Attention)",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e18",
+        "source": "decoder_layer_norm_2",
+        "target": "decoder_ffn_1",
+        "type": "data_flow",
+        "label": "Post-Encoder-Decoder Attention Norm to FFN",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e19",
+        "source": "decoder_ffn_1",
+        "target": "decoder_layer_norm_3",
+        "type": "data_flow",
+        "label": "Post-FFN",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e20",
+        "source": "decoder_residual_3",
+        "target": "decoder_ffn_1",
+        "type": "residual_skip",
+        "label": "Residual Connection (Pre-FFN)",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e21",
+        "source": "decoder_layer_norm_3",
+        "target": "decoder_layer_1",
+        "type": "data_flow",
+        "label": "Layer Output",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e23",
+        "source": "decoder_stack",
+        "target": "output_softmax",
+        "type": "data_flow",
+        "label": "Decoder Output to Softmax",
+        "tensor_shape": null,
+        "provenance": null
+      }
+    ],
+    "visualization_hints": {
+      "recommended_lod": 2,
+      "flow_direction": "horizontal",
+      "highlight_nodes": []
+    }
+  },
+  "scene_graph_3d": {
+    "nodes_3d": [],
+    "edges_3d": [],
+    "camera_target": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "bounds_3d": {
+      "min_x": -10.0,
+      "max_x": 10.0,
+      "min_y": -2.0,
+      "max_y": 4.0
+    }
+  },
+  "bycroft_stages": [],
+  "bycroft_highways": [],
+  "attention_heatmap": {
+    "tokens": [],
+    "matrix": []
+  },
+  "next_token_predictions": [],
+  "equations": [
+    {
+      "id": "eq-1",
+      "title": "Scaled Dot-Product Attention",
+      "latex": "Attention(Q, K, V) = softmax\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V",
+      "explanation": "This formula computes attention weights by taking the dot product of query vectors (Q) and key vectors (K), scaling them by the square root of the key dimension (d_k), applying a softmax function to obtain normalized weights, and then multiplying these weights with value vectors (V) to produce a weighted sum output.",
+      "variables": [
+        {
+          "symbol": "Q",
+          "name": "Query Matrix",
+          "meaning": "A matrix of query vectors derived from the input sequence, used to compute compatibility scores with keys."
+        },
+        {
+          "symbol": "K",
+          "name": "Key Matrix",
+          "meaning": "A matrix of key vectors derived from the input sequence, used to compute compatibility scores with queries."
+        },
+        {
+          "symbol": "V",
+          "name": "Value Matrix",
+          "meaning": "A matrix of value vectors, used to compute the weighted sum of values based on attention weights."
+        },
+        {
+          "symbol": "d_k",
+          "name": "Key Dimension",
+          "meaning": "The dimensionality of the key vectors, used for scaling the dot products to prevent gradient issues."
+        }
+      ]
+    },
+    {
+      "id": "eq-2",
+      "title": "Multi-Head Attention",
+      "latex": "MultiHead(Q, K, V) = Concat\\left(head_1, ..., head_h\\right)W^O \\quad \\text{where} \\quad head_i = Attention(QW_i^Q, KW_i^K, VW_i^V)",
+      "explanation": "This formula describes how multi-head attention works by linearly projecting the queries, keys, and values into multiple sets of vectors (h heads), computing attention for each set, concatenating the results, and then projecting them back to the original dimensionality using a learned weight matrix (W^O).",
+      "variables": [
+        {
+          "symbol": "h",
+          "name": "Number of Heads",
+          "meaning": "The number of parallel attention mechanisms applied to different subspaces of the input."
+        },
+        {
+          "symbol": "W_i^Q",
+          "name": "Query Projection Matrix for Head i",
+          "meaning": "Learned linear projection matrix for transforming the input into query vectors for head i."
+        },
+        {
+          "symbol": "W_i^K",
+          "name": "Key Projection Matrix for Head i",
+          "meaning": "Learned linear projection matrix for transforming the input into key vectors for head i."
+        },
+        {
+          "symbol": "W_i^V",
+          "name": "Value Projection Matrix for Head i",
+          "meaning": "Learned linear projection matrix for transforming the input into value vectors for head i."
+        },
+        {
+          "symbol": "W^O",
+          "name": "Output Projection Matrix",
+          "meaning": "Learned linear projection matrix for combining the concatenated outputs of all heads."
+        }
+      ]
+    },
+    {
+      "id": "eq-3",
+      "title": "Position-wise Feed-Forward Network",
+      "latex": "FFN(x) = \\max\\left(0, xW_1 + b_1\\right)W_2 + b_2",
+      "explanation": "This formula represents a fully connected feed-forward network applied independently to each position in the sequence. It consists of two linear transformations with a ReLU activation in between, allowing the model to learn non-linear transformations of the input features.",
+      "variables": [
+        {
+          "symbol": "x",
+          "name": "Input Vector",
+          "meaning": "The input feature vector at a specific position in the sequence."
+        },
+        {
+          "symbol": "W_1",
+          "name": "First Weight Matrix",
+          "meaning": "Learned weight matrix for the first linear transformation."
+        },
+        {
+          "symbol": "b_1",
+          "name": "First Bias Vector",
+          "meaning": "Bias vector for the first linear transformation."
+        },
+        {
+          "symbol": "W_2",
+          "name": "Second Weight Matrix",
+          "meaning": "Learned weight matrix for the second linear transformation."
+        },
+        {
+          "symbol": "b_2",
+          "name": "Second Bias Vector",
+          "meaning": "Bias vector for the second linear transformation."
+        }
+      ]
+    },
+    {
+      "id": "eq-4",
+      "title": "Positional Encoding",
+      "latex": "PE\\left(pos, 2i\\right) = \\sin\\left(\\frac{pos}{10000^{2i/d_{model}}}\\right) \\quad \\text{and} \\quad PE\\left(pos, 2i+1\\right) = \\cos\\left(\\frac{pos}{10000^{2i/d_{model}}}\\right)",
+      "explanation": "This formula defines the positional encoding using sinusoidal functions of different frequencies. It injects information about the relative positions of tokens in the sequence, allowing the model to understand the order of elements without using recurrence or convolution.",
+      "variables": [
+        {
+          "symbol": "pos",
+          "name": "Position Index",
+          "meaning": "The index of the token in the sequence, representing its position."
+        },
+        {
+          "symbol": "i",
+          "name": "Dimension Index",
+          "meaning": "The index of the dimension in the positional encoding vector."
+        },
+        {
+          "symbol": "d_{model}",
+          "name": "Model Dimension",
+          "meaning": "The dimensionality of the model embeddings and positional encodings."
+        }
+      ]
+    }
+  ],
+  "code_snippets": [
+    {
+      "title": "transformer_block.py",
+      "language": "python",
+      "code": "import torch\nimport torch.nn as nn\nimport math\n\nclass MultiHeadAttention(nn.Module):\n    def __init__(self, d_model, num_heads):\n        super().__init__()\n        assert d_model % num_heads == 0, \"d_model must be divisible by num_heads\"\n        self.d_model = d_model\n        self.num_heads = num_heads\n        self.d_k = d_model // num_heads\n\n        self.W_q = nn.Linear(d_model, d_model)\n        self.W_k = nn.Linear(d_model, d_model)\n        self.W_v = nn.Linear(d_model, d_model)\n        self.W_o = nn.Linear(d_model, d_model)\n\n    def scaled_dot_product_attention(self, Q, K, V, mask=None):\n        attn_scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.d_k)\n        if mask is not None:\n            attn_scores = attn_scores.masked_fill(mask == 0, -1e9)\n        attn_probs = torch.softmax(attn_scores, dim=-1)\n        return torch.matmul(attn_probs, V), attn_probs\n\n    def forward(self, Q, K, V, mask=None):\n        Q = self.W_q(Q).view(Q.size(0), Q.size(1), self.num_heads, self.d_k).transpose(1, 2)\n        K = self.W_k(K).view(K.size(0), K.size(1), self.num_heads, self.d_k).transpose(1, 2)\n        V = self.W_v(V).view(V.size(0), V.size(1), self.num_heads, self.d_k).transpose(1, 2)\n\n        attn_output, _ = self.scaled_dot_product_attention(Q, K, V, mask)\n        attn_output = attn_output.transpose(1, 2).contiguous().view(attn_output.size(0), -1)\n        return self.W_o(attn_output)\n\nclass PositionWiseFeedForward(nn.Module):\n    def __init__(self, d_model, d_ff):\n        super().__init__()\n        self.fc1 = nn.Linear(d_model, d_ff)\n        self.fc2 = nn.Linear(d_ff, d_model)\n        self.dropout = nn.Dropout(0.1)\n\n    def forward(self, x):\n        return self.fc2(self.dropout(torch.relu(self.fc1(x))))\n\nclass EncoderBlock(nn.Module):\n    def __init__(self, d_model, num_heads, d_ff, dropout=0.1):\n        super().__init__()\n        self.attention = MultiHeadAttention(d_model, num_heads)\n        self.feed_forward = PositionWiseFeedForward(d_model, d_ff)\n        self.norm1 = nn.LayerNorm(d_model)\n        self.norm2 = nn.LayerNorm(d_model)\n        self.dropout = nn.Dropout(dropout)\n\n    def forward(self, x, mask=None):\n        attn_output = self.attention(x, x, x, mask)\n        x = self.norm1(x + self.dropout(attn_output))\n        ff_output = self.feed_forward(x)\n        return self.norm2(x + self.dropout(ff_output))"
+    }
+  ],
+  "code_note": null,
+  "architecture_nodes": [
+    {
+      "id": "input_embedding",
+      "type": "embedding",
+      "label": "Input Token Embedding",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "null (learned)",
+      "flops": "0",
+      "repetitions": 1,
+      "description": "Learned token embeddings for input sequence. Shared with output embedding.",
+      "math_formula": "E(x) = W_e x + b_e",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 5,
+        "section": "3.4 Embeddings and Softmax",
+        "figure_id": null,
+        "citation": "Similarly to other sequence transduction models, we use learned embeddings to convert the input tokens...",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "pos_encoding",
+      "type": "custom",
+      "label": "Positional Encoding",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "null (fixed sinusoidal function)",
+      "flops": "0",
+      "repetitions": 1,
+      "description": "Sinusoidal positional encoding added to input embeddings.",
+      "math_formula": "PE(pos,2i) = \\sin\\left(\\frac{pos}{10000^{2i/d_{model}}}\\right), \\quad PE(pos,2i+1) = \\cos\\left(\\frac{pos}{10000^{2i/d_{model}}}\\right)",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 5,
+        "section": "3.5 Positional Encoding",
+        "figure_id": null,
+        "citation": "We add 'positional encodings' to the input embeddings at the bottoms of the encoder and decoder stacks...",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "encoder_stack",
+      "type": "encoder",
+      "label": "Encoder Stack (N=6 layers)",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "null (composite)",
+      "flops": "null (composite)",
+      "repetitions": 6,
+      "description": "Stack of 6 identical encoder layers.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "3.1 Encoder and Decoder Stacks",
+        "figure_id": null,
+        "citation": "The encoder is composed of a stack of N = 6 identical layers.",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "encoder_layer_1",
+      "type": "transformer_block",
+      "label": "Encoder Layer 1",
+      "parent_id": "encoder_stack",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "null (composite)",
+      "flops": "null (composite)",
+      "repetitions": 1,
+      "description": "Single encoder layer with multi-head self-attention and feed-forward sub-layers.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "3.1 Encoder and Decoder Stacks",
+        "figure_id": null,
+        "citation": "Each layer has two sub-layers: multi-head self-attention and a feed-forward network.",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "encoder_self_attn_1",
+      "type": "multi_head_attention",
+      "label": "Multi-Head Self-Attention (8 Heads)",
+      "parent_id": "encoder_layer_1",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": 512,
+        "num_heads": 8,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "4 \u00d7 512 \u00d7 512 = 1.05M params per head \u00d7 8 = 8.4M params",
+      "flops": "6.29 MFLOPs per head \u00d7 8 = 50.32 MFLOPs",
+      "repetitions": 1,
+      "description": "Computes parallel multi-head self-attention across 8 heads.",
+      "math_formula": "Attention(Q,K,V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right) V \\quad \\text{with} \\quad d_k = 64",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 4,
+        "section": "3.2 Attention",
+        "figure_id": null,
+        "citation": "MultiHead(Q, K, V) = Concat(head1, ..., headh)W^O \\quad \\text{where} \\quad head_i = Attention(QW^Q_i, KW^K_i, VW^V_i)",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "encoder_ffn_1",
+      "type": "feed_forward",
+      "label": "Position-wise Feed-Forward Network",
+      "parent_id": "encoder_layer_1",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": 2048,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "2 \u00d7 512 \u00d7 2048 + 2048 = 4.1M params",
+      "flops": "2 \u00d7 512 \u00d7 2048 \u00d7 L = 4.1M \u00d7 L",
+      "repetitions": 1,
+      "description": "Two linear transformations with ReLU activation.",
+      "math_formula": "FFN(x) = \\max(0, xW_1 + b_1)W_2 + b_2",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 5,
+        "section": "3.3 Position-wise Feed-Forward Networks",
+        "figure_id": null,
+        "citation": "This consists of two linear transformations with a ReLU activation in between.",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "encoder_layer_norm_1",
+      "type": "layer_norm",
+      "label": "Layer Normalization (Post-Self-Attn)",
+      "parent_id": "encoder_layer_1",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "2 \u00d7 512 = 1K params",
+      "flops": "0",
+      "repetitions": 1,
+      "description": "Layer normalization applied after self-attention sub-layer.",
+      "math_formula": "LayerNorm(x + Sublayer(x))",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "3.1 Encoder and Decoder Stacks",
+        "figure_id": null,
+        "citation": "We employ a residual connection around each of the two sub-layers, followed by layer normalization.",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "encoder_residual_1",
+      "type": "residual",
+      "label": "Residual Connection (Post-Self-Attn)",
+      "parent_id": "encoder_layer_1",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "0",
+      "flops": "0",
+      "repetitions": 1,
+      "description": "Residual connection around self-attention sub-layer.",
+      "math_formula": "x + Sublayer(x)",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "3.1 Encoder and Decoder Stacks",
+        "figure_id": null,
+        "citation": "We employ a residual connection around each of the two sub-layers...",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "encoder_layer_norm_2",
+      "type": "layer_norm",
+      "label": "Layer Normalization (Post-FFN)",
+      "parent_id": "encoder_layer_1",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "2 \u00d7 512 = 1K params",
+      "flops": "0",
+      "repetitions": 1,
+      "description": "Layer normalization applied after feed-forward sub-layer.",
+      "math_formula": "LayerNorm(x + Sublayer(x))",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "3.1 Encoder and Decoder Stacks",
+        "figure_id": null,
+        "citation": "We employ a residual connection around each of the two sub-layers, followed by layer normalization.",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "encoder_residual_2",
+      "type": "residual",
+      "label": "Residual Connection (Post-FFN)",
+      "parent_id": "encoder_layer_1",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "0",
+      "flops": "0",
+      "repetitions": 1,
+      "description": "Residual connection around feed-forward sub-layer.",
+      "math_formula": "x + Sublayer(x)",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "3.1 Encoder and Decoder Stacks",
+        "figure_id": null,
+        "citation": "We employ a residual connection around each of the two sub-layers...",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "decoder_stack",
+      "type": "decoder",
+      "label": "Decoder Stack (N=6 layers)",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "null (composite)",
+      "flops": "null (composite)",
+      "repetitions": 6,
+      "description": "Stack of 6 identical decoder layers.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "3.1 Encoder and Decoder Stacks",
+        "figure_id": null,
+        "citation": "The decoder is also composed of a stack of N = 6 identical layers.",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "decoder_layer_1",
+      "type": "transformer_block",
+      "label": "Decoder Layer 1",
+      "parent_id": "decoder_stack",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "null (composite)",
+      "flops": "null (composite)",
+      "repetitions": 1,
+      "description": "Single decoder layer with masked self-attention, encoder-decoder attention, and feed-forward sub-layers.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "3.1 Encoder and Decoder Stacks",
+        "figure_id": null,
+        "citation": "In addition to the two sub-layers in each encoder layer, the decoder inserts a third sub-layer...",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "decoder_self_attn_1",
+      "type": "multi_head_attention",
+      "label": "Masked Multi-Head Self-Attention (8 Heads)",
+      "parent_id": "decoder_layer_1",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": 512,
+        "num_heads": 8,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "4 \u00d7 512 \u00d7 512 = 1.05M params per head \u00d7 8 = 8.4M params",
+      "flops": "6.29 MFLOPs per head \u00d7 8 = 50.32 MFLOPs",
+      "repetitions": 1,
+      "description": "Computes parallel multi-head self-attention with masking to prevent leftward information flow.",
+      "math_formula": "Attention(Q,K,V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right) V \\quad \\text{with masking}",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 4,
+        "section": "3.2.3 Applications of Attention in our Model",
+        "figure_id": null,
+        "citation": "We implement this inside of scaled dot-product attention by masking out (setting to \u2212\u221e) all values in the input of the softmax which correspond to illegal connections.",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "decoder_encoder_attn_1",
+      "type": "cross_attention",
+      "label": "Multi-Head Encoder-Decoder Attention (8 Heads)",
+      "parent_id": "decoder_layer_1",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L_dec, 512], [B, L_enc, 512]",
+        "output_shape": "[B, L_dec, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": 512,
+        "num_heads": 8,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "4 \u00d7 512 \u00d7 512 = 1.05M params per head \u00d7 8 = 8.4M params",
+      "flops": "6.29 MFLOPs per head \u00d7 8 = 50.32 MFLOPs",
+      "repetitions": 1,
+      "description": "Computes cross-attention between decoder and encoder outputs.",
+      "math_formula": "Attention(Q_dec, K_enc, V_enc) = \\text{softmax}\\left(\\frac{Q_{dec}K_{enc}^T}{\\sqrt{d_k}}\\right) V_{enc}",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 4,
+        "section": "3.2.3 Applications of Attention in our Model",
+        "figure_id": null,
+        "citation": "In 'encoder-decoder attention' layers, the queries come from the previous decoder layer, and the memory keys and values come from the output of the encoder.",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "decoder_ffn_1",
+      "type": "feed_forward",
+      "label": "Position-wise Feed-Forward Network",
+      "parent_id": "decoder_layer_1",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, Lo, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": 2048,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "2 \u00d7 512 \u00d7 2048 + 2048 = 4.1M params",
+      "flops": "2 \u00d7 512 \u00d7 2048 \u00d7 L = 4.1M \u00d7 L",
+      "repetitions": 1,
+      "description": "Two linear transformations with ReLU activation.",
+      "math_formula": "FFN(x) = \\max(0, xW_1 + b_1)W_2 + b_2",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 5,
+        "section": "3.3 Position-wise Feed-Forward Networks",
+        "figure_id": null,
+        "citation": "This consists of two linear transformations with a ReLU activation in between.",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "decoder_layer_norm_1",
+      "type": "layer_norm",
+      "label": "Layer Normalization (Post-Self-Attn)",
+      "parent_id": "decoder_layer_1",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "2 \u00d7 512 = 1K params",
+      "flops": "0",
+      "repetitions": 1,
+      "description": "Layer normalization applied after masked self-attention sub-layer.",
+      "math_formula": "LayerNorm(x + Sublayer(x))",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "3.1 Encoder and Decoder Stacks",
+        "figure_id": null,
+        "citation": "We employ a residual connection around each of the two sub-layers, followed by layer normalization.",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "decoder_residual_1",
+      "type": "residual",
+      "label": "Residual Connection (Post-Self-Attn)",
+      "parent_id": "decoder_layer_1",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "0",
+      "flops": "0",
+      "repetitions": 1,
+      "description": "Residual connection around masked self-attention sub-layer.",
+      "math_formula": "x + Sublayer(x)",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "3.1 Encoder and Decoder Stacks",
+        "figure_id": null,
+        "citation": "We employ a residual connection around each of the two sub-layers...",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "decoder_layer_norm_2",
+      "type": "layer_norm",
+      "label": "Layer Normalization (Post-Encoder-Decoder-Attn)",
+      "parent_id": "decoder_layer_1",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "2 \u00d7 512 = 1K params",
+      "flops": "0",
+      "repetitions": 1,
+      "description": "Layer normalization applied after encoder-decoder attention sub-layer.",
+      "math_formula": "LayerNorm(x + Sublayer(x))",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "3.1 Encoder and Decoder Stacks",
+        "figure_id": null,
+        "citation": "We employ a residual connection around each of the two sub-layers, followed by layer normalization.",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "decoder_residual_2",
+      "type": "residual",
+      "label": "Residual Connection (Post-Encoder-Decoder-Attn)",
+      "parent_id": "decoder_layer_1",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "0",
+      "flops": "0",
+      "repetitions": 1,
+      "description": "Residual connection around encoder-decoder attention sub-layer.",
+      "math_formula": "x + Sublayer(x)",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "3.1 Encoder and Decoder Stacks",
+        "figure_id": null,
+        "citation": "We employ a residual connection around each of the two sub-layers...",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "decoder_layer_norm_3",
+      "type": "layer_norm",
+      "label": "Layer Normalization (Post-FFN)",
+      "parent_id": "decoder_layer_1",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "2 \u00d7 512 = 1K params",
+      "flops": "0",
+      "repetitions": 1,
+      "description": "Layer normalization applied after feed-forward sub-layer.",
+      "math_formula": "LayerNorm(x + Sublayer(x))",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "3.1 Encoder and Decoder Stacks",
+        "figure_id": null,
+        "citation": "We employ a residual connection around each of the two sub-layers, followed by layer normalization.",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "decoder_residual_3",
+      "type": "residual",
+      "label": "Residual Connection (Post-FFN)",
+      "parent_id": "decoder_layer_1",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "0",
+      "flops": "0",
+      "repetitions": 1,
+      "description": "Residual connection around feed-forward sub-layer.",
+      "math_formula": "x + Sublayer(x)",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "3.1 Encoder and Decoder Stacks",
+        "figure_id": null,
+        "citation": "We employ a residual connection around each of the two sub-layers...",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "output_embedding",
+      "type": "embedding",
+      "label": "Output Token Embedding",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "null (learned, shared with input embedding)",
+      "flops": "0",
+      "repetitions": 1,
+      "description": "Learned token embeddings for output sequence, shared with input embedding.",
+      "math_formula": "E(y) = W_e y + b_e",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 5,
+        "section": "3.4 Embeddings and Softmax",
+        "figure_id": null,
+        "citation": "We also use the usual learned linear transformation and softmax function to convert the decoder output to predicted next-token probabilities...",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "output_softmax",
+      "type": "classifier",
+      "label": "Softmax Classifier",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, V]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": "512 \u00d7 V = 512 \u00d7 V params",
+      "flops": "512 \u00d7 V \u00d7 L",
+      "repetitions": 1,
+      "description": "Linear transformation followed by softmax for token probability distribution.",
+      "math_formula": "P(y_t|y_{<t}) = \\text{softmax}(W_o x_t + b_o)",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 5,
+        "section": "3.4 Embeddings and Softmax",
+        "figure_id": null,
+        "citation": "We also use the usual learned linear transformation and softmax function to convert the decoder output to predicted next-token probabilities.",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    }
+  ],
+  "diagram_available": true,
+  "summary_available": true,
+  "metadata": {
+    "title": "Attention Is All You Need",
+    "authors": [
+      "Ashish Vaswani",
+      "Noam Shazeer",
+      "Niki Parmar",
+      "Jakob Uszkoreit",
+      "Llion Jones",
+      "Aidan N. Gomez",
+      "\u0141ukasz Kaiser",
+      "Illia Polosukhin"
+    ],
+    "abstract": "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder. The best performing models also connect the encoder and decoder through an attention mechanism. We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely. Experiments on two machine translation tasks show these models to be superior in quality while being more parallelizable and requiring significantly less time to train. Our model achieves 28.4 BLEU on the WMT 2014 English-to-German translation task, improving over the existing best results, including ensembles, by over 2 BLEU. On the WMT 2014 English-to-French translation task, our model establishes a new single-model state-of-the-art BLEU score of 41.8 after training for 3.5 days on eight GPUs, a small fraction of the training costs of the best models from the literature. We show that the Transformer generalizes well to other tasks by applying it successfully to English constituency parsing both with large and limited training data.",
+    "published": "2017",
+    "categories": [
+      "Natural Language Processing",
+      "Machine Learning"
+    ]
+  },
+  "parsed_text": {
+    "page_count": 15
+  },
+  "content_hash": "882339bb90c1312a31055a9f86e63d440a3a005cfc6a4f0f4cefc34f1481b10b",
+  "cached": false
+}

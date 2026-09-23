@@ -115,7 +115,13 @@ class ExplanationService:
                 cleaned = cleaned[:-3]
             cleaned = cleaned.strip()
 
-            parsed = json.loads(cleaned)
+            try:
+                parsed = json.loads(cleaned)
+            except json.JSONDecodeError:
+                # Resilient fallback: remove trailing commas before close brackets/braces
+                repaired = re.sub(r',\s*([\]}])', r'\1', cleaned)
+                parsed = json.loads(repaired)
+
             # Validate through Pydantic
             validated = StructuredPaperSummary(**parsed)
             return validated.model_dump()

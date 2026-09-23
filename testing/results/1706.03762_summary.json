@@ -1,0 +1,57 @@
+{
+  "paper_id": "1706.03762",
+  "page_count": 15,
+  "total_time_sec": 276.67,
+  "diagram": {
+    "available": true,
+    "source": "vision",
+    "layout_mode": "auto",
+    "nodes_count": 16,
+    "edges_count": 16,
+    "sample_nodes": [
+      "Input Embedding",
+      "Positional Encoding",
+      "Multi-Head Attention",
+      "Add & Norm",
+      "Feed Forward"
+    ]
+  },
+  "architecture_ir": {
+    "paradigm": "transformer",
+    "nodes_count": 23,
+    "edges_count": 21,
+    "sample_nodes": [
+      "Input Token Embedding",
+      "Positional Encoding",
+      "Encoder Stack (N=6 layers)",
+      "Encoder Layer 1",
+      "Multi-Head Self-Attention (8 Heads)"
+    ]
+  },
+  "math_and_code": {
+    "equations_extracted": 4,
+    "code_snippets_extracted": 1,
+    "sample_equation": "Attention(Q, K, V) = softmax\\left(\\frac{QK^T}{\\sqrt{d_k}}\\ri",
+    "sample_code_title": "transformer_block.py"
+  },
+  "pedagogical_summary": {
+    "one_sentence": "The Transformer replaces recurrent and convolutional layers in sequence transduction with pure attention mechanisms, enabling parallelization and achieving state-of-the-art translation performance with reduced training time.",
+    "problem": "Recurrent and convolutional neural networks in sequence transduction suffer from sequential computation bottlenecks, limiting parallelization and scalability, especially for long sequences and long-range dependencies.",
+    "solution": "A novel architecture called the Transformer uses stacked self-attention and position-wise feed-forward layers, eliminating recurrence and convolutions while enabling constant-time path lengths and full parallelization.",
+    "specs_count": 8,
+    "contributions_count": 5,
+    "findings_count": 4,
+    "limitations_count": 4,
+    "cited_pages": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "max_cited_page": 10
+  }
+}

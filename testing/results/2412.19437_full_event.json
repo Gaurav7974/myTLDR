@@ -1,0 +1,2325 @@
+{
+  "stage": "done",
+  "explanation": {
+    "overview": {
+      "one_sentence": "DeepSeek-V3 introduces a 671B-parameter Mixture-of-Experts (MoE) model with auxiliary-loss-free load balancing and multi-token prediction, achieving cost-efficient training and state-of-the-art performance on open-source benchmarks.",
+      "problem": "Large language models face bottlenecks in training efficiency, expert load imbalance, and high computational costs, limiting scalability and performance gains despite architectural advancements.",
+      "solution": "DeepSeek-V3 employs Multi-Head Latent Attention (MLA), DeepSeekMoE with auxiliary-loss-free load balancing, multi-token prediction training, and FP8 mixed-precision training to optimize inference, training stability, and cost-effectiveness.",
+      "why_it_matters": "DeepSeek-V3 achieves competitive performance with closed-source models while reducing training costs to 2.788M H800 GPU hours, demonstrating scalable and efficient large-model training with minimal performance trade-offs."
+    },
+    "key_specs": [
+      {
+        "label": "Total Parameters",
+        "value": "671B",
+        "source": {
+          "page": 1,
+          "section": "Abstract",
+          "figure": null
+        }
+      },
+      {
+        "label": "Activated Parameters per Token",
+        "value": "37B",
+        "source": {
+          "page": 1,
+          "section": "Abstract",
+          "figure": null
+        }
+      },
+      {
+        "label": "Transformer Layers",
+        "value": "N = 32 (adopted from DeepSeek-V2)",
+        "source": {
+          "page": 6,
+          "section": "2.1",
+          "figure": null
+        }
+      },
+      {
+        "label": "Multi-Head Latent Attention (MLA) Compression Dimension",
+        "value": "d_c (\u226ad_h * n_h)",
+        "source": {
+          "page": 7,
+          "section": "2.1.1",
+          "figure": null
+        }
+      },
+      {
+        "label": "Shared Experts (DeepSeekMoE)",
+        "value": "N_s = 4",
+        "source": {
+          "page": 8,
+          "section": "2.1.2",
+          "figure": null
+        }
+      },
+      {
+        "label": "Routed Experts (DeepSeekMoE)",
+        "value": "N_r = 8",
+        "source": {
+          "page": 8,
+          "section": "2.1.2",
+          "figure": null
+        }
+      },
+      {
+        "label": "Multi-Token Prediction Depth",
+        "value": "D = 3 (predicts up to 3 additional tokens)",
+        "source": {
+          "page": 10,
+          "section": "2.2",
+          "figure": null
+        }
+      },
+      {
+        "label": "Training Data Tokens",
+        "value": "14.8 trillion",
+        "source": {
+          "page": 1,
+          "section": "Abstract",
+          "figure": null
+        }
+      },
+      {
+        "label": "Training Cost (H800 GPU Hours)",
+        "value": "2.788M (pre-training: 2.664M, context extension: 119K, post-training: 5K)",
+        "source": {
+          "page": 1,
+          "section": "Abstract",
+          "figure": null
+        }
+      },
+      {
+        "label": "Compute Cluster GPUs",
+        "value": "2048 NVIDIA H800",
+        "source": {
+          "page": 11,
+          "section": "3.1",
+          "figure": null
+        }
+      },
+      {
+        "label": "Pipeline Parallelism (PP)",
+        "value": "16-way",
+        "source": {
+          "page": 12,
+          "section": "3.2",
+          "figure": null
+        }
+      },
+      {
+        "label": "Expert Parallelism (EP)",
+        "value": "64-way (8 nodes)",
+        "source": {
+          "page": 12,
+          "section": "3.2",
+          "figure": null
+        }
+      },
+      {
+        "label": "Training Precision",
+        "value": "FP8 (with BF16/FP32 fallback for stability)",
+        "source": {
+          "page": 14,
+          "section": "3.3",
+          "figure": null
+        }
+      }
+    ],
+    "contributions": [
+      {
+        "title": "Auxiliary-Loss-Free Load Balancing in DeepSeekMoE",
+        "summary": "Introduces a bias-based dynamic adjustment mechanism to balance expert load without auxiliary loss, mitigating performance degradation while maintaining computational efficiency.",
+        "category": "novel",
+        "importance": "Eliminates trade-offs between load balancing and model performance, enabling stable MoE training at scale.",
+        "source": {
+          "page": 8,
+          "section": "2.1.2",
+          "figure": null
+        }
+      },
+      {
+        "title": "Multi-Token Prediction (MTP) Training Objective",
+        "summary": "Sequentially predicts multiple future tokens per position, densifying training signals and improving data efficiency while preserving causal chains for better future token planning.",
+        "category": "novel",
+        "importance": "Enhances model performance on benchmarks and enables speculative decoding for inference acceleration.",
+        "source": {
+          "page": 10,
+          "section": "2.2",
+          "figure": null
+        }
+      },
+      {
+        "title": "FP8 Mixed-Precision Training Framework",
+        "summary": "Validates FP8 training for large-scale models (671B parameters) with fine-grained quantization and increased accumulation precision, reducing memory and compute costs by ~50%.",
+        "category": "architectural",
+        "importance": "Achieves stable training with <0.25% relative loss error compared to BF16, enabling cost-effective scaling of model sizes.",
+        "source": {
+          "page": 14,
+          "section": "3.3",
+          "figure": null
+        }
+      },
+      {
+        "title": "DualPipe Pipeline Parallelism",
+        "summary": "Overlaps forward/backward computation-communication phases to reduce pipeline bubbles and near-zero all-to-all communication overhead, supporting fine-grained expert parallelism across nodes.",
+        "category": "architectural",
+        "importance": "Enables efficient training of large models without costly tensor parallelism, maintaining scalability with constant computation-to-communication ratios.",
+        "source": {
+          "page": 12,
+          "section": "3.2.1",
+          "figure": null
+        }
+      },
+      {
+        "title": "Efficient Cross-Node All-to-All Communication",
+        "summary": "Leverages InfiniBand (IB) and NVLink bandwidths with warp specialization and dynamic workload balancing, reducing communication overhead to 20 SMs while scaling expert parallelism.",
+        "category": "methodological",
+        "importance": "Supports near-full computation-communication overlap, enabling 13 routed experts per node without additional overhead.",
+        "source": {
+          "page": 13,
+          "section": "3.2.2",
+          "figure": null
+        }
+      }
+    ],
+    "key_findings": [
+      {
+        "title": "MMLU-Pro Benchmark Performance",
+        "summary": "DeepSeek-V3 achieves 75.9% Exact Match (EM) on MMLU-Pro, outperforming all open-source models and narrowing the gap with closed-source models like GPT-4o and Claude-3.5-Sonnet.",
+        "metric_value": "75.9 EM",
+        "source": {
+          "page": 5,
+          "section": "Introduction",
+          "figure": null
+        }
+      },
+      {
+        "title": "Math and Code Benchmark Dominance",
+        "summary": "State-of-the-art performance on math (MATH 500: 90.2 EM) and code benchmarks (LiveCodeBench: top-performing model), surpassing closed-source models like o1-preview on specific tasks.",
+        "metric_value": "90.2 EM (MATH 500), SOTA on LiveCodeBench",
+        "source": {
+          "page": 5,
+          "section": "Introduction",
+          "figure": null
+        }
+      },
+      {
+        "title": "Training Efficiency and Cost",
+        "summary": "Pre-training completed in 2.664M H800 GPU hours (~3.7 days per trillion tokens) with total training cost of $5.576M, achieving stable training without irrecoverable loss spikes.",
+        "metric_value": "2.788M GPU hours (2.664M pre-training), $5.576M total cost",
+        "source": {
+          "page": 1,
+          "section": "Abstract",
+          "figure": null
+        }
+      },
+      {
+        "title": "FP8 Training Validation",
+        "summary": "FP8 training achieves <0.25% relative loss error compared to BF16 baseline on models similar to DeepSeek-V2, validating feasibility for large-scale models with minimal performance degradation.",
+        "metric_value": "<0.25% relative loss error",
+        "source": {
+          "page": 14,
+          "section": "3.3",
+          "figure": null
+        }
+      }
+    ],
+    "limitations": [
+      {
+        "title": "Quadratic Memory Complexity with Sequence Length",
+        "summary": "Self-attention mechanisms require O(N\u00b2) memory for sequence length N, limiting context length scalability without sparse attention or memory optimizations.",
+        "details": "Long-context extensions (e.g., 128K tokens) may require additional computational overhead or architectural modifications.",
+        "source": {
+          "page": 23,
+          "section": "4.3",
+          "figure": null
+        }
+      },
+      {
+        "title": "Hardware Dependency on Communication Overhead",
+        "summary": "Efficient cross-node communication relies on InfiniBand and NVLink bandwidths, limiting scalability on clusters with lower interconnect performance.",
+        "details": "Future hardware designs (e.g., unified IB-NVLink interfaces) could mitigate this dependency.",
+        "source": {
+          "page": 20,
+          "section": "3.5.1",
+          "figure": null
+        }
+      },
+      {
+        "title": "Training Stability with Low-Precision Formats",
+        "summary": "FP8 training requires careful quantization strategies (e.g., fine-grained scaling) to avoid numerical instability, particularly with activation outliers.",
+        "details": "Block-wise quantization of activations may introduce instability (discussed in Appendix B.2).",
+        "source": {
+          "page": 16,
+          "section": "3.3.2",
+          "figure": null
+        }
+      },
+      {
+        "title": "Expert Load Balancing in Inference",
+        "summary": "Dynamic redundancy strategies for experts during inference are still under exploration, potentially introducing latency overhead for optimal routing computation.",
+        "details": "Current deployment relies on periodic expert load statistics and redundant expert allocation.",
+        "source": {
+          "page": 19,
+          "section": "3.4.1",
+          "figure": null
+        }
+      }
+    ]
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": "node_center",
+        "label": "",
+        "type": "other",
+        "description": "Token embeddings projected to hidden dimension (512).",
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.45,
+          "y": 0.35,
+          "w": 0.1,
+          "h": 0.1
+        },
+        "shape": "ellipse",
+        "style": {
+          "fill": "#FFFFFF",
+          "border": "#000000",
+          "text": "#000000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.9,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "DeepSeek-V3 Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-15-817",
+          "figure_page": 15,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "node_top",
+        "label": "",
+        "type": "other",
+        "description": "Token embeddings projected to hidden dimension (512).",
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.45,
+          "y": 0.15,
+          "w": 0.08,
+          "h": 0.08
+        },
+        "shape": "ellipse",
+        "style": {
+          "fill": "#FFFFFF",
+          "border": "#000000",
+          "text": "#000000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.9,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "DeepSeek-V3 Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-15-817",
+          "figure_page": 15,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "node_right",
+        "label": "",
+        "type": "other",
+        "description": "Token embeddings projected to hidden dimension (512).",
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.65,
+          "y": 0.45,
+          "w": 0.08,
+          "h": 0.08
+        },
+        "shape": "ellipse",
+        "style": {
+          "fill": "#FFFFFF",
+          "border": "#000000",
+          "text": "#000000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.9,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "DeepSeek-V3 Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-15-817",
+          "figure_page": 15,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "node_bottom",
+        "label": "",
+        "type": "other",
+        "description": "Token embeddings projected to hidden dimension (512).",
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.45,
+          "y": 0.75,
+          "w": 0.08,
+          "h": 0.08
+        },
+        "shape": "ellipse",
+        "style": {
+          "fill": "#FFFFFF",
+          "border": "#000000",
+          "text": "#000000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.9,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "DeepSeek-V3 Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-15-817",
+          "figure_page": 15,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "node_left",
+        "label": "",
+        "type": "other",
+        "description": "Token embeddings projected to hidden dimension (512).",
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.25,
+          "y": 0.45,
+          "w": 0.08,
+          "h": 0.08
+        },
+        "shape": "ellipse",
+        "style": {
+          "fill": "#FFFFFF",
+          "border": "#000000",
+          "text": "#000000",
+          "shape": "rounded",
+          "raw": null
+        },
+        "confidence": 0.9,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "DeepSeek-V3 Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-15-817",
+          "figure_page": 15,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "node_label",
+        "label": "F",
+        "type": "other",
+        "description": "Standard feed-forward network with GELU activation and layer norm.",
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.75,
+          "y": 0.15,
+          "w": 0.1,
+          "h": 0.1
+        },
+        "shape": "rect",
+        "style": {
+          "fill": "#FFFFFF",
+          "border": "#000000",
+          "text": "#000000",
+          "shape": "rect",
+          "raw": null
+        },
+        "confidence": 0.85,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "DeepSeek-V3 Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-15-817",
+          "figure_page": 15,
+          "citation": null,
+          "confidence": 1.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "node_top",
+        "target": "node_center",
+        "label": "",
+        "type": "custom",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.53,
+            "y": 0.15
+          },
+          {
+            "x": 0.53,
+            "y": 0.35
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.23
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.45
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.5,
+          "dasharray": "none",
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "node_center",
+        "target": "node_right",
+        "label": "",
+        "type": "custom",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.5,
+            "y": 0.5
+          },
+          {
+            "x": 0.6,
+            "y": 0.5
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.5
+        },
+        "target_anchor": {
+          "x": 0.65,
+          "y": 0.45
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.5,
+          "dasharray": "none",
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "node_right",
+        "target": "node_bottom",
+        "label": "",
+        "type": "custom",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.6,
+            "y": 0.5
+          },
+          {
+            "x": 0.55,
+            "y": 0.65
+          },
+          {
+            "x": 0.5,
+            "y": 0.7
+          }
+        ],
+        "source_anchor": {
+          "x": 0.65,
+          "y": 0.5
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.75
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.5,
+          "dasharray": "none",
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "node_bottom",
+        "target": "node_left",
+        "label": "",
+        "type": "custom",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.5,
+            "y": 0.7
+          },
+          {
+            "x": 0.4,
+            "y": 0.6
+          },
+          {
+            "x": 0.3,
+            "y": 0.5
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.75
+        },
+        "target_anchor": {
+          "x": 0.25,
+          "y": 0.45
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.5,
+          "dasharray": "none",
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "node_left",
+        "target": "node_top",
+        "label": "",
+        "type": "custom",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.4,
+            "y": 0.5
+          },
+          {
+            "x": 0.45,
+            "y": 0.3
+          }
+        ],
+        "source_anchor": {
+          "x": 0.3,
+          "y": 0.5
+        },
+        "target_anchor": {
+          "x": 0.45,
+          "y": 0.23
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.5,
+          "dasharray": "none",
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "node_center",
+        "target": "node_label",
+        "label": "",
+        "type": "custom",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.5,
+            "y": 0.45
+          },
+          {
+            "x": 0.65,
+            "y": 0.3
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.45
+        },
+        "target_anchor": {
+          "x": 0.75,
+          "y": 0.2
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.5,
+          "dasharray": "none",
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      }
+    ],
+    "version": "2.0",
+    "source": "merged",
+    "figure_id": "fig-15-817",
+    "figure_page": 15,
+    "confidence": 0.95,
+    "verification": {
+      "valid": false,
+      "confidence": 0.3,
+      "hallucinations": [
+        "node_label (F)",
+        "edge: node_center->node_label"
+      ],
+      "missing_elements": [
+        "diagonal cross lines (X-like structure)",
+        "intersection point (center node)"
+      ],
+      "node_verification": [
+        {
+          "node_id": "node_center",
+          "label": "",
+          "status": "hallucinated",
+          "note": "The center node does not match the figure; the figure shows a single intersection point, not a separate node."
+        },
+        {
+          "node_id": "node_top",
+          "label": "",
+          "status": "ambiguous",
+          "note": "The node is present in the right location but lacks clarity in the figure due to cropping and lack of labels."
+        },
+        {
+          "node_id": "node_right",
+          "label": "",
+          "status": "ambiguous",
+          "note": "Same as node_top; ambiguous due to cropping and lack of labels."
+        },
+        {
+          "node_id": "node_bottom",
+          "label": "",
+          "status": "ambiguous",
+          "note": "Same as node_top; ambiguous due to cropping and lack of labels."
+        },
+        {
+          "node_id": "node_left",
+          "label": "",
+          "status": "ambiguous",
+          "note": "Same as node_top; ambiguous due to cropping and lack of labels."
+        },
+        {
+          "node_id": "node_label",
+          "label": "F",
+          "status": "hallucinated",
+          "note": "The label 'F' is not part of the core cyclic structure."
+        }
+      ],
+      "edge_verification": [
+        {
+          "edge": "node_top->node_center",
+          "status": "ambiguous",
+          "note": "The edge is in the right direction but the figure does not explicitly show individual edges; it shows a continuous 'X' structure."
+        },
+        {
+          "edge": "node_center->node_right",
+          "status": "ambiguous",
+          "note": "Same as above; ambiguous due to lack of explicit edges in the figure."
+        },
+        {
+          "edge": "node_right->node_bottom",
+          "status": "ambiguous",
+          "note": "Same as above; ambiguous due to lack of explicit edges in the figure."
+        },
+        {
+          "edge": "node_bottom->node_left",
+          "status": "ambiguous",
+          "note": "Same as above; ambiguous due to lack of explicit edges in the figure."
+        },
+        {
+          "edge": "node_left->node_top",
+          "status": "ambiguous",
+          "note": "Same as above; ambiguous due to lack of explicit edges in the figure."
+        },
+        {
+          "edge": "node_center->node_label",
+          "status": "hallucinated",
+          "note": "This edge does not exist in the figure."
+        }
+      ],
+      "reason": "The proposed graph incorrectly represents the figure by adding a separate center node and label 'F', and lacks the core intersecting 'X' structure."
+    },
+    "groups": [],
+    "layout_mode": "auto",
+    "paper_title": "DeepSeek-V3 Technical Report",
+    "metadata": {
+      "merged_from": "vision+text",
+      "vision_node_count": 6,
+      "text_node_count": 8
+    }
+  },
+  "architecture_ir": {
+    "version": "1.0",
+    "architecture": {
+      "name": "DeepSeek-V3",
+      "paradigm": "transformer",
+      "primary_paper_id": null,
+      "author_summary": null
+    },
+    "nodes": [
+      {
+        "id": "input_embedding",
+        "type": "embedding",
+        "label": "Input Embedding Layer",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Token embeddings projected to hidden dimension (512).",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 6,
+          "section": "2.1 Basic Architecture",
+          "figure_id": null,
+          "citation": "Embedding Layer (Figure 3)",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "mlp_mlp_block",
+        "type": "mlp",
+        "label": "MLP Block (Feed-Forward Network)",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": 2048,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Standard feed-forward network with GELU activation and layer norm.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 8,
+          "section": "2.1.2 DeepSeekMoE",
+          "figure_id": null,
+          "citation": "FFN(\ud835\udc5f)_i(\u00b7) and FFN(\ud835\udc60)_i(\u00b7) in Eq. (12)",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "mla_attention",
+        "type": "multi_head_attention",
+        "label": "Multi-Head Latent Attention (MLA)",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": 512,
+          "num_heads": 8,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Low-rank compressed attention with decoupled keys/values for KV cache efficiency.",
+        "math_formula": "Attention(Q,K,V) = Softmax(QK^T/\u221ad_k)V with low-rank compression (Eqs. 1-5)",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 7,
+          "section": "2.1.1 Multi-Head Latent Attention",
+          "figure_id": null,
+          "citation": "Core MLA equations (1)-(11)",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "router",
+        "type": "router",
+        "label": "MoE Router",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 16]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Selects top-K experts per token using sigmoid-based gating with auxiliary-loss-free bias.",
+        "math_formula": "g'_i,t = TopK({s_j,t + b_j | 1 \u2264 j \u2264 N_r}, K_r) (Eq. 16)",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 8,
+          "section": "2.1.2 DeepSeekMoE",
+          "figure_id": null,
+          "citation": "Auxiliary-loss-free load balancing (Eqs. 12-16)",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "shared_expert_1",
+        "type": "expert",
+        "label": "Shared Expert 1",
+        "parent_id": "mlp_mlp_block",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Shared FFN expert with fixed routing (N_s = 2).",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 8,
+          "section": "2.1.2 DeepSeekMoE",
+          "figure_id": null,
+          "citation": "FFN(\ud835\udc60)_i(\u00b7) in Eq. (12)",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "shared_expert_2",
+        "type": "expert",
+        "label": "Shared Expert 2",
+        "parent_id": "mlp_mlp_block",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Shared FFN expert with fixed routing (N_s = 2).",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 8,
+          "section": "2.1.2 DeepSeekMoE",
+          "figure_id": null,
+          "citation": "FFN(\ud835\udc60)_i(\u00b7) in Eq. (12)",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "routed_expert_1",
+        "type": "expert",
+        "label": "Routed Expert 1",
+        "parent_id": "mlp_mlp_block",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Routed FFN expert with dynamic gating (N_r = 14).",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 8,
+          "section": "2.1.2 DeepSeekMoE",
+          "figure_id": null,
+          "citation": "FFN(\ud835\udc5f)_i(\u00b7) in Eq. (12)",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "rms_norm_1",
+        "type": "rms_norm",
+        "label": "RMSNorm Layer 1",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Root-mean-square normalization before attention.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 6,
+          "section": "2.1 Basic Architecture",
+          "figure_id": null,
+          "citation": "Figure 2 (RMSNorm before MLA)",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "rms_norm_2",
+        "type": "rms_norm",
+        "label": "RMSNorm Layer 2",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Root-mean-square normalization before FFN.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 6,
+          "section": "2.1 Basic Architecture",
+          "figure_id": null,
+          "citation": "Figure 2 (RMSNorm before MoE)",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "transformer_block",
+        "type": "transformer_block",
+        "label": "Transformer Block",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Stacked MLA + MoE + RMSNorm layers (L=32).",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 6,
+          "section": "2.1 Basic Architecture",
+          "figure_id": null,
+          "citation": "Figure 2 (Transformer Block \u00d7 L)",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "mtp_module_1",
+        "type": "custom",
+        "label": "Multi-Token Prediction Module 1 (Next-2 Token)",
+        "parent_id": "transformer_block",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Shared embedding + Transformer block + projection for next-2 token prediction.",
+        "math_formula": "h'_k,i = M_k[RMSNorm(h_{k-1,i}); RMSNorm(Emb(t_{i+k}))] (Eq. 21)",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 10,
+          "section": "2.2 Multi-Token Prediction",
+          "figure_id": null,
+          "citation": "MTP Module 1 in Figure 3",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "mtp_module_2",
+        "type": "custom",
+        "label": "Multi-Token Prediction Module 2 (Next-3 Token)",
+        "parent_id": "transformer_block",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Shared embedding + Transformer block + projection for next-3 token prediction.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 10,
+          "section": "2.2 Multi-Token Prediction",
+          "figure_id": null,
+          "citation": "MTP Module 2 in Figure 3",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "output_head",
+        "type": "linear",
+        "label": "Output Head",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, V]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Linear projection to vocabulary space (V=65024).",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 6,
+          "section": "2.1 Basic Architecture",
+          "figure_id": null,
+          "citation": "Output Head in Figure 3",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "loss_mtp",
+        "type": "loss",
+        "label": "Multi-Token Prediction Loss",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, V]",
+          "output_shape": "[1]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Cross-entropy loss for MTP modules (Eq. 25).",
+        "math_formula": "LMTP = \u03bb/D \u03a3_k L_k_MTP (Eq. 25)",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 10,
+          "section": "2.2 Multi-Token Prediction",
+          "figure_id": null,
+          "citation": "MTP Training Objective (Eqs. 24-25)",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "loss_main",
+        "type": "loss",
+        "label": "Main Model Loss",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, V]",
+          "output_shape": "[1]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Standard next-token prediction cross-entropy loss.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 6,
+          "section": "2.1 Basic Architecture",
+          "figure_id": null,
+          "citation": "Cross-Entropy Loss in Figure 3",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "source": "input_embedding",
+        "target": "rms_norm_1",
+        "type": "data_flow",
+        "label": "Embedding \u2192 Pre-Attn Norm",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e2",
+        "source": "rms_norm_1",
+        "target": "mla_attention",
+        "type": "data_flow",
+        "label": "Pre-Attn Norm \u2192 MLA",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e3",
+        "source": "mla_attention",
+        "target": "rms_norm_2",
+        "type": "data_flow",
+        "label": "Attn Output \u2192 Pre-FFN Norm",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e4",
+        "source": "rms_norm_2",
+        "target": "router",
+        "type": "data_flow",
+        "label": "Pre-FFN Norm \u2192 Router",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e5",
+        "source": "router",
+        "target": "shared_expert_1",
+        "type": "data_flow",
+        "label": "Router \u2192 Shared Expert 1",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e6",
+        "source": "router",
+        "target": "shared_expert_2",
+        "type": "data_flow",
+        "label": "Router \u2192 Shared Expert 2",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e7",
+        "source": "router",
+        "target": "routed_expert_1",
+        "type": "data_flow",
+        "label": "Router \u2192 Routed Expert 1",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e8",
+        "source": "shared_expert_1",
+        "target": "mlp_mlp_block",
+        "type": "residual_skip",
+        "label": "Shared Expert Residual",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e9",
+        "source": "shared_expert_2",
+        "target": "mlp_mlp_block",
+        "type": "residual_skip",
+        "label": "Shared Expert Residual",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e10",
+        "source": "routed_expert_1",
+        "target": "mlp_mlp_block",
+        "type": "residual_skip",
+        "label": "Routed Expert Residual",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e11",
+        "source": "mlp_mlp_block",
+        "target": "transformer_block",
+        "type": "data_flow",
+        "label": "MoE Output \u2192 Next Block",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e12",
+        "source": "transformer_block",
+        "target": "mtp_module_1",
+        "type": "data_flow",
+        "label": "Block Output \u2192 MTP Module 1",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e13",
+        "source": "mtp_module_1",
+        "target": "output_head",
+        "type": "data_flow",
+        "label": "MTP Module 1 \u2192 Output Head",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e14",
+        "source": "transformer_block",
+        "target": "mtp_module_2",
+        "type": "data_flow",
+        "label": "Block Output \u2192 MTP Module 2",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e15",
+        "source": "mtp_module_2",
+        "target": "output_head",
+        "type": "data_flow",
+        "label": "MTP Module 2 \u2192 Output Head",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e16",
+        "source": "transformer_block",
+        "target": "output_head",
+        "type": "data_flow",
+        "label": "Block Output \u2192 Main Output Head",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e17",
+        "source": "output_head",
+        "target": "loss_main",
+        "type": "data_flow",
+        "label": "Main Output \u2192 Loss",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e18",
+        "source": "output_head",
+        "target": "loss_mtp",
+        "type": "data_flow",
+        "label": "MTP Output \u2192 MTP Loss",
+        "tensor_shape": null,
+        "provenance": null
+      }
+    ],
+    "visualization_hints": {
+      "recommended_lod": 2,
+      "flow_direction": "horizontal",
+      "highlight_nodes": []
+    }
+  },
+  "scene_graph_3d": {
+    "nodes_3d": [],
+    "edges_3d": [],
+    "camera_target": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "bounds_3d": {
+      "min_x": -10.0,
+      "max_x": 10.0,
+      "min_y": -2.0,
+      "max_y": 4.0
+    }
+  },
+  "bycroft_stages": [],
+  "bycroft_highways": [],
+  "attention_heatmap": {
+    "tokens": [],
+    "matrix": []
+  },
+  "next_token_predictions": [],
+  "equations": [
+    {
+      "id": "eq-1",
+      "title": "Multi-Head Latent Attention (MLA) Key-Value Compression",
+      "latex": [
+        "$c_{\\text{KV}}^t = W_{\\text{DKV}} h_t,$",
+        "$[k_{\\text{C}}^t,1; k_{\\text{C}}^t,2; \\ldots; k_{\\text{C}}^t,n_h] = k_{\\text{C}}^t = W_{\\text{UK}} c_{\\text{KV}}^t,$",
+        "$k_{\\text{R}}^t = \\text{RoPE}(W_{\\text{KR}} h_t),$",
+        "$k_t,i = [k_{\\text{C}}^t,i; k_{\\text{R}}^t],$",
+        "$[v_{\\text{C}}^t,1; v_{\\text{C}}^t,2; \\ldots; v_{\\text{C}}^t,n_h] = v_{\\text{C}}^t = W_{\\text{UV}} c_{\\text{KV}}^t$"
+      ],
+      "explanation": "This set of equations describes the **Multi-Head Latent Attention (MLA)** mechanism for compressing key-value pairs to reduce KV cache memory usage during inference. The process involves projecting the input hidden state `h_t` into a compressed latent vector `c_KV^t` using a down-projection matrix `W_DKV`. The compressed keys and values are then expanded back to the original dimension using up-projection matrices `W_UK` and `W_UV`, respectively. The keys are further split into two parts: a content-based key `k_C^t` and a RoPE (Rotary Positional Embedding)-carrying key `k_R^t`, which are concatenated to form the final key `k_t,i`. This approach significantly reduces memory overhead while maintaining performance comparable to standard Multi-Head Attention.",
+      "variables": [
+        {
+          "symbol": "c_{\\text{KV}}^t",
+          "name": "Compressed Latent Vector for Keys and Values",
+          "meaning": "A low-dimensional latent representation of the input hidden state `h_t`, used to reduce memory consumption."
+        },
+        {
+          "symbol": "W_{\\text{DKV}}",
+          "name": "Down-Projection Matrix for Keys and Values",
+          "meaning": "A learned matrix that projects the input hidden state `h_t` into a lower-dimensional latent space."
+        },
+        {
+          "symbol": "h_t",
+          "name": "Attention Input for the t-th Token",
+          "meaning": "The input hidden state of the t-th token at a given attention layer."
+        },
+        {
+          "symbol": "W_{\\text{UK}}",
+          "name": "Up-Projection Matrix for Keys",
+          "meaning": "A learned matrix that expands the compressed latent vector back to the original key dimension."
+        },
+        {
+          "symbol": "W_{\\text{UV}}",
+          "name": "Up-Projection Matrix for Values",
+          "meaning": "A learned matrix that expands the compressed latent vector back to the original value dimension."
+        },
+        {
+          "symbol": "k_{\\text{C}}^t",
+          "name": "Content-Based Key",
+          "meaning": "The content part of the key, derived from the compressed latent vector."
+        },
+        {
+          "symbol": "k_{\\text{R}}^t",
+          "name": "Rotary Positional Embedding Key",
+          "meaning": "The part of the key that carries Rotary Positional Embedding (RoPE) information."
+        },
+        {
+          "symbol": "W_{\\text{KR}}",
+          "name": "Matrix for Rotary Positional Embedding Key",
+          "meaning": "A learned matrix used to produce the RoPE-carrying key."
+        },
+        {
+          "symbol": "RoPE(\u00b7)",
+          "name": "Rotary Positional Embedding Operation",
+          "meaning": "An operation that applies Rotary Positional Embedding to the key."
+        },
+        {
+          "symbol": "n_h",
+          "name": "Number of Attention Heads",
+          "meaning": "The number of parallel attention heads used in the MLA mechanism."
+        }
+      ]
+    },
+    {
+      "id": "eq-2",
+      "title": "DeepSeekMoE with Auxiliary-Loss-Free Load Balancing",
+      "latex": [
+        "$h'^t = u_t + \\sum_{i=1}^{N_s} \\text{FFN}(s)_i(u_t) + \\sum_{i=1}^{N_r} g_i,t \\text{FFN}(r)_i(u_t),$",
+        "$g_i,t = \\frac{g'_i,t}{\\sum_{j=1}^{N_r} g'_j,t},$",
+        "$g'_i,t = \\begin{cases} s_i,t, & s_i,t \\in \\text{Top}_K(\\{s_j,t | 1 \\leq j \\leq N_r\\}, K_r), \\ 0, & \text{otherwise}, \\end{cases}$",
+        "$s_i,t = \\sigma(u_t^T e_i),$",
+        "$g'_i,t = \\begin{cases} s_i,t + b_i, & s_i,t + b_i \\in \\text{Top}_K(\\{s_j,t + b_j | 1 \\leq j \\leq N_r\\}, K_r), \\ 0, & \text{otherwise}, \\end{cases}$"
+      ],
+      "explanation": "This set of equations describes the **DeepSeekMoE with Auxiliary-Loss-Free Load Balancing** mechanism. The model uses a combination of shared experts and routed experts to process the input hidden state `u_t`. The output `h'^t` is computed by summing the contributions from shared experts and routed experts, weighted by gating values `g_i,t`. The gating values are derived from the affinity scores `s_i,t`, which are computed as the dot product of the input hidden state `u_t` and expert centroid vectors `e_i`, followed by a sigmoid activation. The auxiliary-loss-free load balancing strategy introduces bias terms `b_i` to adjust the affinity scores dynamically, ensuring balanced expert load without using auxiliary loss. This approach minimizes performance degradation while maintaining computational efficiency.",
+      "variables": [
+        {
+          "symbol": "h'^t",
+          "name": "Output Hidden State",
+          "meaning": "The output hidden state after processing by the MoE layer."
+        },
+        {
+          "symbol": "u_t",
+          "name": "FFN Input for the t-th Token",
+          "meaning": "The input hidden state to the Feed-Forward Network (FFN) for the t-th token."
+        },
+        {
+          "symbol": "N_s",
+          "name": "Number of Shared Experts",
+          "meaning": "The number of shared experts in the MoE layer."
+        },
+        {
+          "symbol": "N_r",
+          "name": "Number of Routed Experts",
+          "meaning": "The number of routed experts in the MoE layer."
+        },
+        {
+          "symbol": "\\text{FFN}(s)_i(\u00b7)",
+          "name": "Shared Expert Function",
+          "meaning": "The i-th shared expert function applied to the input `u_t`."
+        },
+        {
+          "symbol": "\\text{FFN}(r)_i(\u00b7)",
+          "name": "Routed Expert Function",
+          "meaning": "The i-th routed expert function applied to the input `u_t`."
+        },
+        {
+          "symbol": "g_i,t",
+          "name": "Gating Value",
+          "meaning": "The normalized gating value for the i-th expert at the t-th token."
+        },
+        {
+          "symbol": "g'_i,t",
+          "name": "Raw Gating Score",
+          "meaning": "The raw gating score before normalization."
+        },
+        {
+          "symbol": "s_i,t",
+          "name": "Affinity Score",
+          "meaning": "The affinity score between the t-th token and the i-th expert."
+        },
+        {
+          "symbol": "e_i",
+          "name": "Expert Centroid Vector",
+          "meaning": "The centroid vector representing the i-th expert."
+        },
+        {
+          "symbol": "\\sigma(\u00b7)",
+          "name": "Sigmoid Function",
+          "meaning": "The sigmoid activation function applied to the dot product of `u_t` and `e_i`."
+        },
+        {
+          "symbol": "b_i",
+          "name": "Bias Term",
+          "meaning": "The bias term added to the affinity scores to balance expert load."
+        },
+        {
+          "symbol": "K_r",
+          "name": "Number of Activated Routed Experts",
+          "meaning": "The number of routed experts activated for each token."
+        },
+        {
+          "symbol": "\\text{Top}_K(\u00b7, K_r)",
+          "name": "Top-K Selection",
+          "meaning": "A function that selects the top K_r elements from a set of scores."
+        }
+      ]
+    },
+    {
+      "id": "eq-3",
+      "title": "Multi-Token Prediction (MTP) Training Objective",
+      "latex": [
+        "$h'_{k,i} = M_k [\\text{RMSNorm}(h_{k-1,i}); \\text{RMSNorm}(\\text{Emb}(t_{i+k}))],$",
+        "$h_{k,1:T-k} = \\text{TRM}_k(h'_{k,1:T-k}),$",
+        "$P_{k,i+k+1} = \\text{OutHead}(h_{k,i}),$",
+        "$L_{k,\\text{MTP}} = \\text{CrossEntropy}(P_{k,2+k:T+1}, t_{2+k:T+1}),$",
+        "$L_{\\text{MTP}} = \\lambda \\frac{1}{D} \\sum_{k=1}^{D} L_{k,\\text{MTP}}$"
+      ],
+      "explanation": "This set of equations describes the **Multi-Token Prediction (MTP)** training objective. The MTP mechanism predicts multiple future tokens at each position by sequentially processing additional tokens. For each prediction depth `k`, the input `h'_{k,i}` is formed by concatenating the normalized hidden state `h_{k-1,i}` from the previous depth and the embedding of the next token `Emb(t_{i+k})`. This combined representation is processed by a Transformer block `TRM_k` to produce the output representation `h_{k,i}`. The shared output head `OutHead` then computes the probability distribution for the next token `P_{k,i+k+1}`. The cross-entropy loss `L_{k,MTP}` is computed for each prediction depth, and the overall MTP loss `L_{MTP}` is the weighted average of these losses across all depths. This approach enhances data efficiency and enables better planning of future token representations.",
+      "variables": [
+        {
+          "symbol": "h'_{k,i}",
+          "name": "Combined Input Representation for MTP Module",
+          "meaning": "The concatenated representation of the previous hidden state and the embedding of the next token for the k-th prediction depth."
+        },
+        {
+          "symbol": "M_k",
+          "name": "Projection Matrix for MTP Module",
+          "meaning": "The projection matrix used to combine the previous hidden state and the embedding of the next token."
+        },
+        {
+          "symbol": "h_{k-1,i}",
+          "name": "Hidden State from Previous Depth",
+          "meaning": "The hidden state representation from the (k-1)-th prediction depth."
+        },
+        {
+          "symbol": "Emb(\u00b7)",
+          "name": "Embedding Layer",
+          "meaning": "The embedding layer that converts tokens into dense vectors."
+        },
+        {
+          "symbol": "t_{i+k}",
+          "name": "Token at Position i+k",
+          "meaning": "The token at position i+k in the input sequence."
+        },
+        {
+          "symbol": "TRM_k(\u00b7)",
+          "name": "Transformer Block for MTP Module",
+          "meaning": "The Transformer block used at the k-th prediction depth."
+        },
+        {
+          "symbol": "h_{k,1:T-k}",
+          "name": "Hidden States for Prediction Depth k",
+          "meaning": "The hidden states for all tokens from position 1 to T-k at the k-th prediction depth."
+        },
+        {
+          "symbol": "P_{k,i+k+1}",
+          "name": "Probability Distribution for Next Token",
+          "meaning": "The probability distribution over the vocabulary for the next token at position i+k+1."
+        },
+        {
+          "symbol": "OutHead(\u00b7)",
+          "name": "Output Head",
+          "meaning": "The output head that maps the hidden state to logits and applies the Softmax function."
+        },
+        {
+          "symbol": "L_{k,\\text{MTP}}",
+          "name": "Cross-Entropy Loss for MTP Module",
+          "meaning": "The cross-entropy loss for the k-th prediction depth."
+        },
+        {
+          "symbol": "t_{2+k:T+1}",
+          "name": "Target Tokens for MTP Module",
+          "meaning": "The target tokens for the k-th prediction depth."
+        },
+        {
+          "symbol": "L_{\\text{MTP}}",
+          "name": "Overall MTP Loss",
+          "meaning": "The overall Multi-Token Prediction loss, which is the weighted average of the losses across all prediction depths."
+        },
+        {
+          "symbol": "\\lambda",
+          "name": "Weighting Factor",
+          "meaning": "The weighting factor applied to the overall MTP loss."
+        },
+        {
+          "symbol": "D",
+          "name": "Number of Prediction Depths",
+          "meaning": "The number of sequential MTP modules used for predicting additional tokens."
+        }
+      ]
+    },
+    {
+      "id": "eq-4",
+      "title": "Fine-Grained Quantization for FP8 Training",
+      "latex": [
+        "$c_{\\text{KV}}^t = \\text{Quantize}(h_t, \\text{scale}_t),$",
+        "$\\text{scale}_t = \\frac{\\max(|h_t|)}{\\text{max}(|\\text{FP8}|)},$",
+        "$\\text{scale}_t = \\frac{\\max(|h_t|_{\\text{1x128 tile}})}{\\max(|\\text{FP8}|)},$",
+        "$\\text{scale}_w = \\frac{\\max(|W|_{\\text{128x128 block}})}{\\max(|\\text{FP8}|)}$"
+      ],
+      "explanation": "This set of equations describes the **Fine-Grained Quantization** strategy for FP8 training. The quantization process involves scaling the input tensor `h_t` or weight matrix `W` to fit within the representable range of the FP8 format. Traditional methods scale the entire tensor or matrix to the maximum representable value of FP8, which can lead to quantization errors due to outliers. The fine-grained quantization method scales smaller groups of elements: a 1x128 tile for activations and a 128x128 block for weights. This approach mitigates the impact of outliers by adapting the scale to smaller groups, thereby improving quantization accuracy and reducing errors.",
+      "variables": [
+        {
+          "symbol": "c_{\\text{KV}}^t",
+          "name": "Quantized Compressed Latent Vector",
+          "meaning": "The quantized version of the compressed latent vector for keys and values."
+        },
+        {
+          "symbol": "h_t",
+          "name": "Attention Input for the t-th Token",
+          "meaning": "The input hidden state of the t-th token at a given attention layer."
+        },
+        {
+          "symbol": "scale_t",
+          "name": "Scaling Factor for Activations",
+          "meaning": "The scaling factor applied to activations to fit within the FP8 range."
+        },
+        {
+          "symbol": "\\text{max}(|h_t|)",
+          "name": "Maximum Absolute Value of Input Tensor",
+          "meaning": "The maximum absolute value in the input tensor `h_t`."
+        },
+        {
+          "symbol": "\\text{max}(|\\text{FP8}|)",
+          "name": "Maximum Representable Value in FP8",
+          "meaning": "The maximum representable value in the FP8 data format."
+        },
+        {
+          "symbol": "h_t_{\\text{1x128 tile}}",
+          "name": "Activation Tile",
+          "meaning": "A 1x128 tile of the activation tensor `h_t`."
+        },
+        {
+          "symbol": "W",
+          "name": "Weight Matrix",
+          "meaning": "The weight matrix in the neural network."
+        },
+        {
+          "symbol": "scale_w",
+          "name": "Scaling Factor for Weights",
+          "meaning": "The scaling factor applied to weights to fit within the FP8 range."
+        },
+        {
+          "symbol": "W_{\\text{128x128 block}}",
+          "name": "Weight Block",
+          "meaning": "A 128x128 block of the weight matrix `W`."
+        }
+      ]
+    }
+  ],
+  "code_snippets": [
+    {
+      "title": "MultiHeadLatentAttention.py",
+      "language": "python",
+      "code": "import torch\nimport torch.nn as nn\nfrom torch.nn import functional as F\n\nclass MultiHeadLatentAttention(nn.Module):\n    def __init__(self, d_model, n_heads, d_kv, d_q, d_v, d_rope):\n        super().__init__()\n        self.d_model = d_model\n        self.n_heads = n_heads\n        self.d_kv = d_kv\n        self.d_q = d_q\n        self.d_v = d_v\n        self.d_rope = d_rope\n\n        # Projection matrices\n        self.W_D_KV = nn.Linear(d_model, d_kv)  # Down-projection for KV\n        self.W_U_K = nn.Linear(d_kv, n_heads * d_kv)  # Up-projection for keys\n        self.W_U_V = nn.Linear(d_kv, n_heads * d_v)  # Up-projection for values\n        self.W_K_R = nn.Linear(d_model, n_heads * d_rope)  # RoPE keys\n        self.W_D_Q = nn.Linear(d_model, d_q)  # Down-projection for queries\n        self.W_U_Q = nn.Linear(d_q, n_heads * d_q)  # Up-projection for queries\n        self.W_Q_R = nn.Linear(d_q, n_heads * d_rope)  # RoPE queries\n        self.W_O = nn.Linear(n_heads * d_q, d_model)  # Output projection\n\n        # Initialize RoPE\n        self.register_buffer('rope_theta', torch.tensor(10000.0))\n\n    def forward(self, x):\n        # x shape: (batch_size, seq_len, d_model)\n        batch_size, seq_len, _ = x.shape\n\n        # Down-project queries, keys, values\n        c_Q = self.W_D_Q(x)  # (batch_size, seq_len, d_q)\n        c_KV = self.W_D_KV(x)  # (batch_size, seq_len, d_kv)\n\n        # Up-project keys and values\n        K_C = self.W_U_K(c_KV).view(batch_size, seq_len, self.n_heads, self.d_kv)\n        V_C = self.W_U_V(c_KV).view(batch_size, seq_len, self.n_heads, self.d_v)\n\n        # RoPE keys\n        K_R = self.W_K_R(x).view(batch_size, seq_len, self.n_heads, self.d_rope)\n        K_R = self.apply_rope(K_R)\n\n        # Concatenate compressed and RoPE keys\n        K = torch.cat([K_C, K_R], dim=-1)  # (batch_size, seq_len, n_heads, d_kv + d_rope)\n\n        # Down-project queries\n        c_Q = self.W_D_Q(x)\n        Q_C = self.W_U_Q(c_Q).view(batch_size, seq_len, self.n_heads, self.d_q)\n\n        # RoPE queries\n        Q_R = self.W_Q_R(c_Q).view(batch_size, seq_len, self.n_heads, self.d_rope)\n        Q_R = self.apply_rope(Q_R)\n\n        # Concatenate compressed and RoPE queries\n        Q = torch.cat([Q_C, Q_R], dim=-1)  # (batch_size, seq_len, n_heads, d_q + d_rope)\n\n        # Compute attention scores\n        attn_scores = torch.matmul(Q, K.transpose(-2, -1)) / (self.d_kv + self.d_rope) ** 0.5\n        attn_probs = F.softmax(attn_scores, dim=-1)\n\n        # Compute attention output\n        V = V_C.transpose(1, 2)  # (batch_size, n_heads, seq_len, d_v)\n        output = torch.matmul(attn_probs, V)  # (batch_size, seq_len, n_heads, d_v)\n\n        # Concatenate heads and project output\n        output = output.transpose(1, 2).reshape(batch_size, seq_len, -1)\n        output = self.W_O(output)\n\n        return output\n\n    def apply_rope(self, x):\n        # Apply Rotary Positional Embedding (RoPE)\n        seq_len, n_heads, d_rope = x.shape[0], x.shape[1], x.shape[2]\n        theta = self.rope_theta\n        pos = torch.arange(seq_len, device=x.device).float()\n        inv_freq = 1.0 / (theta ** (torch.arange(0, d_rope, 2, device=x.device).float() / d_rope))\n        t = pos[:, None] * inv_freq[None, :]\n        cos = torch.cos(t)\n        sin = torch.sin(t)"
+    }
+  ],
+  "code_note": null,
+  "architecture_nodes": [
+    {
+      "id": "input_embedding",
+      "type": "embedding",
+      "label": "Input Embedding Layer",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Token embeddings projected to hidden dimension (512).",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 6,
+        "section": "2.1 Basic Architecture",
+        "figure_id": null,
+        "citation": "Embedding Layer (Figure 3)",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "mlp_mlp_block",
+      "type": "mlp",
+      "label": "MLP Block (Feed-Forward Network)",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": 2048,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Standard feed-forward network with GELU activation and layer norm.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 8,
+        "section": "2.1.2 DeepSeekMoE",
+        "figure_id": null,
+        "citation": "FFN(\ud835\udc5f)_i(\u00b7) and FFN(\ud835\udc60)_i(\u00b7) in Eq. (12)",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "mla_attention",
+      "type": "multi_head_attention",
+      "label": "Multi-Head Latent Attention (MLA)",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": 512,
+        "num_heads": 8,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Low-rank compressed attention with decoupled keys/values for KV cache efficiency.",
+      "math_formula": "Attention(Q,K,V) = Softmax(QK^T/\u221ad_k)V with low-rank compression (Eqs. 1-5)",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 7,
+        "section": "2.1.1 Multi-Head Latent Attention",
+        "figure_id": null,
+        "citation": "Core MLA equations (1)-(11)",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "router",
+      "type": "router",
+      "label": "MoE Router",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 16]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Selects top-K experts per token using sigmoid-based gating with auxiliary-loss-free bias.",
+      "math_formula": "g'_i,t = TopK({s_j,t + b_j | 1 \u2264 j \u2264 N_r}, K_r) (Eq. 16)",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 8,
+        "section": "2.1.2 DeepSeekMoE",
+        "figure_id": null,
+        "citation": "Auxiliary-loss-free load balancing (Eqs. 12-16)",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "shared_expert_1",
+      "type": "expert",
+      "label": "Shared Expert 1",
+      "parent_id": "mlp_mlp_block",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Shared FFN expert with fixed routing (N_s = 2).",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 8,
+        "section": "2.1.2 DeepSeekMoE",
+        "figure_id": null,
+        "citation": "FFN(\ud835\udc60)_i(\u00b7) in Eq. (12)",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "shared_expert_2",
+      "type": "expert",
+      "label": "Shared Expert 2",
+      "parent_id": "mlp_mlp_block",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Shared FFN expert with fixed routing (N_s = 2).",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 8,
+        "section": "2.1.2 DeepSeekMoE",
+        "figure_id": null,
+        "citation": "FFN(\ud835\udc60)_i(\u00b7) in Eq. (12)",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "routed_expert_1",
+      "type": "expert",
+      "label": "Routed Expert 1",
+      "parent_id": "mlp_mlp_block",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Routed FFN expert with dynamic gating (N_r = 14).",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 8,
+        "section": "2.1.2 DeepSeekMoE",
+        "figure_id": null,
+        "citation": "FFN(\ud835\udc5f)_i(\u00b7) in Eq. (12)",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "rms_norm_1",
+      "type": "rms_norm",
+      "label": "RMSNorm Layer 1",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Root-mean-square normalization before attention.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 6,
+        "section": "2.1 Basic Architecture",
+        "figure_id": null,
+        "citation": "Figure 2 (RMSNorm before MLA)",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "rms_norm_2",
+      "type": "rms_norm",
+      "label": "RMSNorm Layer 2",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Root-mean-square normalization before FFN.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 6,
+        "section": "2.1 Basic Architecture",
+        "figure_id": null,
+        "citation": "Figure 2 (RMSNorm before MoE)",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "transformer_block",
+      "type": "transformer_block",
+      "label": "Transformer Block",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Stacked MLA + MoE + RMSNorm layers (L=32).",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 6,
+        "section": "2.1 Basic Architecture",
+        "figure_id": null,
+        "citation": "Figure 2 (Transformer Block \u00d7 L)",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "mtp_module_1",
+      "type": "custom",
+      "label": "Multi-Token Prediction Module 1 (Next-2 Token)",
+      "parent_id": "transformer_block",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Shared embedding + Transformer block + projection for next-2 token prediction.",
+      "math_formula": "h'_k,i = M_k[RMSNorm(h_{k-1,i}); RMSNorm(Emb(t_{i+k}))] (Eq. 21)",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 10,
+        "section": "2.2 Multi-Token Prediction",
+        "figure_id": null,
+        "citation": "MTP Module 1 in Figure 3",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "mtp_module_2",
+      "type": "custom",
+      "label": "Multi-Token Prediction Module 2 (Next-3 Token)",
+      "parent_id": "transformer_block",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Shared embedding + Transformer block + projection for next-3 token prediction.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 10,
+        "section": "2.2 Multi-Token Prediction",
+        "figure_id": null,
+        "citation": "MTP Module 2 in Figure 3",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "output_head",
+      "type": "linear",
+      "label": "Output Head",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, V]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Linear projection to vocabulary space (V=65024).",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 6,
+        "section": "2.1 Basic Architecture",
+        "figure_id": null,
+        "citation": "Output Head in Figure 3",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "loss_mtp",
+      "type": "loss",
+      "label": "Multi-Token Prediction Loss",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, V]",
+        "output_shape": "[1]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Cross-entropy loss for MTP modules (Eq. 25).",
+      "math_formula": "LMTP = \u03bb/D \u03a3_k L_k_MTP (Eq. 25)",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 10,
+        "section": "2.2 Multi-Token Prediction",
+        "figure_id": null,
+        "citation": "MTP Training Objective (Eqs. 24-25)",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "loss_main",
+      "type": "loss",
+      "label": "Main Model Loss",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, V]",
+        "output_shape": "[1]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Standard next-token prediction cross-entropy loss.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 6,
+        "section": "2.1 Basic Architecture",
+        "figure_id": null,
+        "citation": "Cross-Entropy Loss in Figure 3",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    }
+  ],
+  "diagram_available": true,
+  "summary_available": true,
+  "metadata": {
+    "title": "DeepSeek-V3 Technical Report",
+    "authors": [],
+    "abstract": "We present DeepSeek-V3, a strong Mixture-of-Experts (MoE) language model with 671B total parameters with 37B activated for each token. To achieve efficient inference and cost-effective training, DeepSeek-V3 adopts Multi-head Latent Attention (MLA) and DeepSeekMoE architectures, which were thoroughly validated in DeepSeek-V2. Furthermore, DeepSeek-V3 pioneers an auxiliary-loss-free strategy for load balancing and sets a multi-token prediction training objective for stronger performance. We pre-train DeepSeek-V3 on 14.8 trillion diverse and high-quality tokens, followed by Supervised Fine-Tuning and Reinforcement Learning stages to fully harness its capabilities. Comprehensive evaluations reveal that DeepSeek-V3 outperforms other open-source models and achieves performance comparable to leading closed-source models. Despite its excellent performance, DeepSeek-V3 requires only 2.788M H800 GPU hours for its full training. In addition, its training process is remarkably stable. Throughout the entire training process, we did not experience any irrecoverable loss spikes or perform any rollbacks.",
+    "published": "2025",
+    "categories": [
+      "Computer Science",
+      "Machine Learning",
+      "Natural Language Processing"
+    ]
+  },
+  "parsed_text": {
+    "page_count": 53
+  },
+  "content_hash": "f12cffd69c7ac1fca6bd5cf45f579a71575221de75ed593a3579bf38f8a6e56f",
+  "cached": false
+}

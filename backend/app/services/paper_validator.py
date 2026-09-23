@@ -95,8 +95,12 @@ Respond strictly with valid JSON:
         if h_result is False:
             log.info(f"[PAPER_VALIDATOR] Rejected by heuristics: {h_reason}")
             return False, h_reason
+        if h_result is True:
+            # Clear academic structure identified in 4ms — fast-path without wasting LLM round-trip
+            log.info(f"[PAPER_VALIDATOR] Fast-path passed by heuristics: {h_reason}")
+            return True, h_reason
 
-        # 2. LLM Classifier Gate
+        # 2. LLM Classifier Gate (for ambiguous or borderline documents)
         sample = text[:3500].strip()
         try:
             from app.services.llm import groq_client
@@ -106,8 +110,7 @@ Respond strictly with valid JSON:
                     {"role": "system", "content": "You are a precise academic research paper classifier. Output strictly valid JSON."},
                     {"role": "user", "content": prompt}
                 ],
-                model=settings.MISTRAL_LLM_MODEL,
-                temperature=0.1
+                model=settings.MISTRAL_LLM_MODEL
             )
             is_paper = bool(data.get("is_research_paper", False))
             confidence = float(data.get("confidence", 0.0) or 0.0)

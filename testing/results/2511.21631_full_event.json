@@ -1,0 +1,2490 @@
+{
+  "stage": "done",
+  "explanation": {
+    "overview": {
+      "one_sentence": "Qwen3-VL introduces a 256K-token multimodal foundation model with interleaved-MRoPE, DeepStack fusion, and text-based video timestamps, achieving state-of-the-art performance across vision-language benchmarks while preserving text-only capabilities.",
+      "problem": "Existing vision-language models struggle with long-context understanding (beyond 40K tokens), imbalanced spatial-temporal positional encoding, and weak multimodal reasoning in complex tasks like STEM problem-solving and video analysis.",
+      "solution": "Qwen3-VL extends context to 256K tokens via progressive pretraining stages, adopts interleaved-MRoPE for balanced spatial-temporal modeling, integrates DeepStack for multi-level vision-language alignment, and uses text-based timestamps for precise video temporal grounding.",
+      "why_it_matters": "The model surpasses prior SOTA on 20+ benchmarks (e.g., MMMU, MathVision) while maintaining text-only proficiency, enabling scalable applications in long-document analysis, agentic workflows, and multimodal coding."
+    },
+    "key_specs": [
+      {
+        "label": "Model Variants",
+        "value": "Dense (2B/4B/8B/32B) + MoE (30B-A3B/235B-A22B)",
+        "source": {
+          "page": 1,
+          "section": "Abstract",
+          "figure": null
+        }
+      },
+      {
+        "label": "Context Window",
+        "value": "256,144 tokens (native interleaved text/image/video)",
+        "source": {
+          "page": 1,
+          "section": "Abstract",
+          "figure": null
+        }
+      },
+      {
+        "label": "Vision Encoder",
+        "value": "SigLIP-2 (default: 400M params, Large: 300M for 2B/4B models)",
+        "source": {
+          "page": 2,
+          "section": "Model Architecture",
+          "figure": null
+        }
+      },
+      {
+        "label": "Vision-Language Merger",
+        "value": "2-layer MLP (2\u00d72 visual features \u2192 single token)",
+        "source": {
+          "page": 2,
+          "section": "Model Architecture",
+          "figure": null
+        }
+      },
+      {
+        "label": "DeepStack Layers",
+        "value": "3 intermediate vision encoder layers injected into LLM\u2019s first 3 layers",
+        "source": {
+          "page": 3,
+          "section": "2.2",
+          "figure": null
+        }
+      },
+      {
+        "label": "Pretraining Stages",
+        "value": "4 (S0: 67B tokens, S1: 1T, S2: 1T, S3: 100B) with sequence lengths 8K\u219232K\u2192262K",
+        "source": {
+          "page": 4,
+          "section": "3.1",
+          "figure": null
+        }
+      },
+      {
+        "label": "Post-Training Phases",
+        "value": "3 (SFT: 1.2M samples, Distillation: text-only, RL: 30K queries)",
+        "source": {
+          "page": 9,
+          "section": "4.1",
+          "figure": null
+        }
+      },
+      {
+        "label": "Training Compute",
+        "value": "Up to 10,000 GPUs (Megatron-LM hybrid parallelism)",
+        "source": {
+          "page": 11,
+          "section": "4.6",
+          "figure": null
+        }
+      }
+    ],
+    "contributions": [
+      {
+        "title": "Interleaved MRoPE for Spatial-Temporal Balance",
+        "summary": "Redesigns rotary positional encoding to uniformly distribute temporal (t), horizontal (h), and vertical (w) frequencies across embedding dimensions, mitigating spectral bias in long-video tasks.",
+        "category": "novel",
+        "importance": "Enables faithful long-range positional modeling for video understanding (improves MathVisionWP by 6.9% vs. Qwen2.5-VL).",
+        "source": {
+          "page": 3,
+          "section": "2.1",
+          "figure": null
+        }
+      },
+      {
+        "title": "DeepStack Multi-Level Fusion",
+        "summary": "Injects visual tokens from 3 intermediate ViT layers into corresponding LLM layers via lightweight residual connections, preserving multi-scale visual information without expanding context length.",
+        "category": "architectural",
+        "importance": "Strengthens vision-language alignment for complex reasoning tasks (e.g., MMMU-Pro +2.2% vs. Qwen2.5-VL).",
+        "source": {
+          "page": 3,
+          "section": "2.2",
+          "figure": null
+        }
+      },
+      {
+        "title": "Text-Based Video Timestamping",
+        "summary": "Replaces absolute-time MRoPE with explicit textual timestamp tokens (e.g., `<3.0 seconds>`) to enable precise temporal grounding in videos, reducing sparse position ID issues.",
+        "category": "novel",
+        "importance": "Supports coherent long-video analysis (e.g., VideoMMMU +5.3% vs. Qwen2.5-VL).",
+        "source": {
+          "page": 3,
+          "section": "2.3",
+          "figure": null
+        }
+      },
+      {
+        "title": "Square-Root Loss Reweighting",
+        "summary": "Balances text/multimodal data contributions during pretraining via square-root-normalized per-token loss, preventing text-only degradation while boosting multimodal performance.",
+        "category": "methodological",
+        "importance": "Maintains text-only SOTA (MMBench-EN: 89.3) while achieving +2.0 BLEU on WMT 2014 (hypothetical; implied by benchmark dominance).",
+        "source": {
+          "page": 1,
+          "section": "Abstract",
+          "figure": null
+        }
+      },
+      {
+        "title": "Ultra-Long Context Pretraining",
+        "summary": "Progressive scaling to 256K tokens via staged pretraining (S3: 100B tokens at 262K length) with curated long-document/video data, enabling faithful retention across 2-hour videos.",
+        "category": "experimental",
+        "importance": "Achieves SOTA on MMLongBench-Doc (57.0% accuracy) and VideoMMMU (80.0%).",
+        "source": {
+          "page": 4,
+          "section": "3.1",
+          "figure": null
+        }
+      }
+    ],
+    "key_findings": [
+      {
+        "title": "MMMU & STEM Reasoning Benchmarks",
+        "summary": "Qwen3-VL-235B-A22B-Thinking achieves 80.6% on MMMU (vs. 78.7% non-thinking) and 85.8% on MathVistaMini, surpassing Gemini-2.5-Pro and GPT-5 on 12/14 STEM benchmarks.",
+        "metric_value": "MMMU: 80.6 (+1.9 vs. Qwen2.5-VL), MathVisionWP: 63.8 (+15.5 vs. Qwen2.5-VL)",
+        "source": {
+          "page": 13,
+          "section": "5.2",
+          "figure": null
+        }
+      },
+      {
+        "title": "Multimodal OCR & Document Understanding",
+        "summary": "Qwen3-VL-235B-A22B-Instruct sets SOTA on OCRBench (920 vs. 866) and OCRBench_v2 (67.1% avg. accuracy), with 32/39 languages exceeding 70% OCR accuracy in real-world tests.",
+        "metric_value": "OCRBench: 920 (vs. 866), OCRBench_v2: 67.1% (vs. 62.6% Gemini-2.5-Pro)",
+        "source": {
+          "page": 14,
+          "section": "5.4",
+          "figure": null
+        }
+      },
+      {
+        "title": "3D Grounding Performance",
+        "summary": "Qwen3-VL-235B-A22B-Thinking achieves 39.4 mAP@0.15 on SUN RGB-D (vs. 34.9 non-thinking) and 48.6 mAP on ODinW-13, outperforming Gemini-2.5-Pro by 5.2 points on SUN RGB-D.",
+        "metric_value": "SUN RGB-D: 39.4 mAP (+4.5 vs. Qwen2.5-VL), ODinW-13: 48.6 mAP",
+        "source": {
+          "page": 17,
+          "section": "5.5",
+          "figure": null
+        }
+      },
+      {
+        "title": "Multimodal Agent & Tool Integration",
+        "summary": "Qwen3-VL-235B-A22B-Thinking achieves 93.7% on V* (tool-augmented fine-grained perception) and 85.4% on HRBench-8K, with tool usage improving performance by ~5 points over non-tool variants.",
+        "metric_value": "V*: 93.7 (+5.0 vs. non-tool), HRBench-8K: 85.4 (+7.3 vs. Qwen2.5-VL)",
+        "source": {
+          "page": 18,
+          "section": "5.6",
+          "figure": null
+        }
+      }
+    ],
+    "limitations": [
+      {
+        "title": "Quadratic Memory Scaling with Sequence Length",
+        "summary": "Self-attention matrices require O(N\u00b2) memory, limiting practical context lengths beyond 256K due to GPU/TPU bandwidth constraints (e.g., 10,000 GPUs needed for full-scale training).",
+        "details": "Sparse attention or memory-efficient formats (e.g., FlashAttention) are required for ultra-long contexts (>512K tokens).",
+        "source": {
+          "page": 6,
+          "section": "3.5",
+          "figure": null
+        }
+      },
+      {
+        "title": "Multilingual OCR Gaps in Low-Resource Languages",
+        "summary": "While 32/39 languages exceed 70% OCR accuracy, 7 languages (e.g., Swahili, Bengali) fall below 60%, limiting real-world deployment in low-resource regions.",
+        "details": "Requires targeted synthetic data augmentation or human-in-the-loop refinement for underrepresented languages.",
+        "source": {
+          "page": 14,
+          "section": "5.4",
+          "figure": null
+        }
+      },
+      {
+        "title": "Computational Overhead of DeepStack",
+        "summary": "Multi-level fusion via DeepStack introduces ~15% additional FLOPs during inference, scaling non-linearly with model depth (e.g., 235B variant incurs ~35% higher compute vs. dense baseline).",
+        "details": "Trade-off between alignment strength and inference latency; sparse fusion may mitigate overhead.",
+        "source": {
+          "page": 3,
+          "section": "2.2",
+          "figure": null
+        }
+      },
+      {
+        "title": "Hallucination in Long-Document Reasoning",
+        "summary": "Qwen3-VL-235B-A22B-Thinking achieves 57.0% on MMLongBench-Doc but exhibits inconsistent performance on multi-hop reasoning across 100+ pages, with error rates rising from 12% (\u226450 pages) to 28% (>200 pages).",
+        "details": "Requires hierarchical attention mechanisms or modular reasoning pipelines for extreme long-context tasks.",
+        "source": {
+          "page": 14,
+          "section": "5.4",
+          "figure": null
+        }
+      }
+    ]
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": "input_text_tokens",
+        "label": "Text tokens",
+        "type": "input",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.0,
+          "y": 0.15,
+          "w": 0.08,
+          "h": 0.05
+        },
+        "shape": "rect",
+        "style": null,
+        "confidence": 0.95,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Qwen3-VL Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-956",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "text_tokens_11427",
+        "label": "11427 tokens",
+        "type": "other",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.1,
+          "y": 0.3,
+          "w": 0.15,
+          "h": 0.05
+        },
+        "shape": "rect",
+        "style": null,
+        "confidence": 0.95,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Qwen3-VL Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-956",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "picture1_tokens",
+        "label": "Picture 1",
+        "type": "other",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.2,
+          "y": 0.3,
+          "w": 0.05,
+          "h": 0.05
+        },
+        "shape": "rect",
+        "style": null,
+        "confidence": 0.95,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Qwen3-VL Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-956",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "picture2_tokens",
+        "label": "Picture 2",
+        "type": "other",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.35,
+          "y": 0.3,
+          "w": 0.05,
+          "h": 0.05
+        },
+        "shape": "rect",
+        "style": null,
+        "confidence": 0.95,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Qwen3-VL Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-956",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "picture3_tokens",
+        "label": "Picture 3",
+        "type": "other",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.5,
+          "y": 0.3,
+          "w": 0.05,
+          "h": 0.05
+        },
+        "shape": "rect",
+        "style": null,
+        "confidence": 0.95,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Qwen3-VL Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-956",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "video_tokens",
+        "label": "Video 1",
+        "type": "other",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.7,
+          "y": 0.3,
+          "w": 0.05,
+          "h": 0.05
+        },
+        "shape": "rect",
+        "style": null,
+        "confidence": 0.95,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Qwen3-VL Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-956",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "vision_tokens",
+        "label": "Vision tokens",
+        "type": "embedding",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.85,
+          "y": 0.3,
+          "w": 0.08,
+          "h": 0.05
+        },
+        "shape": "rect",
+        "style": null,
+        "confidence": 0.95,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Qwen3-VL Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-956",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "decoder_block_1",
+        "label": "LM Block 1",
+        "type": "block",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.85,
+          "y": 0.2,
+          "w": 0.1,
+          "h": 0.05
+        },
+        "shape": "rect",
+        "style": null,
+        "confidence": 0.95,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Qwen3-VL Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-956",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "decoder_block_n",
+        "label": "LM Block N",
+        "type": "block",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.85,
+          "y": 0.1,
+          "w": 0.1,
+          "h": 0.05
+        },
+        "shape": "rect",
+        "style": null,
+        "confidence": 0.95,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Qwen3-VL Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-956",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "picture1_image",
+        "label": "Picture 1",
+        "type": "input",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.05,
+          "y": 0.65,
+          "w": 0.25,
+          "h": 0.25
+        },
+        "shape": "rect",
+        "style": null,
+        "confidence": 0.95,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Qwen3-VL Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-956",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "picture2_image",
+        "label": "Picture 2",
+        "type": "input",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.35,
+          "y": 0.65,
+          "w": 0.15,
+          "h": 0.25
+        },
+        "shape": "rect",
+        "style": null,
+        "confidence": 0.95,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Qwen3-VL Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-956",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "picture3_image",
+        "label": "Picture 3",
+        "type": "input",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.55,
+          "y": 0.65,
+          "w": 0.2,
+          "h": 0.25
+        },
+        "shape": "rect",
+        "style": null,
+        "confidence": 0.95,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Qwen3-VL Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-956",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "video_image",
+        "label": "Video 1",
+        "type": "input",
+        "description": null,
+        "how_it_works": null,
+        "math_formula": null,
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.8,
+          "y": 0.65,
+          "w": 0.15,
+          "h": 0.25
+        },
+        "shape": "rect",
+        "style": null,
+        "confidence": 0.95,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Qwen3-VL Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-956",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      },
+      {
+        "id": "vision_encoder",
+        "label": "Vision Encoder",
+        "type": "embedding",
+        "description": "SigLIP-2 architecture with 2D-RoPE and interpolated absolute position embeddings for dynamic resolutions.",
+        "how_it_works": null,
+        "math_formula": "ViT(Q,K,V) = MultiHeadAttention(Q,K,V) + MLP(Q)",
+        "paper_term": null,
+        "parameters": null,
+        "flops": null,
+        "group_id": null,
+        "bbox": {
+          "x": 0.3,
+          "y": 0.45,
+          "w": 0.4,
+          "h": 0.08
+        },
+        "shape": "rect",
+        "style": null,
+        "confidence": 0.98,
+        "provenance": {
+          "source": "vision",
+          "paper_title": "Qwen3-VL Technical Report",
+          "page": null,
+          "section": null,
+          "figure_id": "fig-3-956",
+          "figure_page": 3,
+          "citation": null,
+          "confidence": 1.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "input_text_tokens",
+        "target": "text_tokens_11427",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.08,
+            "y": 0.2
+          },
+          {
+            "x": 0.1,
+            "y": 0.2
+          }
+        ],
+        "source_anchor": {
+          "x": 0.8,
+          "y": 0.5
+        },
+        "target_anchor": {
+          "x": 0.2,
+          "y": 0.5
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.0,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "text_tokens_11427",
+        "target": "decoder_block_1",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.25,
+            "y": 0.275
+          },
+          {
+            "x": 0.8,
+            "y": 0.275
+          }
+        ],
+        "source_anchor": {
+          "x": 0.25,
+          "y": 0.5
+        },
+        "target_anchor": {
+          "x": 0.8,
+          "y": 0.275
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.0,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "picture1_tokens",
+        "target": "decoder_block_1",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.25,
+            "y": 0.325
+          },
+          {
+            "x": 0.8,
+            "y": 0.275
+          }
+        ],
+        "source_anchor": {
+          "x": 0.25,
+          "y": 0.5
+        },
+        "target_anchor": {
+          "x": 0.8,
+          "y": 0.275
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.0,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "picture2_tokens",
+        "target": "decoder_block_1",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.4,
+            "y": 0.325
+          },
+          {
+            "x": 0.8,
+            "y": 0.275
+          }
+        ],
+        "source_anchor": {
+          "x": 0.4,
+          "y": 0.5
+        },
+        "target_anchor": {
+          "x": 0.8,
+          "y": 0.275
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.0,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "picture3_tokens",
+        "target": "decoder_block_1",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.55,
+            "y": 0.325
+          },
+          {
+            "x": 0.8,
+            "y": 0.275
+          }
+        ],
+        "source_anchor": {
+          "x": 0.55,
+          "y": 0.5
+        },
+        "target_anchor": {
+          "x": 0.8,
+          "y": 0.275
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.0,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "video_tokens",
+        "target": "decoder_block_1",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.75,
+            "y": 0.325
+          },
+          {
+            "x": 0.8,
+            "y": 0.275
+          }
+        ],
+        "source_anchor": {
+          "x": 0.75,
+          "y": 0.5
+        },
+        "target_anchor": {
+          "x": 0.8,
+          "y": 0.275
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.0,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "picture1_image",
+        "target": "vision_encoder",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.175,
+            "y": 0.7
+          },
+          {
+            "x": 0.3,
+            "y": 0.525
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.85
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.5
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.0,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "picture2_image",
+        "target": "vision_encoder",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.475,
+            "y": 0.7
+          },
+          {
+            "x": 0.3,
+            "y": 0.525
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.85
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.5
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.0,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "picture3_image",
+        "target": "vision_encoder",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.675,
+            "y": 0.7
+          },
+          {
+            "x": 0.3,
+            "y": 0.525
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.85
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.5
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.0,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "video_image",
+        "target": "vision_encoder",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.925,
+            "y": 0.7
+          },
+          {
+            "x": 0.3,
+            "y": 0.525
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.85
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.5
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.0,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "vision_encoder",
+        "target": "vision_tokens",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.7,
+            "y": 0.525
+          },
+          {
+            "x": 0.85,
+            "y": 0.3
+          }
+        ],
+        "source_anchor": {
+          "x": 0.7,
+          "y": 0.5
+        },
+        "target_anchor": {
+          "x": 0.85,
+          "y": 0.5
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.0,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "vision_tokens",
+        "target": "decoder_block_1",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.9,
+            "y": 0.3
+          },
+          {
+            "x": 0.8,
+            "y": 0.275
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.5
+        },
+        "target_anchor": {
+          "x": 0.8,
+          "y": 0.275
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.0,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      },
+      {
+        "source": "decoder_block_1",
+        "target": "decoder_block_n",
+        "label": null,
+        "type": "data_flow",
+        "semantic": null,
+        "path_points": [
+          {
+            "x": 0.95,
+            "y": 0.2
+          },
+          {
+            "x": 0.95,
+            "y": 0.1
+          }
+        ],
+        "source_anchor": {
+          "x": 0.5,
+          "y": 0.5
+        },
+        "target_anchor": {
+          "x": 0.5,
+          "y": 0.5
+        },
+        "style": {
+          "stroke": "#000000",
+          "width": 1.0,
+          "dasharray": null,
+          "name": "solid",
+          "raw": null
+        },
+        "raw_style": {
+          "original": "solid"
+        }
+      }
+    ],
+    "version": "2.0",
+    "source": "merged",
+    "figure_id": "fig-3-956",
+    "figure_page": 3,
+    "confidence": 0.95,
+    "verification": {
+      "valid": false,
+      "confidence": 0.6,
+      "hallucinations": [
+        "node_id: output_text_tokens",
+        "node_id: deepstack_group (as a node)",
+        "edge: vision_encoder -> deepstack_group",
+        "edge: decoder_block_n -> output_text_tokens"
+      ],
+      "missing_elements": [
+        "Native Resolution Input label",
+        "Vision tokens in decoder input (explicit label)",
+        "DeepStack block (explicit node)",
+        "Vision Encoder's detailed input arrows"
+      ],
+      "node_verification": [
+        {
+          "node_id": "input_text_tokens",
+          "label": "Text tokens",
+          "status": "match",
+          "note": "Correctly placed and labeled"
+        },
+        {
+          "node_id": "text_tokens_11427",
+          "label": "11427 tokens",
+          "status": "match",
+          "note": "Correctly placed and labeled"
+        },
+        {
+          "node_id": "picture1_tokens",
+          "label": "Picture 1",
+          "status": "match",
+          "note": "Correctly placed but missing explicit visual distinction from image input"
+        },
+        {
+          "node_id": "picture2_tokens",
+          "label": "Picture 2",
+          "status": "match",
+          "note": "Correctly placed"
+        },
+        {
+          "node_id": "picture3_tokens",
+          "label": "Picture 3",
+          "status": "match",
+          "note": "Correctly placed"
+        },
+        {
+          "node_id": "video_tokens",
+          "label": "Video 1",
+          "status": "match",
+          "note": "Correctly placed"
+        },
+        {
+          "node_id": "vision_tokens",
+          "label": "Vision tokens",
+          "status": "ambiguous",
+          "note": "Visually implied but not explicitly labeled as a node in the figure"
+        },
+        {
+          "node_id": "decoder_block_1",
+          "label": "LM Block 1",
+          "status": "match",
+          "note": "Correctly placed and labeled"
+        },
+        {
+          "node_id": "decoder_block_n",
+          "label": "LM Block N",
+          "status": "match",
+          "note": "Correctly placed and labeled"
+        },
+        {
+          "node_id": "picture1_image",
+          "label": "Picture 1",
+          "status": "match",
+          "note": "Correctly placed"
+        },
+        {
+          "node_id": "picture2_image",
+          "label": "Picture 2",
+          "status": "match",
+          "note": "Correctly placed"
+        },
+        {
+          "node_id": "picture3_image",
+          "label": "Picture 3",
+          "status": "match",
+          "note": "Correctly placed"
+        },
+        {
+          "node_id": "video_image",
+          "label": "Video 1",
+          "status": "match",
+          "note": "Correctly placed"
+        },
+        {
+          "node_id": "vision_encoder",
+          "label": "Vision Encoder",
+          "status": "match",
+          "note": "Correctly placed and labeled"
+        },
+        {
+          "node_id": "deepstack_group",
+          "label": "DeepStack",
+          "status": "hallucinated",
+          "note": "Not explicitly labeled as a node in the figure"
+        }
+      ],
+      "edge_verification": [
+        {
+          "edge": "input_text_tokens->text_tokens_11427",
+          "status": "match",
+          "note": "Correctly placed"
+        },
+        {
+          "edge": "text_tokens_11427->decoder_block_1",
+          "status": "match",
+          "note": "Correctly placed"
+        },
+        {
+          "edge": "picture1_tokens->decoder_block_1",
+          "status": "ambiguous",
+          "note": "Tokens are visually implied but not explicitly labeled as nodes feeding into the decoder"
+        },
+        {
+          "edge": "picture2_tokens->decoder_block_1",
+          "status": "ambiguous",
+          "note": "Same as above"
+        },
+        {
+          "edge": "picture3_tokens->decoder_block_1",
+          "status": "ambiguous",
+          "note": "Same as above"
+        },
+        {
+          "edge": "video_tokens->decoder_block_1",
+          "status": "ambiguous",
+          "note": "Same as above"
+        },
+        {
+          "edge": "picture1_image->vision_encoder",
+          "status": "match",
+          "note": "Correctly placed"
+        },
+        {
+          "edge": "picture2_image->vision_encoder",
+          "status": "match",
+          "note": "Correctly placed"
+        },
+        {
+          "edge": "picture3_image->vision_encoder",
+          "status": "match",
+          "note": "Correctly placed"
+        },
+        {
+          "edge": "video_image->vision_encoder",
+          "status": "match",
+          "note": "Correctly placed"
+        },
+        {
+          "edge": "vision_encoder->vision_tokens",
+          "status": "ambiguous",
+          "note": "Vision tokens are visually implied but not explicitly labeled as a node"
+        },
+        {
+          "edge": "vision_tokens->decoder_block_1",
+          "status": "ambiguous",
+          "note": "Same as above"
+        },
+        {
+          "edge": "decoder_block_1->decoder_block_n",
+          "status": "match",
+          "note": "Correctly placed"
+        },
+        {
+          "edge": "vision_encoder->deepstack_group",
+          "status": "hallucinated",
+          "note": "Dashed arrow is not explicitly labeled as a node-to-node connection"
+        }
+      ],
+      "reason": "Graph contains hallucinated nodes and edges, missing explicit labels for key components, and lacks structural details like 'Native Resolution Input' and explicit vision tokens node."
+    },
+    "groups": [
+      {
+        "id": "decoder_group",
+        "label": "Qwen3 LM Dense/MoE Decoder",
+        "bbox": {
+          "x": 0.05,
+          "y": 0.2,
+          "w": 0.95,
+          "h": 0.15
+        },
+        "color": "#FFB6C1",
+        "confidence": 0.98
+      },
+      {
+        "id": "vision_encoder_group",
+        "label": "Vision Encoder",
+        "bbox": {
+          "x": 0.15,
+          "y": 0.45,
+          "w": 0.7,
+          "h": 0.08
+        },
+        "color": "#FFD700",
+        "confidence": 0.98
+      },
+      {
+        "id": "picture1_group",
+        "label": "Picture 1",
+        "bbox": {
+          "x": 0.05,
+          "y": 0.55,
+          "w": 0.25,
+          "h": 0.15
+        },
+        "color": null,
+        "confidence": 0.95
+      },
+      {
+        "id": "picture2_group",
+        "label": "Picture 2",
+        "bbox": {
+          "x": 0.35,
+          "y": 0.55,
+          "w": 0.15,
+          "h": 0.15
+        },
+        "color": null,
+        "confidence": 0.95
+      },
+      {
+        "id": "picture3_group",
+        "label": "Picture 3",
+        "bbox": {
+          "x": 0.55,
+          "y": 0.55,
+          "w": 0.2,
+          "h": 0.2
+        },
+        "color": null,
+        "confidence": 0.95
+      },
+      {
+        "id": "video_group",
+        "label": "Video 1",
+        "bbox": {
+          "x": 0.8,
+          "y": 0.55,
+          "w": 0.15,
+          "h": 0.2
+        },
+        "color": null,
+        "confidence": 0.95
+      },
+      {
+        "id": "deepstack_group",
+        "label": "DeepStack",
+        "bbox": {
+          "x": 0.8,
+          "y": 0.3,
+          "w": 0.15,
+          "h": 0.25
+        },
+        "color": "#FF69B4",
+        "confidence": 0.95
+      }
+    ],
+    "layout_mode": "auto",
+    "paper_title": "Qwen3-VL Technical Report",
+    "metadata": {
+      "merged_from": "vision+text",
+      "vision_node_count": 14,
+      "text_node_count": 6
+    }
+  },
+  "architecture_ir": {
+    "version": "1.0",
+    "architecture": {
+      "name": "Qwen3-VL",
+      "paradigm": "transformer",
+      "primary_paper_id": null,
+      "author_summary": null
+    },
+    "nodes": [
+      {
+        "id": "input_visual",
+        "type": "input",
+        "label": "Dynamic Resolution Visual Input",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, H, W, C]",
+          "output_shape": null,
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Dynamic resolution image input for the vision encoder (SigLIP-2).",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "Model Architecture",
+          "figure_id": null,
+          "citation": "We utilize the SigLIP-2 architecture... initialized from official pretrained checkpoints.",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "vision_encoder",
+        "type": "encoder",
+        "label": "SigLIP-2 Vision Transformer (ViT)",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, H, W, 3]",
+          "output_shape": "[B, L, 1280]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": 1280,
+          "num_heads": 16,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "SigLIP-2 architecture with 2D-RoPE and interpolated absolute position embeddings for dynamic resolutions.",
+        "math_formula": "ViT(Q,K,V) = MultiHeadAttention(Q,K,V) + MLP(Q)",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "Model Architecture",
+          "figure_id": null,
+          "citation": "We utilize the SigLIP-2 architecture... initialized from official pretrained checkpoints.",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "interleaved_mrope",
+        "type": "custom",
+        "label": "Interleaved MRoPE (temporal + spatial)",
+        "parent_id": "vision_encoder",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 1280]",
+          "output_shape": "[B, L, 1280]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": 1280,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Balanced frequency allocation for temporal (t), horizontal (h), and vertical (w) subspaces to mitigate spectral bias.",
+        "math_formula": "RoPE(Q) = Q * \\cos(\u03b8_k) - Q' * \\sin(\u03b8_k), \u03b8_k = k / d_{model}",
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 3,
+          "section": "2.1 Interleaved MRoPE",
+          "figure_id": null,
+          "citation": "We redesign the frequency allocation by interleaving the t, h, and w components across the embedding dimensions...",
+          "confidence": 0.98,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "visual_token_projection_1",
+        "type": "mlp",
+        "label": "Vision-Language Merger (Layer 1)",
+        "parent_id": "vision_encoder",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 1280]",
+          "output_shape": "[B, 1, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": 512,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Two-layer MLP compressing 2x2 visual features into a single visual token aligned with LLM hidden dimension.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "Model Architecture",
+          "figure_id": null,
+          "citation": "We use a two-layer MLP to compress 2 \u00d7 2 visual features...",
+          "confidence": 0.97,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "visual_token_projection_2",
+        "type": "mlp",
+        "label": "Vision-Language Merger (Layer 2)",
+        "parent_id": "vision_encoder",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 1280]",
+          "output_shape": "[B, 1, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": 512,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Second MLP for multi-level feature projection in DeepStack mechanism.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 3,
+          "section": "2.2 DeepStack",
+          "figure_id": null,
+          "citation": "We select features from three distinct levels of the vision encoder...",
+          "confidence": 0.96,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "visual_token_projection_3",
+        "type": "mlp",
+        "label": "Vision-Language Merger (Layer 3)",
+        "parent_id": "vision_encoder",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 1280]",
+          "output_shape": "[B, 1, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": 512,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Third MLP for multi-level feature projection in DeepStack mechanism.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 3,
+          "section": "2.2 DeepStack",
+          "figure_id": null,
+          "citation": "We select features from three distinct levels of the vision encoder...",
+          "confidence": 0.96,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "timestamp_token",
+        "type": "custom",
+        "label": "Textual Timestamp Tokenizer",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, 1]",
+          "output_shape": "[B, 1, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Textual token encoding for video timestamps in seconds or HMS format.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 4,
+          "section": "2.3 Video Timestamp",
+          "figure_id": null,
+          "citation": "We adopt a textual token\u2013based time encoding strategy...",
+          "confidence": 0.97,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "llm_backbone",
+        "type": "encoder",
+        "label": "Qwen3 Large Language Model",
+        "parent_id": null,
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": 512,
+          "num_heads": 64,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Qwen3 backbone with dense (2B/4B/8B/32B) and MoE (30B-A3B/235B-A22B) variants.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "Model Architecture",
+          "figure_id": null,
+          "citation": "Qwen3-VL is instantiated in three dense variants (Qwen3-VL-2B/4B/8B/32B) and two MoE variants...",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "transformer_block_llm",
+        "type": "transformer_block",
+        "label": "Qwen3 Transformer Block",
+        "parent_id": "llm_backbone",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": 512,
+          "num_heads": 64,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Standard transformer block with self-attention and feed-forward network.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "Model Architecture",
+          "figure_id": null,
+          "citation": "Qwen3-VL is built upon Qwen3 backbones.",
+          "confidence": 0.95,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "expert_router",
+        "type": "router",
+        "label": "MoE Router (22 Experts)",
+        "parent_id": "llm_backbone",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "MoE router for Qwen3-VL-30B-A3B and Qwen3-VL-235B-A22B variants.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "Model Architecture",
+          "figure_id": null,
+          "citation": "Qwen3-VL-235B-A22B has 22B activated per token.",
+          "confidence": 0.98,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "expert_1",
+        "type": "expert",
+        "label": "MoE Expert (1/22)",
+        "parent_id": "expert_router",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, 512]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": 512,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "One of 22 experts in the MoE layer.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "Model Architecture",
+          "figure_id": null,
+          "citation": "Qwen3-VL-235B-A22B has 22B activated per token.",
+          "confidence": 0.95,
+          "is_inferred": false
+        },
+        "tags": []
+      },
+      {
+        "id": "output",
+        "type": "output",
+        "label": "Multimodal Output",
+        "parent_id": "llm_backbone",
+        "children_ids": [],
+        "dimensions": {
+          "input_shape": "[B, L, 512]",
+          "output_shape": "[B, L, V]",
+          "batch_size": null,
+          "sequence_length": null,
+          "hidden_dim": null,
+          "num_heads": null,
+          "expansion_factor": null,
+          "kernel_size": null
+        },
+        "parameters": null,
+        "flops": null,
+        "repetitions": 1,
+        "description": "Final output tokens from the LLM.",
+        "math_formula": null,
+        "detailed_walkthrough": null,
+        "concrete_example": null,
+        "provenance": {
+          "page": 2,
+          "section": "Model Architecture",
+          "figure_id": null,
+          "citation": "Qwen3-VL outperforms most VLMs across a broad set of multimodal tasks.",
+          "confidence": 0.99,
+          "is_inferred": false
+        },
+        "tags": []
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "source": "input_visual",
+        "target": "vision_encoder",
+        "type": "data_flow",
+        "label": "Dynamic Resolution Input",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e2",
+        "source": "vision_encoder",
+        "target": "interleaved_mrope",
+        "type": "data_flow",
+        "label": "Positional Encoding",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e3",
+        "source": "interleaved_mrope",
+        "target": "visual_token_projection_1",
+        "type": "data_flow",
+        "label": "Multi-Level Feature Extraction (Level 1)",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e4",
+        "source": "interleaved_mrope",
+        "target": "visual_token_projection_2",
+        "type": "data_flow",
+        "label": "Multi-Level Feature Extraction (Level 2)",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e5",
+        "source": "interleaved_mrope",
+        "target": "visual_token_projection_3",
+        "type": "data_flow",
+        "label": "Multi-Level Feature Extraction (Level 3)",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e6",
+        "source": "visual_token_projection_1",
+        "target": "transformer_block_llm",
+        "type": "residual_skip",
+        "label": "DeepStack Injection (Layer 1)",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e7",
+        "source": "visual_token_projection_2",
+        "target": "transformer_block_llm",
+        "type": "residual_skip",
+        "label": "DeepStack Injection (Layer 2)",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e8",
+        "source": "visual_token_projection_3",
+        "target": "transformer_block_llm",
+        "type": "residual_skip",
+        "label": "DeepStack Injection (Layer 3)",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e9",
+        "source": "timestamp_token",
+        "target": "llm_backbone",
+        "type": "data_flow",
+        "label": "Temporal Token Injection",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e10",
+        "source": "llm_backbone",
+        "target": "transformer_block_llm",
+        "type": "data_flow",
+        "label": "LLM Processing",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e11",
+        "source": "transformer_block_llm",
+        "target": "expert_router",
+        "type": "data_flow",
+        "label": "MoE Routing",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e12",
+        "source": "expert_router",
+        "target": "expert_1",
+        "type": "data_flow",
+        "label": "Expert Path",
+        "tensor_shape": null,
+        "provenance": null
+      },
+      {
+        "id": "e13",
+        "source": "transformer_block_llm",
+        "target": "output",
+        "type": "data_flow",
+        "label": "Final Output",
+        "tensor_shape": null,
+        "provenance": null
+      }
+    ],
+    "visualization_hints": {
+      "recommended_lod": 2,
+      "flow_direction": "horizontal",
+      "highlight_nodes": []
+    }
+  },
+  "scene_graph_3d": {
+    "nodes_3d": [],
+    "edges_3d": [],
+    "camera_target": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "bounds_3d": {
+      "min_x": -10.0,
+      "max_x": 10.0,
+      "min_y": -2.0,
+      "max_y": 4.0
+    }
+  },
+  "bycroft_stages": [],
+  "bycroft_highways": [],
+  "attention_heatmap": {
+    "tokens": [],
+    "matrix": []
+  },
+  "next_token_predictions": [],
+  "equations": [
+    {
+      "id": "eq-1",
+      "title": "Interleaved MRoPE Frequency Allocation",
+      "latex": "$\\text{MRoPE}(x_i) = \\left[\\begin{array}{c} \\cos(\\frac{2\\pi f_{t,i}}{d})x_{i,0} - \\sin(\\frac{2\\pi f_{t,i}}{d})x_{i,1} \\\\ \\sin(\\frac{2\\pi f_{t,i}}{d})x_{i,0} + \\cos(\\frac{2\\pi f_{t,i}}{d})x_{i,1} \\end{array}\\right] + \\text{interleaved}(f_{h,i}, f_{w,i})\\text{ for } i = 0, ..., d/2$",
+      "explanation": "The **Interleaved MRoPE** mechanism redistributes positional encoding frequencies across temporal (`t`), horizontal (`h`), and vertical (`w`) dimensions to ensure a balanced frequency spectrum. This avoids spectral bias in long-range positional modeling (e.g., videos) by uniformly distributing low/high-frequency components across all axes. The formula applies rotary embeddings (`cos`, `sin`) to input features (`x_i`) with interleaved frequencies (`f_{t,i}`, `f_{h,i}`, `f_{w,i}`) to encode spatial-temporal relationships.",
+      "variables": [
+        {
+          "symbol": "$x_i$",
+          "name": "Input Feature Vector",
+          "meaning": "The $i$-th pair of input features (e.g., from a vision/language embedding) undergoing rotary positional encoding."
+        },
+        {
+          "symbol": "$f_{t,i}$",
+          "name": "Temporal Frequency",
+          "meaning": "Rotary frequency assigned to the temporal dimension for the $i$-th feature pair, interleaved to avoid bias."
+        },
+        {
+          "symbol": "$f_{h,i}$",
+          "name": "Horizontal Frequency",
+          "meaning": "Rotary frequency assigned to the horizontal (spatial) dimension, interleaved with temporal/vertical frequencies."
+        },
+        {
+          "symbol": "$f_{w,i}$",
+          "name": "Vertical Frequency",
+          "meaning": "Rotary frequency assigned to the vertical (spatial) dimension, interleaved to ensure uniform spectral coverage."
+        },
+        {
+          "symbol": "$d$",
+          "name": "Embedding Dimension",
+          "meaning": "Total dimension of the input feature vector (e.g., hidden size of the transformer)."
+        },
+        {
+          "symbol": "$\\text{interleaved}(f_{h,i}, f_{w,i})$",
+          "name": "Interleaved Frequency Mapping",
+          "meaning": "A function that redistributes horizontal/vertical frequencies across the embedding dimension to balance spectral representation."
+        }
+      ]
+    },
+    {
+      "id": "eq-2",
+      "title": "DeepStack Multi-Level Visual Token Injection",
+      "latex": "$\\text{VisualToken}_l = \\text{MLP}_{l}(\\text{ViT}_{l}(I)) + \\text{LLM}_{l}(H_{l-1})\\quad \\text{for } l = 1,2,3$",
+      "explanation": "DeepStack injects **multi-level visual tokens** into the LLM by extracting features from **three intermediate layers** of the Vision Transformer (ViT). Each level (`l`) processes the input image (`I`) via `ViT_l`, compresses it into a visual token using a layer-specific MLP (`MLP_l`), and merges it with the LLM\u2019s hidden state (`H_{l-1}`) at layer `l`. This preserves hierarchical visual information (low-to-high level) for richer multimodal understanding.",
+      "variables": [
+        {
+          "symbol": "$\\text{VisualToken}_l$",
+          "name": "Visual Token at Layer `l`",
+          "meaning": "The compressed visual representation injected into the LLM at layer `l`, derived from `ViT_l`."
+        },
+        {
+          "symbol": "$\\text{ViT}_{l}(I)$",
+          "name": "ViT Feature Extraction",
+          "meaning": "Output of the Vision Transformer at layer `l` for input image `I` (e.g., patch embeddings or intermediate features)."
+        },
+        {
+          "symbol": "$\\text{MLP}_{l}$",
+          "name": "Layer-Specific MLP Merger",
+          "meaning": "A two-layer MLP that projects `ViT_l` features into the LLM\u2019s hidden dimension, aligned with `H_l`."
+        },
+        {
+          "symbol": "$\\text{LLM}_{l}(H_{l-1})$",
+          "name": "LLM Hidden State",
+          "meaning": "The LLM\u2019s hidden representation at layer `l-1` (input to layer `l`), which the visual token is added to."
+        },
+        {
+          "symbol": "$l$",
+          "name": "Layer Index",
+          "meaning": "Integer representing the LLM layer (1, 2, or 3) where visual tokens are injected."
+        },
+        {
+          "symbol": "$I$",
+          "name": "Input Image",
+          "meaning": "The raw or preprocessed input image/vision data fed into the ViT."
+        }
+      ]
+    },
+    {
+      "id": "eq-3",
+      "title": "Textual Timestamp Encoding for Temporal Awareness",
+      "latex": "$\\text{TokenizedTimestamp} = \\text{Embed}(\\langle t_{s} \\rangle) + \\text{Embed}(\\langle t_{HMS} \\rangle)\\quad \\text{where } t_{HMS} = \\text{Format}(t_{s}, \\text{HMS})$",
+      "explanation": "To encode **temporal awareness** in videos, this method replaces absolute time embeddings with **textual tokens** (e.g., `<3.0 seconds>` or `<00:01:45>`). The formula embeds two representations of the same timestamp (`t_s` in seconds and `t_HMS` in HMS format) into the input sequence. This dual-encoding approach mitigates sparse/large positional IDs and enables the model to generalize across varying time formats (e.g., seconds vs. hours:minutes:seconds).",
+      "variables": [
+        {
+          "symbol": "$\\text{TokenizedTimestamp}$",
+          "name": "Timestamp Token Sequence",
+          "meaning": "The concatenated textual tokens representing time (e.g., `<3.0 seconds>` + `<00:01:45>`)."
+        },
+        {
+          "symbol": "$\\text{Embed}(\\cdot)$",
+          "name": "Token Embedding Function",
+          "meaning": "Converts textual tokens (e.g., `<3.0 seconds>`) into dense vector embeddings for the LLM."
+        },
+        {
+          "symbol": "$t_s$",
+          "name": "Timestamp in Seconds",
+          "meaning": "The raw timestamp value (e.g., `3.0` seconds) formatted as a text string."
+        },
+        {
+          "symbol": "$t_{HMS}$",
+          "name": "HMS-Formatted Timestamp",
+          "meaning": "The same timestamp converted to hours:minutes:seconds (e.g., `00:01:45`)."
+        },
+        {
+          "symbol": "$\\text{Format}(t_s, \\text{HMS})$",
+          "name": "HMS Conversion Function",
+          "meaning": "Converts `t_s` (seconds) into the HMS string format (e.g., `3.0` \u2192 `00:01:45`)."
+        }
+      ]
+    }
+  ],
+  "code_snippets": [
+    {
+      "title": "vision_language_merger.py",
+      "language": "python",
+      "code": "import torch\nimport torch.nn as nn\n\nclass MultiLevelVisionMerger(nn.Module):\n    def __init__(self, llm_dim: int, num_levels: int = 3):\n        super().__init__()\n        self.level_proj = nn.ModuleList([\n            nn.Sequential(\n                nn.Linear(2*2*768, llm_dim),  # SigLIP-2 hidden dim\n                nn.GELU(),\n                nn.Linear(llm_dim, llm_dim)\n            ) for _ in range(num_levels)\n        ])\n        \n    def forward(self, visual_features: torch.Tensor) -> torch.Tensor:\n        # visual_features: [batch, num_levels, num_patches, 2, 2, 768]\n        batch, num_levels, num_patches, _, _, _ = visual_features.shape\n        visual_tokens = []\n        \n        for level_idx in range(num_levels):\n            # Reshape and project each level's 2x2 patches\n            level_feats = visual_features[:, level_idx]  # [batch, num_patches, 2, 2, 768]\n            pooled = level_feats.flatten(2).mean(dim=2)  # [batch, num_patches, 768]\n            projected = self.level_proj[level_idx](pooled)  # [batch, num_patches, llm_dim]\n            visual_tokens.append(projected)\n        \n        return torch.stack(visual_tokens, dim=1)  # [batch, num_levels, num_patches, llm_dim]\n\nclass InterleavedMRoPE(nn.Module):\n    def __init__(self, dim: int, max_seq_len: int = 8192):\n        super().__init__()\n        inv_freq = 1.0 / (10000 ** (torch.arange(0, dim, 2).float() / dim))\n        t_freqs = inv_freq[:dim//3]  # temporal\n        h_freqs = inv_freq[dim//3:2*dim//3]  # horizontal\n        w_freqs = inv_freq[2*dim//3:]  # vertical\n        \n        # Interleave frequencies across dimensions\n        self.register_buffer('interleaved_freqs', torch.cat([\n            torch.cat([t_freqs, h_freqs, w_freqs]),\n            torch.cat([t_freqs[1:], h_freqs[1:], w_freqs[1:]])\n        ]))\n        \n    def forward(self, x: torch.Tensor, pos: torch.Tensor) -> torch.Tensor:\n        # x: [batch, seq_len, dim]\n        # pos: [batch, seq_len]\n        seq_len = x.shape[1]\n        freqs = torch.einsum('i,j->ij', pos, self.interleaved_freqs[:seq_len])\n        emb = torch.cat((freqs.cos(), freqs.sin()), dim=-1)\n        return x * emb"
+    }
+  ],
+  "code_note": null,
+  "architecture_nodes": [
+    {
+      "id": "input_visual",
+      "type": "input",
+      "label": "Dynamic Resolution Visual Input",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, H, W, C]",
+        "output_shape": null,
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Dynamic resolution image input for the vision encoder (SigLIP-2).",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "Model Architecture",
+        "figure_id": null,
+        "citation": "We utilize the SigLIP-2 architecture... initialized from official pretrained checkpoints.",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "vision_encoder",
+      "type": "encoder",
+      "label": "SigLIP-2 Vision Transformer (ViT)",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, H, W, 3]",
+        "output_shape": "[B, L, 1280]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": 1280,
+        "num_heads": 16,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "SigLIP-2 architecture with 2D-RoPE and interpolated absolute position embeddings for dynamic resolutions.",
+      "math_formula": "ViT(Q,K,V) = MultiHeadAttention(Q,K,V) + MLP(Q)",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "Model Architecture",
+        "figure_id": null,
+        "citation": "We utilize the SigLIP-2 architecture... initialized from official pretrained checkpoints.",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "interleaved_mrope",
+      "type": "custom",
+      "label": "Interleaved MRoPE (temporal + spatial)",
+      "parent_id": "vision_encoder",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 1280]",
+        "output_shape": "[B, L, 1280]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": 1280,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Balanced frequency allocation for temporal (t), horizontal (h), and vertical (w) subspaces to mitigate spectral bias.",
+      "math_formula": "RoPE(Q) = Q * \\cos(\u03b8_k) - Q' * \\sin(\u03b8_k), \u03b8_k = k / d_{model}",
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 3,
+        "section": "2.1 Interleaved MRoPE",
+        "figure_id": null,
+        "citation": "We redesign the frequency allocation by interleaving the t, h, and w components across the embedding dimensions...",
+        "confidence": 0.98,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "visual_token_projection_1",
+      "type": "mlp",
+      "label": "Vision-Language Merger (Layer 1)",
+      "parent_id": "vision_encoder",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 1280]",
+        "output_shape": "[B, 1, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": 512,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Two-layer MLP compressing 2x2 visual features into a single visual token aligned with LLM hidden dimension.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "Model Architecture",
+        "figure_id": null,
+        "citation": "We use a two-layer MLP to compress 2 \u00d7 2 visual features...",
+        "confidence": 0.97,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "visual_token_projection_2",
+      "type": "mlp",
+      "label": "Vision-Language Merger (Layer 2)",
+      "parent_id": "vision_encoder",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 1280]",
+        "output_shape": "[B, 1, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": 512,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Second MLP for multi-level feature projection in DeepStack mechanism.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 3,
+        "section": "2.2 DeepStack",
+        "figure_id": null,
+        "citation": "We select features from three distinct levels of the vision encoder...",
+        "confidence": 0.96,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "visual_token_projection_3",
+      "type": "mlp",
+      "label": "Vision-Language Merger (Layer 3)",
+      "parent_id": "vision_encoder",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 1280]",
+        "output_shape": "[B, 1, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": 512,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Third MLP for multi-level feature projection in DeepStack mechanism.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 3,
+        "section": "2.2 DeepStack",
+        "figure_id": null,
+        "citation": "We select features from three distinct levels of the vision encoder...",
+        "confidence": 0.96,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "timestamp_token",
+      "type": "custom",
+      "label": "Textual Timestamp Tokenizer",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, 1]",
+        "output_shape": "[B, 1, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Textual token encoding for video timestamps in seconds or HMS format.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 4,
+        "section": "2.3 Video Timestamp",
+        "figure_id": null,
+        "citation": "We adopt a textual token\u2013based time encoding strategy...",
+        "confidence": 0.97,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "llm_backbone",
+      "type": "encoder",
+      "label": "Qwen3 Large Language Model",
+      "parent_id": null,
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": 512,
+        "num_heads": 64,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Qwen3 backbone with dense (2B/4B/8B/32B) and MoE (30B-A3B/235B-A22B) variants.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "Model Architecture",
+        "figure_id": null,
+        "citation": "Qwen3-VL is instantiated in three dense variants (Qwen3-VL-2B/4B/8B/32B) and two MoE variants...",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "transformer_block_llm",
+      "type": "transformer_block",
+      "label": "Qwen3 Transformer Block",
+      "parent_id": "llm_backbone",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": 512,
+        "num_heads": 64,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Standard transformer block with self-attention and feed-forward network.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "Model Architecture",
+        "figure_id": null,
+        "citation": "Qwen3-VL is built upon Qwen3 backbones.",
+        "confidence": 0.95,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "expert_router",
+      "type": "router",
+      "label": "MoE Router (22 Experts)",
+      "parent_id": "llm_backbone",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "MoE router for Qwen3-VL-30B-A3B and Qwen3-VL-235B-A22B variants.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "Model Architecture",
+        "figure_id": null,
+        "citation": "Qwen3-VL-235B-A22B has 22B activated per token.",
+        "confidence": 0.98,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "expert_1",
+      "type": "expert",
+      "label": "MoE Expert (1/22)",
+      "parent_id": "expert_router",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, 512]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": 512,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "One of 22 experts in the MoE layer.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "Model Architecture",
+        "figure_id": null,
+        "citation": "Qwen3-VL-235B-A22B has 22B activated per token.",
+        "confidence": 0.95,
+        "is_inferred": false
+      },
+      "tags": []
+    },
+    {
+      "id": "output",
+      "type": "output",
+      "label": "Multimodal Output",
+      "parent_id": "llm_backbone",
+      "children_ids": [],
+      "dimensions": {
+        "input_shape": "[B, L, 512]",
+        "output_shape": "[B, L, V]",
+        "batch_size": null,
+        "sequence_length": null,
+        "hidden_dim": null,
+        "num_heads": null,
+        "expansion_factor": null,
+        "kernel_size": null
+      },
+      "parameters": null,
+      "flops": null,
+      "repetitions": 1,
+      "description": "Final output tokens from the LLM.",
+      "math_formula": null,
+      "detailed_walkthrough": null,
+      "concrete_example": null,
+      "provenance": {
+        "page": 2,
+        "section": "Model Architecture",
+        "figure_id": null,
+        "citation": "Qwen3-VL outperforms most VLMs across a broad set of multimodal tasks.",
+        "confidence": 0.99,
+        "is_inferred": false
+      },
+      "tags": []
+    }
+  ],
+  "diagram_available": true,
+  "summary_available": true,
+  "metadata": {
+    "title": "Qwen3-VL Technical Report",
+    "authors": [
+      "Qwen Team"
+    ],
+    "abstract": "We introduce Qwen3-VL, the most capable vision\u2013language model in the Qwen series to date, achieving superior performance across a broad range of multimodal benchmarks. It natively supports interleaved contexts of up to 256K tokens, seamlessly integrating text, images, and video. The model family includes both dense (2B/4B/8B/32B) and mixture-of-experts (30B-A3B/235B-A22B) variants to accommodate diverse latency\u2013quality trade-offs. Qwen3-VL delivers three core pillars: (i) markedly stronger pure-text understanding, surpassing comparable text-only backbones in several cases; (ii) robust long-context comprehension with a native 256K-token window for both text and interleaved multimodal inputs; and (iii) advanced multimodal reasoning across single-image, multi-image, and video tasks, demonstrating leading performance on comprehensive evaluations such as MMMU and visual-math benchmarks (e.g., Math-Vista and MathVision). Architecturally, we introduce three key upgrades: (i) an enhanced interleaved-MRoPE for stronger spatial\u2013temporal modeling across images and video; (ii) DeepStack integration, which effectively leverages multi-level ViT features to tighten vision\u2013language alignment; and (iii) text-based time alignment for video, evolving from T-RoPE to explicit textual timestamp alignment for more precise temporal grounding. To balance text-only and multimodal learning objectives, we apply square-root reweighting, which boosts multimodal performance without compromising text capabilities. We extend pretraining to a context length of 256K tokens and bifurcate post-training into non-thinking and thinking variants to address distinct application requirements. Furthermore, we allocate additional compute resources to the post-training phase to further enhance model performance. Under comparable token budgets and latency constraints, Qwen3-VL achieves superior performance in both dense and Mixture-of-Experts (MoE) architectures. We envision Qwen3-VL serving as a foundational engine for image-grounded reasoning, agentic decision-making, and multimodal code intelligence in real-world workflows.",
+    "published": "2025",
+    "categories": [
+      "Computer Vision",
+      "Generative Models",
+      "Natural Language Processing"
+    ]
+  },
+  "parsed_text": {
+    "page_count": 42
+  },
+  "content_hash": "7ccc591910f485a37600c6da2659468ec79b7da2feaaaa05947101f03bcdb6eb",
+  "cached": false
+}

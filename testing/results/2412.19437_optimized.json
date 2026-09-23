@@ -1,0 +1,20 @@
+{
+  "paper_id": "2412.19437",
+  "page_count": 53,
+  "optimized_total_time_sec": 80.34,
+  "breakdown": {
+    "ingest_sec": 0.14,
+    "locator_sec": 3.05,
+    "parallel_llm_sec": 77.16
+  },
+  "diagram_available": true,
+  "graph_nodes": 17,
+  "graph_edges": 20,
+  "sample_nodes": [
+    "Input Embedding Layer",
+    "RMSNorm (MLP Input)",
+    "Multi-Head Latent Attention (MLA)",
+    "Feed-Forward Network (MLP)",
+    "DeepSeekMoE with Auxiliary-Loss-Free Load Balancing"
+  ]
+}

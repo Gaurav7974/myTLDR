@@ -520,17 +520,22 @@ Respond ONLY with a valid JSON object matching:
                 "categories": []
             }
     
-    # ── LLM-based architecture section detection (Fix #2) ──────────
-    ARCH_SECTION_PROMPT = """You are an expert research-paper parser. Given the full text of a paper, locate the architecture / method / model section that describes the model's components, layers, blocks, and their connections.
+    # ── LLM-based architecture section detection (Fix #2 + Fast-Span) ──────────
+    ARCH_SECTION_PROMPT = """You are an expert research-paper parser. Given the full text of a paper, locate the architecture / method / model section that describes the paper's PROPOSED model components, layers, blocks, and their connections.
+
+CRITICAL RULES:
+1. If the paper is a SURVEY, REVIEW, or OVERVIEW paper summarizing existing works or third-party models, you MUST return found=false.
+2. If the paper has NO single unified proposed architecture, return found=false.
+3. ONLY return found=true if the authors propose a novel, specific model architecture.
 
 Instructions:
-- Read the full paper text below and identify the contiguous span that is the architecture/method description (headings like "Architecture", "Model", "Method", "Approach", "Proposed Method", "Network Architecture", "Model Design", etc., plus subsections).
-- Return the VERBATIM text of that section (copy exactly from the source, do not paraphrase or invent). If the section is long, return its full contiguous text up to {ceiling} characters; do not truncate mid-sentence unless you must hit the ceiling.
-- If the paper has NO clearly identifiable architecture/method section (e.g. survey, dataset paper, or the section is missing/ambiguous), set found=false.
+- When found=true, identify:
+  - start_heading: The exact heading where the proposed architecture begins (e.g. "3 Model Architecture", "2 Methodology").
+  - end_heading: The heading where the architecture description ends and training/experiments begin (e.g. "4 Experiments", "4 Training Setup").
 - Confidence: 0.0-1.0 — how confidently you located a real architecture section.
 
 Output strictly valid JSON:
-{{"found": true|false, "section_text": "verbatim excerpt or empty string", "confidence": 0.0-1.0, "reason": "one-sentence justification, include the heading you matched if found"}}
+{{"found": true|false, "start_heading": "exact heading text or empty string", "end_heading": "exact heading text or empty string", "confidence": 0.0-1.0, "reason": "one-sentence justification, include the heading matched if found"}}
 
 Full paper text (truncated to {max_chars} chars for this call):
 ---
@@ -538,7 +543,7 @@ Full paper text (truncated to {max_chars} chars for this call):
 ---"""
 
     def find_architecture_section(self, text: str) -> str | None:
-        """LLM-based architecture/method section locator (Fix #2).
+        """LLM-based architecture/method section locator (Fix #2 + Fast-Span).
 
         Returns the verbatim section text on success, or None if the LLM cannot
         confidently locate a section. Callers must treat None as an explicit
@@ -580,6 +585,8 @@ Full paper text (truncated to {max_chars} chars for this call):
 
         found = bool(data.get("found", False))
         confidence = float(data.get("confidence", 0.0) or 0.0)
+        start_heading = (data.get("start_heading") or "").strip()
+        end_heading = (data.get("end_heading") or "").strip()
         section_text = (data.get("section_text") or "").strip()
         reason = data.get("reason") or ""
 
@@ -590,14 +597,30 @@ Full paper text (truncated to {max_chars} chars for this call):
         if confidence < 0.5:
             log.warning(f"[ARCH_SECTION] Low confidence {confidence:.2f}: {reason} — treating as not found")
             return None
+
+        # High-performance in-memory slicing via heading coordinates
+        if start_heading:
+            start_pos = text.lower().find(start_heading.lower())
+            if start_pos == -1:
+                # Fuzzy search using primary keywords
+                words = [w for w in re.split(r'\W+', start_heading) if len(w) > 3]
+                if words:
+                    m = re.search(re.escape(words[0]), text, re.IGNORECASE)
+                    start_pos = m.start() if m else -1
+
+            if start_pos != -1:
+                end_pos = -1
+                if end_heading:
+                    end_pos = text.lower().find(end_heading.lower(), start_pos + 500)
+                if end_pos == -1 or end_pos <= start_pos:
+                    end_pos = min(len(text), start_pos + ceiling)
+                else:
+                    end_pos = min(end_pos, start_pos + ceiling)
+
+                section_text = text[start_pos:end_pos].strip()
+
         if len(section_text) < 200:
             log.warning(f"[ARCH_SECTION] Section too short ({len(section_text)} chars), confidence {confidence:.2f}: {reason}")
-            return None
-        # Verify extracted text actually appears in source (anti-hallucination)
-        # Check that a 60-char sample from the LLM output exists in the source
-        sample = section_text[:60].strip()
-        if sample and sample not in text and sample[:40] not in text:
-            log.warning(f"[ARCH_SECTION] LLM section_text not found verbatim in source — possible hallucination: {reason}")
             return None
 
         # Dynamic sizing (Fix #3): cap to ceiling, otherwise keep actual length

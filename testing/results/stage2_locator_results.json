@@ -1,0 +1,102 @@
+[
+  {
+    "filename": "1706.03762.pdf",
+    "clean_text_length": 30147,
+    "ground_truth_offset": 6610,
+    "ground_truth_heading": "3\nModel Architecture",
+    "ground_truth_approx_page": 1.5,
+    "within_50k_window": true,
+    "run_50k": {
+      "found": false,
+      "extracted_length": 0,
+      "latency_sec": 16.768,
+      "sample": ""
+    },
+    "run_100k": {
+      "found": false,
+      "extracted_length": 0,
+      "latency_sec": 17.318,
+      "sample": ""
+    }
+  },
+  {
+    "filename": "2307.06435.pdf",
+    "clean_text_length": 176124,
+    "ground_truth_offset": 18471,
+    "ground_truth_heading": "methods",
+    "ground_truth_approx_page": 4.1,
+    "within_50k_window": true,
+    "run_50k": {
+      "found": false,
+      "extracted_length": 0,
+      "latency_sec": 1.427,
+      "sample": ""
+    },
+    "run_100k": {
+      "found": false,
+      "extracted_length": 0,
+      "latency_sec": 2.495,
+      "sample": ""
+    }
+  },
+  {
+    "filename": "2309.16609.pdf",
+    "clean_text_length": 72040,
+    "ground_truth_offset": 2555,
+    "ground_truth_heading": "Architecture",
+    "ground_truth_approx_page": 0.6,
+    "within_50k_window": true,
+    "run_50k": {
+      "found": true,
+      "extracted_length": 2410,
+      "latency_sec": 6.407,
+      "sample": "2.3 ARCHITECTURE QWEN is designed using a modified version of the Transformer architecture. Specifically, we have adopte"
+    },
+    "run_100k": {
+      "found": true,
+      "extracted_length": 2410,
+      "latency_sec": 7.741,
+      "sample": "2.3 ARCHITECTURE QWEN is designed using a modified version of the Transformer architecture. Specifically, we have adopte"
+    }
+  },
+  {
+    "filename": "2412.19437.pdf",
+    "clean_text_length": 107892,
+    "ground_truth_offset": 1846,
+    "ground_truth_heading": "2\nArchitecture",
+    "ground_truth_approx_page": 0.4,
+    "within_50k_window": true,
+    "run_50k": {
+      "found": false,
+      "extracted_length": 0,
+      "latency_sec": 39.148,
+      "sample": ""
+    },
+    "run_100k": {
+      "found": false,
+      "extracted_length": 0,
+      "latency_sec": 34.12,
+      "sample": ""
+    }
+  },
+  {
+    "filename": "2511.21631.pdf",
+    "clean_text_length": 102454,
+    "ground_truth_offset": 6864,
+    "ground_truth_heading": "2\nModel Architecture",
+    "ground_truth_approx_page": 1.5,
+    "within_50k_window": true,
+    "run_50k": {
+      "found": true,
+      "extracted_length": 4388,
+      "latency_sec": 9.575,
+      "sample": "2 Model Architecture Following Qwen2.5-VL (Bai et al., 2025), Qwen3-VL adopts a three-module architecture comprising a v"
+    },
+    "run_100k": {
+      "found": true,
+      "extracted_length": 4385,
+      "latency_sec": 10.238,
+      "sample": "2 Model Architecture Following Qwen2.5-VL (Bai et al., 2025), Qwen3-VL adopts a three-module architecture comprising a v"
+    }
+  }
+]
