@@ -78,6 +78,7 @@ export interface DiagramNode {
 }
 
 export interface DiagramEdge {
+  id?: string;
   source: string;
   target: string;
   label?: string;
