@@ -5,7 +5,41 @@ from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.logger import get_logger
+
 log = get_logger(__name__)
+
+# The event loop keeps only weak references to tasks. Keep strong ones so
+# indexing cannot be collected mid-write (CPython asyncio-task docs).
+_INDEX_TASKS: dict[str, asyncio.Task] = {}
+_INDEX_SEM: asyncio.Semaphore | None = None
+_INDEX_SEM_LOOP = None
+
+
+def _index_sem() -> asyncio.Semaphore:
+    """Bound paid indexing work per event loop (a bare Semaphore binds to one loop)."""
+    global _INDEX_SEM, _INDEX_SEM_LOOP
+    loop = asyncio.get_running_loop()
+    if _INDEX_SEM is None or _INDEX_SEM_LOOP is not loop:
+        _INDEX_SEM, _INDEX_SEM_LOOP = asyncio.Semaphore(2), loop
+    return _INDEX_SEM
+
+
+def _start_index_task(hash_key: str, coro) -> asyncio.Task | None:
+    """Track a task until it finishes; skip a paper already being indexed."""
+    prior = _INDEX_TASKS.get(hash_key)
+    if prior is not None and not prior.done():
+        coro.close()
+        return None
+    task = asyncio.create_task(coro)
+    _INDEX_TASKS[hash_key] = task
+
+    def _discard(done: asyncio.Task) -> None:
+        if _INDEX_TASKS.get(hash_key) is done:
+            _INDEX_TASKS.pop(hash_key, None)
+
+    task.add_done_callback(_discard)
+    return task
+
 from app.core.security import sanitize_arxiv_id
 from app.services.text_extraction import text_extractor
 from app.services.graph_extraction import graph_extractor
@@ -13,13 +47,9 @@ from app.services.explanation import explanation_service
 from app.services.ir_extraction import ir_extractor
 from app.services.figure_extraction import (
     figure_extractor,
-    is_verified_vision_graph,
     pick_architecture_figure_classifier,
 )
-from app.services.graph_merge import (
-    merge_graph_metadata,
-    should_render_reconstruction,
-)
+from app.services.graph_merge import decide_diagram
 import hashlib
 from app.services.rag import rag_service
 from app.services.paper_validator import paper_validator
@@ -36,65 +66,104 @@ async def process_paper(
     file_bytes: bytes | None,
     url: str | None,
     difficulty: str,
-    db: AsyncSession | None
+    db: AsyncSession | None,
 ) -> AsyncGenerator[dict, None]:
     """
     Process a paper through the full pipeline.
     Yields SSE events for frontend consumption.
     """
-    
+
     # ── Stage 1: Input routing & text extraction ──
     yield {"stage": "extracting", "message": "Downloading and extracting text..."}
-    
+
     metadata = {}
-    
+
     if source_type == "arxiv":
         arxiv_id = _extract_arxiv_id(url)
         try:
-            metadata = await asyncio.to_thread(text_extractor.get_arxiv_metadata, arxiv_id)
+            metadata = await asyncio.to_thread(
+                text_extractor.get_arxiv_metadata, arxiv_id
+            )
         except (ValueError, Exception) as e:
-            yield {"stage": "error", "message": str(e)}; return
+            yield {"stage": "error", "message": str(e)}
+            return
         metadata["pdf_url"] = f"https://arxiv.org/pdf/{sanitize_arxiv_id(arxiv_id)}.pdf"
         metadata["arxiv_id"] = sanitize_arxiv_id(arxiv_id)
         pdf_bytes = await asyncio.to_thread(text_extractor.download_arxiv_pdf, arxiv_id)
-        try: extraction = await asyncio.to_thread(text_extractor.extract_from_pdf_bytes, pdf_bytes)
-        except ValueError as e: yield {"stage": "error", "message": str(e)}; return
-        except Exception as e: yield {"stage": "error", "message": f"Extraction failed: {str(e)}"}; return
+        try:
+            extraction = await asyncio.to_thread(
+                text_extractor.extract_from_pdf_bytes, pdf_bytes
+            )
+        except ValueError as e:
+            yield {"stage": "error", "message": str(e)}
+            return
+        except Exception as e:
+            yield {"stage": "error", "message": f"Extraction failed: {str(e)}"}
+            return
     elif source_type == "url":
         metadata["pdf_url"] = url
         pdf_bytes = await asyncio.to_thread(text_extractor.download_pdf, url)
-        try: extraction = await asyncio.to_thread(text_extractor.extract_from_pdf_bytes, pdf_bytes)
-        except ValueError as e: yield {"stage": "error", "message": str(e)}; return
-        except Exception as e: yield {"stage": "error", "message": f"Extraction failed: {str(e)}"}; return
+        try:
+            extraction = await asyncio.to_thread(
+                text_extractor.extract_from_pdf_bytes, pdf_bytes
+            )
+        except ValueError as e:
+            yield {"stage": "error", "message": str(e)}
+            return
+        except Exception as e:
+            yield {"stage": "error", "message": f"Extraction failed: {str(e)}"}
+            return
     elif source_type == "upload":
-        if not file_bytes: yield {"stage": "error", "message": "No file provided"}; return
-        try: extraction = await asyncio.to_thread(text_extractor.extract_from_pdf_bytes, file_bytes)
-        except ValueError as e: yield {"stage": "error", "message": str(e)}; return
-        except Exception as e: yield {"stage": "error", "message": f"Extraction failed: {str(e)}"}; return
-    else: yield {"stage": "error", "message": f"Unknown source type: {source_type}"}; return
-    
+        if not file_bytes:
+            yield {"stage": "error", "message": "No file provided"}
+            return
+        try:
+            extraction = await asyncio.to_thread(
+                text_extractor.extract_from_pdf_bytes, file_bytes
+            )
+        except ValueError as e:
+            yield {"stage": "error", "message": str(e)}
+            return
+        except Exception as e:
+            yield {"stage": "error", "message": f"Extraction failed: {str(e)}"}
+            return
+    else:
+        yield {"stage": "error", "message": f"Unknown source type: {source_type}"}
+        return
+
     full_text = extraction.text
     figures = extraction.figures
-    
+
     if not full_text or len(full_text.strip()) < 100:
-        yield {"stage": "error", "message": "Could not extract meaningful text from the paper"}
+        yield {
+            "stage": "error",
+            "message": "Could not extract meaningful text from the paper",
+        }
         return
 
     # ── Academic research paper verification (upload gate) ──
     if source_type == "upload":
-        is_paper, reject_reason = await asyncio.to_thread(paper_validator.validate_research_paper, full_text)
+        is_paper, reject_reason = await asyncio.to_thread(
+            paper_validator.validate_research_paper, full_text
+        )
         if not is_paper:
             log.warning(f"[PIPELINE] Upload rejected as non-academic: {reject_reason}")
             yield {
                 "stage": "error",
-                "message": f"Uploaded document does not appear to be an academic research paper: {reject_reason}. Please upload a scientific or academic paper (PDF)."
+                "message": f"Uploaded document does not appear to be an academic research paper: {reject_reason}. Please upload a scientific or academic paper (PDF).",
             }
             return
-    
+
     if not metadata.get("title"):
-        try: metadata.update(await asyncio.to_thread(text_extractor.extract_paper_metadata_from_text, full_text))
-        except Exception: pass
-    
+        try:
+            metadata.update(
+                await asyncio.to_thread(
+                    text_extractor.extract_paper_metadata_from_text, full_text
+                )
+            )
+        except Exception:
+            pass
+
     paper_title = metadata.get("title") or "Uploaded Research Paper"
 
     # ── Content hash & cache check ──
@@ -112,21 +181,26 @@ async def process_paper(
             for p in extraction.pages
         ],
         "figures": [
-            {"id": f.id, "page": f.page, "caption": f.caption}
-            for f in figures
+            {"id": f.id, "page": f.page, "caption": f.caption} for f in figures
         ],
     }
 
     # ── Index paper chunks into pgvector for RAG Q&A ──
-    async def _index_rag_background(hash_key: str, text_key: str):
+    async def _index_rag_background(hash_key: str, text_key: str, offsets=None):
         from app.core.database import async_session
+
         try:
-            async with async_session() as session:
-                await rag_service.index_paper(session, hash_key, text_key)
+            async with _index_sem():
+                async with async_session() as session:
+                    await rag_service.index_paper(
+                        session, hash_key, text_key, page_offsets=offsets
+                    )
         except Exception as e:
             log.warning(f"[WARN] Background RAG indexing failed: {e}")
 
-    asyncio.create_task(_index_rag_background(content_hash, full_text))
+    _start_index_task(
+        content_hash, _index_rag_background(content_hash, full_text, extraction.page_offsets)
+    )
 
     # ── Prep phase: arch section detection + figure classification ────────────
     # Both are independent of each other, so run them in parallel FIRST.
@@ -134,7 +208,10 @@ async def process_paper(
     # extraction use the focused method section (typically 8-15k chars) instead
     # of the full 40k paper — a 3-5x token reduction for those calls with no
     # quality loss since those tasks only care about the architecture section.
-    yield {"stage": "explaining", "message": f"Generating explanation & architecture for {paper_title[:40]}..."}
+    yield {
+        "stage": "explaining",
+        "message": f"Generating explanation & architecture for {paper_title[:40]}...",
+    }
     arch_figure = None
     keyword_pick = None
     need_fig_classify = False
@@ -143,9 +220,16 @@ async def process_paper(
         keyword_pick = _pick_architecture_figure(figures)
         if keyword_pick and any(
             k in (getattr(keyword_pick, "caption", "") or "").lower()
-            for k in ("architecture", "network architecture", "model architecture", "overall architecture")
+            for k in (
+                "architecture",
+                "network architecture",
+                "model architecture",
+                "overall architecture",
+            )
         ):
-            arch_figure = keyword_pick  # high-confidence keyword match — skip classifier
+            arch_figure = (
+                keyword_pick  # high-confidence keyword match — skip classifier
+            )
         else:
             need_fig_classify = True
 
@@ -153,11 +237,19 @@ async def process_paper(
         "arch": asyncio.to_thread(text_extractor.find_architecture_section, full_text)
     }
     if need_fig_classify:
-        prep_tasks["figcls"] = asyncio.to_thread(pick_architecture_figure_classifier, figures, paper_title)
+        prep_tasks["figcls"] = asyncio.to_thread(
+            pick_architecture_figure_classifier, figures, paper_title
+        )
 
     _prep = (
-        dict(zip(prep_tasks.keys(), await asyncio.gather(*prep_tasks.values(), return_exceptions=True)))
-        if prep_tasks else {}
+        dict(
+            zip(
+                prep_tasks.keys(),
+                await asyncio.gather(*prep_tasks.values(), return_exceptions=True),
+            )
+        )
+        if prep_tasks
+        else {}
     )
 
     # Unpack: arch section
@@ -172,7 +264,9 @@ async def process_paper(
             arch_text = _ar
             arch_section_missing = arch_text is None
         if arch_section_missing:
-            log.warning("[PIPELINE] No architecture section located — text graph extraction skipped")
+            log.warning(
+                "[PIPELINE] No architecture section located — text graph extraction skipped"
+            )
 
     # Unpack: figure classifier
     if "figcls" in _prep and arch_figure is None:
@@ -199,16 +293,34 @@ async def process_paper(
     tasks: dict = {
         "expl": asyncio.to_thread(explanation_service.generate, full_text, difficulty),
         "eq": asyncio.to_thread(explanation_service.extract_equations, focused_text),
-        "code": asyncio.to_thread(explanation_service.generate_pytorch_code, full_text, paper_title, arch_text),
+        "code": asyncio.to_thread(
+            explanation_service.generate_pytorch_code, full_text, paper_title, arch_text
+        ),
         "ir": asyncio.to_thread(ir_extractor.extract, focused_text, paper_title),
     }
     if not arch_section_missing and arch_text:
-        tasks["tgraph"] = asyncio.to_thread(graph_extractor.extract_graph, arch_text, paper_title)
+        tasks["tgraph"] = asyncio.to_thread(
+            graph_extractor.extract_graph, arch_text, paper_title
+        )
     if arch_figure:
-        tasks["vgraph"] = asyncio.to_thread(figure_extractor.extract_architecture, arch_figure, paper_title)
+        tasks["vgraph"] = asyncio.to_thread(
+            figure_extractor.extract_architecture, arch_figure, paper_title
+        )
 
-    results = dict(zip(tasks.keys(), await asyncio.gather(*tasks.values(), return_exceptions=True))) if tasks else {}
-    def _ok(k): v = results.get(k); return None if isinstance(v, Exception) else v
+    results = (
+        dict(
+            zip(
+                tasks.keys(),
+                await asyncio.gather(*tasks.values(), return_exceptions=True),
+            )
+        )
+        if tasks
+        else {}
+    )
+
+    def _ok(k):
+        v = results.get(k)
+        return None if isinstance(v, Exception) else v
 
     explanation = _ok("expl")
     equations = _ok("eq") or []
@@ -217,9 +329,17 @@ async def process_paper(
     if isinstance(code_res, dict):
         code_snippets = code_res.get("snippets", []) or []
         if not code_res.get("needs_code", True):
-            code_note = code_res.get("reason") or "This paper has no implementable architecture to show as code."
+            code_note = (
+                code_res.get("reason")
+                or "This paper has no implementable architecture to show as code."
+            )
 
-    from app.models.architecture_ir import ArchitectureIR, ArchitectureMetadata, SceneGraph3D
+    from app.models.architecture_ir import (
+        ArchitectureIR,
+        ArchitectureMetadata,
+        SceneGraph3D,
+    )
+
     scene_graph = SceneGraph3D(nodes_3d=[], edges_3d=[])
     canonical_ir = None
     ir_res = _ok("ir")
@@ -228,19 +348,38 @@ async def process_paper(
     elif isinstance(ir_res, ArchitectureIR):
         canonical_ir = ir_res
     if canonical_ir is None:
-        canonical_ir = ArchitectureIR(version="1.0", architecture=ArchitectureMetadata(name=paper_title, paradigm="other"), nodes=[], edges=[])
+        canonical_ir = ArchitectureIR(
+            version="1.0",
+            architecture=ArchitectureMetadata(name=paper_title, paradigm="other"),
+            nodes=[],
+            edges=[],
+        )
 
     text_graph, vision_graph = _ok("tgraph"), _ok("vgraph")
     # Parallel verification (both independent)
     text_verified = False
-    if (text_graph and len(text_graph.nodes) > 0) or (vision_graph and len(getattr(vision_graph, 'nodes', [])) > 0):
+    if (text_graph and len(text_graph.nodes) > 0) or (
+        vision_graph and len(getattr(vision_graph, "nodes", [])) > 0
+    ):
         vtasks = {}
         if vision_graph and len(vision_graph.nodes) > 0:
-            vtasks["vv"] = asyncio.to_thread(figure_extractor.verify_figure_graph, arch_figure, vision_graph, paper_title)
+            vtasks["vv"] = asyncio.to_thread(
+                figure_extractor.verify_figure_graph,
+                arch_figure,
+                vision_graph,
+                paper_title,
+            )
         if text_graph and len(text_graph.nodes) > 0 and arch_text:
-            vtasks["tv"] = asyncio.to_thread(graph_extractor.verify_graph, arch_text, text_graph, paper_title)
+            vtasks["tv"] = asyncio.to_thread(
+                graph_extractor.verify_graph, arch_text, text_graph, paper_title
+            )
         if vtasks:
-            vres = dict(zip(vtasks.keys(), await asyncio.gather(*vtasks.values(), return_exceptions=True)))
+            vres = dict(
+                zip(
+                    vtasks.keys(),
+                    await asyncio.gather(*vtasks.values(), return_exceptions=True),
+                )
+            )
             if "vv" in vres and not isinstance(vres["vv"], Exception):
                 vision_graph.verification = vres["vv"]
             elif "vv" in vres:
@@ -249,36 +388,19 @@ async def process_paper(
                 text_verified = bool(vres["tv"].get("valid", False))
     yield {"stage": "diagramming", "message": "Finalizing diagrams..."}
 
-    graph = None
-    diagram_available = False
-    diagram_reason = "not_attempted"
-
-    # Explicit failure propagation (Fix #2): no architecture section + no vision = no diagram
-    if arch_section_missing and not vision_graph:
-        graph, diagram_available, diagram_reason = None, False, "no_architecture_section"
-    elif is_verified_vision_graph(vision_graph):
-        graph = merge_graph_metadata(vision_graph, text_graph, prefer="vision") if text_verified and text_graph else vision_graph
-        diagram_available, diagram_reason = True, "verified_vision"
-    elif vision_graph and len(vision_graph.nodes) > 0:
-        if text_graph and len(text_graph.nodes) > 0:
-            try: graph = merge_graph_metadata(vision_graph, text_graph, prefer="vision")
-            except Exception: graph = vision_graph
-        else: graph = vision_graph
-        diagram_available, diagram_reason = True, "unverified_vision"
-    elif text_verified and text_graph and len(text_graph.nodes) > 0:
-        graph, diagram_available, diagram_reason = text_graph, True, "verified_text"
-    elif text_graph and len(text_graph.nodes) > 0:
-        text_graph.layout_mode, text_graph.source = "auto", "text"
-        graph, diagram_available, diagram_reason = text_graph, True, "text_auto_fallback"
-    elif arch_section_missing:
-        graph, diagram_available, diagram_reason = None, False, "no_architecture_section"
-    else: graph, diagram_available, diagram_reason = None, False, "no_verified_graph"
+    graph, diagram_available, diagram_reason = decide_diagram(
+        vision_graph, text_graph, text_verified, arch_section_missing
+    )
 
     if diagram_available and graph is not None:
         # Inline-enrich from canonical_ir (zero API latency)
         if canonical_ir and hasattr(canonical_ir, "nodes") and canonical_ir.nodes:
-            ir_nodes_by_id = {str(n.id).lower().strip(): n for n in canonical_ir.nodes if n.id}
-            ir_nodes_by_label = {str(n.label).lower().strip(): n for n in canonical_ir.nodes if n.label}
+            ir_nodes_by_id = {
+                str(n.id).lower().strip(): n for n in canonical_ir.nodes if n.id
+            }
+            ir_nodes_by_label = {
+                str(n.label).lower().strip(): n for n in canonical_ir.nodes if n.label
+            }
             for node in graph.nodes:
                 nid = str(node.id).lower().strip()
                 nlbl = str(node.label).lower().strip()
@@ -293,11 +415,17 @@ async def process_paper(
                         node.description = str(match.description)
                     if not node.math_formula and getattr(match, "math_formula", None):
                         node.math_formula = str(match.math_formula)
-                    if not getattr(node, "paper_term", None) and getattr(match, "paper_term", None):
+                    if not getattr(node, "paper_term", None) and getattr(
+                        match, "paper_term", None
+                    ):
                         node.paper_term = str(match.paper_term)
-                    if not getattr(node, "parameters", None) and getattr(match, "parameters", None):
+                    if not getattr(node, "parameters", None) and getattr(
+                        match, "parameters", None
+                    ):
                         node.parameters = str(match.parameters)
-                    if not getattr(node, "flops", None) and getattr(match, "flops", None):
+                    if not getattr(node, "flops", None) and getattr(
+                        match, "flops", None
+                    ):
                         node.flops = str(match.flops)
 
         # Only call LLM enrichment if nodes still lack descriptions
@@ -312,20 +440,16 @@ async def process_paper(
             except Exception as e:
                 log.warning(f"[WARN] Dynamic node enrichment skipped: {e}")
 
-    if graph is not None and not should_render_reconstruction(graph):
-        graph.layout_mode = "auto"
-        graph.source = "legacy" if graph.source is None else graph.source
-        if not diagram_available:
-            diagram_available = len(graph.nodes) > 0
+    log.info(
+        f"[PIPELINE] diagram_available={diagram_available} reason={diagram_reason} "
+        f"nodes={len(graph.nodes) if graph else 0} "
+        f"source={getattr(graph, 'source', None)} "
+        f"layout_mode={getattr(graph, 'layout_mode', None)}"
+    )
 
-    log.info(f"[PIPELINE] diagram_available={diagram_available} reason={diagram_reason} "
-          f"nodes={len(graph.nodes) if graph else 0} "
-          f"source={getattr(graph, 'source', None)} "
-          f"layout_mode={getattr(graph, 'layout_mode', None)}")
-    
     # ── Done ──
     graph_payload = graph.model_dump() if graph and diagram_available else None
-    
+
     yield {
         "stage": "done",
         "explanation": explanation,
@@ -334,32 +458,32 @@ async def process_paper(
         "scene_graph_3d": scene_graph.model_dump(),
         "bycroft_stages": [],
         "bycroft_highways": [],
-        "attention_heatmap": {
-            "tokens": [],
-            "matrix": []
-        },
+        "attention_heatmap": {"tokens": [], "matrix": []},
         "next_token_predictions": [],
         "equations": equations,
         "code_snippets": code_snippets,
         "code_note": code_note,
-        "architecture_nodes": [n.model_dump() for n in canonical_ir.nodes] if hasattr(canonical_ir, "nodes") else [],
+        "architecture_nodes": [n.model_dump() for n in canonical_ir.nodes]
+        if hasattr(canonical_ir, "nodes")
+        else [],
         "diagram_available": diagram_available,
         "summary_available": explanation is not None,
         "metadata": metadata,
         "parsed_text": parsed_text,
         "content_hash": content_hash,
-        "cached": False
+        "cached": False,
     }
 
 
 def _extract_arxiv_id(url: str) -> str:
     """Extract arXiv ID from URL."""
     import re
-    match = re.search(r'(\d{4}\.\d{4,5})', url)
+
+    match = re.search(r"(\d{4}\.\d{4,5})", url)
     if match:
         return match.group(1)
     # Handle arxiv.org/abs/ID format
-    parts = url.rstrip('/').split('/')
+    parts = url.rstrip("/").split("/")
     return parts[-1]
 
 
@@ -377,7 +501,30 @@ def _pick_architecture_figure(figures) -> object | None:
         cap = (getattr(fig, "caption", None) or "").lower()
         if not cap:
             continue
-        score = (3 if "architecture" in cap else 0) + (2 if "model" in cap else 0) + (2 if any(k in cap for k in ("overview","framework","network","pipeline","diagram","transformer","attention","block")) else 0) + (1 if "figure" in cap or "fig" in cap else 0) - (1 if getattr(fig, "page", 1) <= 1 else 0)
-        if score > best_score: best, best_score = fig, score
+        score = (
+            (3 if "architecture" in cap else 0)
+            + (2 if "model" in cap else 0)
+            + (
+                2
+                if any(
+                    k in cap
+                    for k in (
+                        "overview",
+                        "framework",
+                        "network",
+                        "pipeline",
+                        "diagram",
+                        "transformer",
+                        "attention",
+                        "block",
+                    )
+                )
+                else 0
+            )
+            + (1 if "figure" in cap or "fig" in cap else 0)
+            - (1 if getattr(fig, "page", 1) <= 1 else 0)
+        )
+        if score > best_score:
+            best, best_score = fig, score
     # Only return if any caption clears the threshold (>0); otherwise fall back to None so vision path is skipped
     return best

@@ -16,6 +16,8 @@ log = get_logger("app")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fail fast in production: an unauthenticated paid API is not an option.
+    settings.require_master_key()
     # Create extension + tables (init_db is idempotent). Never let DB
     # problems take the app down — endpoints degrade without it.
     try:
@@ -25,6 +27,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log.warning(f"database init skipped (degraded mode): {e}")
     yield
+    # Drain indexing tasks before the loop is torn down on deploy.
+    from app.services.pipeline import _INDEX_TASKS
+    pending = tuple(_INDEX_TASKS.values())
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
 
 
 app = FastAPI(
@@ -101,4 +110,7 @@ app.include_router(router, prefix="/api")
 @app.get("/health")
 async def health():
     log.info("health check")
-    return {"status": "ok", "app": settings.APP_NAME, "security": {"rate_limiting": "active (SlowAPI)", "ssrf_protection": "active", "api_key_auth": "enabled"}}
+    auth_enabled = bool(
+        settings.MASTER_API_KEY or settings.API_KEYS or settings.PROXY_API_KEY
+    )
+    return {"status": "ok", "app": settings.APP_NAME, "security": {"rate_limiting": "active (SlowAPI)", "ssrf_protection": "active", "api_key_auth": "enabled" if auth_enabled else "disabled"}}
