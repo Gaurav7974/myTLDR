@@ -20,23 +20,54 @@ function Section({ n, title, children }: { n: string; title: string; children: R
   );
 }
 
+// Mono kicker for supporting lines (problem, motivation, importance) so the
+// eye can tell a label from body copy at a glance.
+function Label({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-zinc-500 whitespace-nowrap shrink-0">
+      {children}
+    </span>
+  );
+}
+
 export const SummaryTab: React.FC<SummaryTabProps> = ({ paper, onAskAI, onJumpToPage }) => {
   const { metadata } = paper;
   const [kw, setKw] = useState<KeywordDefinition|null>(null);
   const s: StructuredPaperSummary | undefined = paper.structuredSummary;
+  // An empty-but-valid payload is still "no summary" — show the honest state.
+  const hasContent = !!s && !!(
+    s.overview?.one_sentence || s.overview?.problem || s.overview?.solution ||
+    s.overview?.why_it_matters || s.contributions?.length || s.key_findings?.length ||
+    s.limitations?.length || s.key_specs?.length
+  );
   const badge = (c:string)=>({novel:'bg-emerald-50 text-emerald-700 border-emerald-200',architectural:'bg-blue-50 text-blue-700 border-blue-200',methodological:'bg-purple-50 text-purple-700 border-purple-200',experimental:'bg-amber-50 text-amber-700 border-amber-200'}[c]||'bg-zinc-100 text-zinc-600 border-zinc-200');
+
+  // Paper identity is identical in both states — chips only appear when the
+  // backend produced keywords.
+  const renderHeader = () => (
+    <header className="space-y-3">
+      <p className="font-mono text-[11px] uppercase tracking-widest text-zinc-400">{metadata.arxivId ? `arXiv:${metadata.arxivId}` : 'RESEARCH PAPER'}{metadata.publishedDate ? ` • ${metadata.publishedDate}` : ''}</p>
+      <h1 className="font-serif text-[26px] md:text-[30px] font-bold tracking-tight leading-tight">{metadata.title}</h1>
+      {metadata.authors?.length>0 && <p className="text-xs font-mono text-zinc-500">{metadata.authors.join(', ')}</p>}
+      {(metadata.keywords?.length||0)>0 && (
+        <div className="flex flex-wrap items-center gap-1 pt-1">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mr-1">Topics</span>
+          {metadata.keywords!.map(k=>(
+            <button key={k.id} onClick={()=>setKw(kw?.id===k.id?null:k)} className={`text-[11px] font-mono px-2 py-px rounded-full border transition ${kw?.id===k.id?'bg-zinc-900 text-white border-zinc-900':'bg-white border-zinc-200 hover:bg-zinc-50'}`}>#{k.term}</button>
+          ))}
+        </div>
+      )}
+      {kw && <KeywordPopover keyword={kw} onClose={()=>setKw(null)} onJumpToPage={onJumpToPage} onAskAI={p=>{setKw(null); onAskAI?.(p);}} />}
+    </header>
+  );
 
   // Honest unavailable state: when the backend produced no summary we say so.
   // Never substitute another paper's facts (the old fallback showed
   // Transformer specs for every paper).
-  if (!s) {
+  if (!s || !hasContent) {
     return (
       <article className="w-full max-w-3xl mx-auto px-6 md:px-8 py-8 pb-32 space-y-6 text-zinc-900 leading-relaxed">
-        <header className="space-y-3">
-          <p className="font-mono text-[11px] uppercase tracking-widest text-zinc-400">{metadata.arxivId ? `arXiv:${metadata.arxivId}` : 'RESEARCH PAPER'}{metadata.publishedDate ? ` • ${metadata.publishedDate}` : ''}</p>
-          <h1 className="font-serif text-[26px] md:text-[30px] font-bold tracking-tight leading-tight">{metadata.title}</h1>
-          {metadata.authors?.length>0 && <p className="text-xs font-mono text-zinc-500">{metadata.authors.join(', ')}</p>}
-        </header>
+        {renderHeader()}
         <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center space-y-2">
           <h3 className="text-sm font-semibold text-zinc-800">Summary unavailable for this paper</h3>
           <p className="text-xs text-zinc-500 leading-relaxed">
@@ -50,26 +81,13 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ paper, onAskAI, onJumpTo
 
   return (
     <article className="w-full max-w-3xl mx-auto px-6 md:px-8 py-8 pb-32 space-y-10 text-zinc-900 leading-relaxed">
-      {/* header — paper identity, no summary text here */}
-      <header className="space-y-3">
-        <p className="font-mono text-[11px] uppercase tracking-widest text-zinc-400">{metadata.arxivId ? `arXiv:${metadata.arxivId}` : 'RESEARCH PAPER'}{metadata.publishedDate ? ` • ${metadata.publishedDate}` : ''}</p>
-        <h1 className="font-serif text-[26px] md:text-[30px] font-bold tracking-tight leading-tight">{metadata.title}</h1>
-        {metadata.authors?.length>0 && <p className="text-xs font-mono text-zinc-500">{metadata.authors.join(', ')}</p>}
-        {(metadata.keywords?.length||0)>0 && (
-          <div className="flex flex-wrap items-center gap-1 pt-1">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mr-1">Topics</span>
-            {metadata.keywords!.map(k=>(
-              <button key={k.id} onClick={()=>setKw(kw?.id===k.id?null:k)} className={`text-[11px] font-mono px-2 py-px rounded-full border transition ${kw?.id===k.id?'bg-zinc-900 text-white border-zinc-900':'bg-white border-zinc-200 hover:bg-zinc-50'}`}>#{k.term}</button>
-            ))}
-          </div>
-        )}
-        {kw && <KeywordPopover keyword={kw} onClose={()=>setKw(null)} onJumpToPage={onJumpToPage} onAskAI={p=>{setKw(null); onAskAI?.(p);}} />}
-      </header>
+      {/* paper identity, no summary text here */}
+      {renderHeader()}
 
       {/* 1 — the paper in one sentence */}
       {s.overview?.one_sentence && (
         <Section n="01" title="The Paper in One Sentence">
-          <blockquote className="border-l-2 border-zinc-900 pl-4 py-1 text-[15px] font-serif italic text-zinc-800 leading-relaxed"><InteractiveHighlightedText text={s.overview.one_sentence} keywords={metadata.keywords} onAskAI={onAskAI} onJumpToPage={onJumpToPage} /></blockquote>
+          <blockquote className="border-l-2 border-zinc-900 pl-4 py-1 text-[17px] md:text-[19px] font-serif italic text-zinc-800 leading-relaxed"><InteractiveHighlightedText text={s.overview.one_sentence} keywords={metadata.keywords} onAskAI={onAskAI} onJumpToPage={onJumpToPage} /></blockquote>
         </Section>
       )}
 
@@ -77,10 +95,10 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ paper, onAskAI, onJumpTo
       {(s.overview?.problem || s.overview?.why_it_matters) && (
         <Section n="02" title="Problem & Motivation">
           {s.overview.problem && (
-            <div><h3 className="text-xs font-mono font-semibold uppercase tracking-wider text-zinc-500 mb-1">The problem</h3><p className="text-[14.5px] leading-7 text-zinc-800"><InteractiveHighlightedText text={s.overview.problem} keywords={metadata.keywords} onAskAI={onAskAI} onJumpToPage={onJumpToPage} /></p></div>
+            <div><div className="mb-1"><Label>The problem</Label></div><p className="text-[14.5px] leading-7 text-zinc-800"><InteractiveHighlightedText text={s.overview.problem} keywords={metadata.keywords} onAskAI={onAskAI} onJumpToPage={onJumpToPage} /></p></div>
           )}
           {s.overview.why_it_matters && (
-            <div><h3 className="text-xs font-mono font-semibold uppercase tracking-wider text-zinc-500 mb-1">Why it matters</h3><p className="text-[14.5px] leading-7 text-zinc-800"><InteractiveHighlightedText text={s.overview.why_it_matters} keywords={metadata.keywords} onAskAI={onAskAI} onJumpToPage={onJumpToPage} /></p></div>
+            <div><div className="mb-1"><Label>Why it matters</Label></div><p className="text-[14.5px] leading-7 text-zinc-800"><InteractiveHighlightedText text={s.overview.why_it_matters} keywords={metadata.keywords} onAskAI={onAskAI} onJumpToPage={onJumpToPage} /></p></div>
           )}
         </Section>
       )}
@@ -99,15 +117,20 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ paper, onAskAI, onJumpTo
             {s.contributions.map((c,i)=>(
               <li key={i}>
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-1">
-                  <span className="font-mono text-sm font-bold text-zinc-300">#{String(i+1).padStart(2,'0')}</span>
+                  <span className="font-mono text-xs font-bold bg-zinc-100 text-zinc-700 border border-zinc-200 px-2 py-1 rounded">{String(i+1).padStart(2,'0')}</span>
                   <h3 className="font-bold text-[15px] text-zinc-950 tracking-tight">{c.title}</h3>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 mb-1.5">
                   <span className={`text-[10px] font-mono px-1.5 py-px rounded border ${badge(c.category)}`}>{c.category}</span>
-                  {c.source?.page && <button onClick={()=>onJumpToPage?.(c.source!.page!,c.source!.section)} className="text-[11px] font-mono text-zinc-400 hover:text-zinc-900">p.{c.source.page} →</button>}
+                  {c.source?.page && <button onClick={()=>onJumpToPage?.(c.source!.page!,c.source!.section)} className="text-[11px] font-mono text-zinc-400 hover:text-zinc-900 whitespace-nowrap shrink-0">p.{c.source.page} →</button>}
                 </div>
                 <p className="text-sm text-zinc-700 leading-6"><InteractiveHighlightedText text={c.summary} keywords={metadata.keywords} onAskAI={onAskAI} onJumpToPage={onJumpToPage} /></p>
-                {c.importance && <p className="text-xs text-zinc-500 mt-1">Why it matters: {c.importance}</p>}
+                {c.importance && (
+                  <p className="mt-1.5 flex items-baseline gap-2 text-xs">
+                    <Label>Why it matters</Label>
+                    <span className="text-zinc-500">{c.importance}</span>
+                  </p>
+                )}
               </li>
             ))}
           </ol>
@@ -120,7 +143,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ paper, onAskAI, onJumpTo
           {s.key_findings.map((f,i)=>(
             <div key={i} className="flex gap-4">
               <span className="shrink-0 font-mono text-xs font-bold bg-zinc-900 text-white px-2 py-1 rounded h-fit">{f.metric_value}</span>
-              <div><h3 className="font-semibold text-sm">{f.title}</h3><p className="text-sm text-zinc-700 leading-6"><InteractiveHighlightedText text={f.summary} keywords={metadata.keywords} onAskAI={onAskAI} onJumpToPage={onJumpToPage} /></p></div>
+              <div><h3 className="font-bold text-[15px] text-zinc-950 tracking-tight">{f.title}</h3><p className="text-sm text-zinc-700 leading-6"><InteractiveHighlightedText text={f.summary} keywords={metadata.keywords} onAskAI={onAskAI} onJumpToPage={onJumpToPage} /></p></div>
             </div>
           ))}
           <p className="text-xs text-zinc-500 italic leading-relaxed border-l-2 border-zinc-200 pl-3">
@@ -134,7 +157,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ paper, onAskAI, onJumpTo
       {s.limitations?.length>0 && (
         <Section n="06" title="Limitations">
           {s.limitations.map((l,i)=>(
-            <div key={i} className="text-sm"><h3 className="font-semibold text-zinc-900">{l.title}</h3><p className="text-zinc-700 leading-6"><InteractiveHighlightedText text={l.summary} keywords={metadata.keywords} onAskAI={onAskAI} onJumpToPage={onJumpToPage} /></p>{l.details && <p className="text-xs text-zinc-500 italic mt-1">{l.details}</p>}</div>
+            <div key={i} className="text-sm"><h3 className="font-bold text-[15px] text-zinc-950 tracking-tight">{l.title}</h3><p className="mt-0.5 text-zinc-700 leading-6"><InteractiveHighlightedText text={l.summary} keywords={metadata.keywords} onAskAI={onAskAI} onJumpToPage={onJumpToPage} /></p>{l.details && <p className="mt-1 text-xs italic text-zinc-500">{l.details}</p>}</div>
           ))}
         </Section>
       )}
@@ -145,9 +168,9 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ paper, onAskAI, onJumpTo
           <dl className="divide-y divide-zinc-100 text-sm">
             {s.key_specs.map((spec,i)=>(
               <div key={i} className="flex justify-between gap-4 py-2.5">
-                <dt className="text-zinc-600">{spec.label}</dt>
+                <dt className="text-zinc-700">{spec.label}</dt>
                 <dd className="flex items-center gap-3 font-mono font-semibold text-zinc-900">{spec.value}
-                  {spec.source?.page && <button onClick={()=>onJumpToPage?.(spec.source!.page!, spec.source!.section)} className="text-[11px] font-mono text-zinc-400 hover:text-zinc-900">p.{spec.source.page} →</button>}
+                  {spec.source?.page && <button onClick={()=>onJumpToPage?.(spec.source!.page!, spec.source!.section)} className="text-[11px] font-mono text-zinc-400 hover:text-zinc-900 whitespace-nowrap shrink-0">p.{spec.source.page} →</button>}
                 </dd>
               </div>
             ))}

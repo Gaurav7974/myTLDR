@@ -14,7 +14,7 @@
 // and a helper that mirrors the exact same logic as the private function.
 
 import { describe, it, expect } from 'vitest';
-import { irToArchitectureGraph } from './api';
+import { irToArchitectureGraph, mapBackendKeywords } from './api';
 
 /** Mirrors the exact logic from transformArchitectureGraph in api.ts */
 function transformArchitectureGraph(
@@ -275,5 +275,52 @@ describe('transformArchitectureGraph — mixed / edge cases', () => {
     expect(graph.edges[1].style).toEqual({ name: 'residual' });
     expect(graph.layout_mode).toBe('auto');
     expect(graph.source).toBe('auto');
+  });
+});
+
+describe('mapBackendKeywords — snake_case backend → camelCase UI', () => {
+  it('returns [] for non-array input', () => {
+    expect(mapBackendKeywords(undefined)).toEqual([]);
+    expect(mapBackendKeywords('nope')).toEqual([]);
+    expect(mapBackendKeywords([])).toEqual([]);
+  });
+
+  it('maps fields and assigns stable ids', () => {
+    const result = mapBackendKeywords([
+      {
+        term: 'Multi-Head Attention',
+        category: 'mechanism',
+        definition: 'Parallel attention projections.',
+        simple_explanation: 'Several lenses at once.',
+        formula: '\\text{MultiHead}(Q,K,V)',
+        related_section: 'Page 4, Section 3.2.2',
+      },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      id: 'kw-0',
+      term: 'Multi-Head Attention',
+      category: 'mechanism',
+      definition: 'Parallel attention projections.',
+      simpleExplanation: 'Several lenses at once.',
+      formula: '\\text{MultiHead}(Q,K,V)',
+      relatedSection: 'Page 4, Section 3.2.2',
+    });
+  });
+
+  it('drops rows without a term so no empty chip renders', () => {
+    const result = mapBackendKeywords([
+      { term: '', category: 'core', definition: 'x', simple_explanation: 'y' },
+      { term: 'Valid', category: 'core', definition: 'x', simple_explanation: 'y' },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0].term).toBe('Valid');
+  });
+
+  it('defaults missing optional fields without inventing values', () => {
+    const result = mapBackendKeywords([{ term: 'LoRA' }]);
+    expect(result[0].category).toBe('core');
+    expect(result[0].formula).toBeUndefined();
+    expect(result[0].relatedSection).toBeUndefined();
   });
 });

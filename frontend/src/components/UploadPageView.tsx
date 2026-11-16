@@ -1,24 +1,15 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import dynamic from 'next/dynamic';
 import { PaperData } from '@/types/paper';
 import { TRANSFORMER_PAPER_DATA, MAMBA_PAPER_DATA, generateDynamicPaperData } from '@/lib/mockData';
 import { processPaperStream, lookupArxiv, ArxivLookup } from '@/lib/api';
-import { PixelMosaic } from '@/components/PixelMosaic';
 import { PixelHeaderGrid } from '@/components/PixelHeaderGrid';
 import { Reveal } from '@/components/Reveal';
 import { Typewriter, TypeOnce } from '@/components/Typewriter';
 import { UglyShrimpLoader } from '@/components/UglyShrimpLoader';
-// Physics wall is canvas-only with theme-dependent first render — keep it
-// client-side so SSR HTML never mismatches (was: hydration error).
-const StickerWall = dynamic(() => import('@/components/StickerWall'), {
-  ssr: false,
-  loading: () => <div className="flex min-h-[520px] w-full items-center justify-center" />,
-});
 import {
   ArrowRight,
-  ArrowUpRight,
   BookOpen,
   FileText,
   MessageSquare,
@@ -116,7 +107,7 @@ const SOURCES = [
   { name: 'Google Scholar', slug: 'googlescholar' },
 ];
 
-const TRUST_BADGES = ['NO SIGN-UP', 'FREE IN BETA', '3 DEPTHS', 'VERIFIED OUTPUT'];
+const TRUST_BADGES = ['NO ACCOUNT NEEDED', 'FREE IN BETA', 'BEGINNER → EXPERT', 'NEVER A WRONG DIAGRAM'];
 
 const DEPTHS = [
   { id: 'beginner' as const, label: 'BEGINNER' },
@@ -441,44 +432,6 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
                 for Research Papers.
               </h1>
             </div>
-
-            {/* Right Info & Platform Intelligence Column (No person photos) */}
-            <div className="lg:col-span-5 space-y-4 lg:pt-1 animate-slideUp [animation-delay:150ms]">
-              {/* Platform Capability Badges (Proprietary & Value-Driven) */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border-2 border-ink shadow-xs">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                  </span>
-                  <span className="font-mono text-xs font-bold text-ink">REAL-TIME RESEARCH ENGINE</span>
-                </div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#0055FF]/10 border-2 border-[#0055FF] text-[#0055FF] font-mono text-xs font-bold">
-                  <span>✦ 3D NEURAL DECONSTRUCTOR</span>
-                </div>
-              </div>
-
-              <p className="text-sm text-ink/75 leading-relaxed font-medium">
-                Deconstruct any arXiv, NeurIPS, or ICML paper into an interactive 3D architecture, plain-English summary, and step-by-step LaTeX math formulation — verified with 0% hallucination.
-              </p>
-
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-4 pt-0.5">
-                <a
-                  href="#input-form"
-                  className="flex items-center gap-2 px-4 py-2.5 bg-ink text-white hover:bg-[#0055FF] font-mono text-xs font-bold tracking-wider uppercase transition-all shadow-md active:translate-y-[1px]"
-                >
-                  <span className="w-2.5 h-2.5 bg-white inline-block" />
-                  <span>DECONSTRUCT PAPER</span>
-                </a>
-                <button
-                  onClick={() => onSelectPaper(TRANSFORMER_PAPER_DATA)}
-                  className="flex items-center gap-2 font-mono text-xs font-bold tracking-wider uppercase text-ink hover:text-[#0055FF] transition-colors underline underline-offset-4"
-                >
-                  <span>▷ ATTENTION IS ALL YOU NEED [DEMO]</span>
-                </button>
-              </div>
-            </div>
           </div>
 
           {/* Input + depth + submit */}
@@ -631,7 +584,7 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
               </React.Fragment>
             ))}
             <span className="w-full pt-1 text-[10px] tracking-[0.06em] text-fog">
-              NO SIGN-IN. FREE WHILE IN BETA. DROP A PDF ANYWHERE ON THE BOX ABOVE.
+              PASTE A LINK OR DROP A PDF. GET THE SUMMARY, THE DIAGRAM, THE EQUATIONS, AND CHAT.
             </span>
           </div>
 
@@ -690,8 +643,7 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
                     </div>
                   </div>
                   <h3 className="mt-6 text-base font-bold uppercase tracking-tight">{card.title}</h3>
-                  <p className="mt-3 flex-1 font-mono text-xs leading-relaxed text-ink/60">{card.desc}</p>
-                  <ArrowUpRight className="mt-6 h-5 w-5 self-end text-ink/30 transition-all duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-volt" />
+                  <p className="mt-3 font-mono text-xs leading-relaxed text-ink/60">{card.desc}</p>
                 </div>
               </Reveal>
             ))}
@@ -733,8 +685,16 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
             {filteredPapers.map((paper, i) => (
               <Reveal key={paper.id} delay={(i % 2) * 100}>
                 <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => !isProcessing && onSelectPaper(paper.data)}
-                  className={`group flex h-full cursor-pointer flex-col border-2 border-ink bg-white p-5 transition-all duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:hard-shadow ${
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      if (!isProcessing) onSelectPaper(paper.data);
+                    }
+                  }}
+                  className={`group flex h-full cursor-pointer flex-col border-2 border-ink bg-white p-5 transition-all duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:hard-shadow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0055FF] ${
                     isProcessing ? 'pointer-events-none opacity-50' : ''
                   }`}
                 >
@@ -766,180 +726,31 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
         </div>
       </section>
 
-      {/* ============ FEEDBACK WALL (physics) ============ */}
-      <section id="feedback" className="border-b-2 border-ink bg-white">
-        <div className="mx-auto w-full max-w-[1400px] px-4 py-14 md:px-6 md:py-20">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h2 className="text-3xl font-bold uppercase leading-[1.02] tracking-[-0.02em] md:text-5xl">
-                LEAVE YOUR <span className="font-mono font-bold text-volt">MARK</span>
-              </h2>
-              <p className="mt-3 font-mono text-xs text-ink/60">PHYSICS WALL — DRAG, TOSS, COLLIDE.</p>
-            </div>
-          </div>
-          <div className="mt-8 overflow-hidden rounded-xl border-2 border-ink hard-shadow">
-            <StickerWall />
-          </div>
-        </div>
-      </section>
-
       {/* ============ FOOTER ============ */}
       <footer className="mt-auto border-t-2 border-zinc-950 bg-[#0D0E11] text-white">
-        <div className="mx-auto w-full max-w-[1400px] px-4 py-12 md:px-8 md:py-16">
-          <div className="grid grid-cols-1 gap-10 lg:grid-cols-12">
-            {/* Left Brand Column */}
-            <div className="lg:col-span-5 space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 text-[#0055FF] flex items-center justify-center font-mono font-bold text-lg">
-                    ✦
-                  </div>
-                  <span className="font-sans font-black text-2xl tracking-tight text-white">
-                    myTLDR
-                  </span>
-                  <span className="hidden sm:inline-flex px-2 py-0.5 bg-zinc-900 border border-zinc-700/80 text-zinc-300 font-mono text-[10px] font-bold tracking-wider uppercase rounded-xs">
-                    Paper Decoder
-                  </span>
-                </div>
-                <span className="px-2 py-0.5 bg-zinc-900 border border-zinc-700/80 text-zinc-400 font-mono text-[10px] font-bold tracking-wider uppercase rounded-xs">
-                  v1.0-BETA
-                </span>
+        <div className="mx-auto w-full max-w-[1400px] px-4 py-10 md:px-8 md:py-12">
+          <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
+            {/* Identity — one line, no marketing paragraph */}
+            <div className="max-w-sm">
+              <div className="flex items-center gap-2.5">
+                <span className="font-mono text-lg font-bold leading-none text-[#0055FF]">✦</span>
+                <span className="font-sans text-lg font-black tracking-tight">myTLDR</span>
+                <span className="font-mono text-[11px] text-zinc-500">Paper Decoder</span>
               </div>
-
-              <p className="max-w-md text-xs font-mono text-zinc-400 leading-relaxed">
-                The next-generation research paper deconstructor. Transform dense academic PDFs and arXiv preprints into interactive 3D architecture diagrams, plain-English executive briefs, and step-by-step LaTeX math formulations.
+              <p className="mt-3 font-mono text-[11px] leading-relaxed text-zinc-500">
+                A verified architecture diagram, a plain-English brief, and chat grounded in the paper.
               </p>
-
-              <div className="flex items-center gap-2 pt-2">
-                <div className="inline-flex items-center gap-2 px-2.5 py-1 bg-zinc-900 border border-zinc-800 font-mono text-[11px] text-zinc-300">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                  </span>
-                  <span>ALL SYSTEMS OPERATIONAL</span>
-                </div>
-              </div>
             </div>
 
-            {/* Right Links Grid */}
-            <div className="lg:col-span-7 grid grid-cols-2 sm:grid-cols-3 gap-8 font-mono text-xs">
-              {/* Platform */}
-              <div className="space-y-3">
-                <h4 className="font-bold tracking-wider uppercase text-white text-[11px]">
-                  Platform
-                </h4>
-                <ul className="space-y-2 text-zinc-400">
-                  <li>
-                    <a href="#classics" className="hover:text-white transition-colors">
-                      3D Visualizer
-                    </a>
-                  </li>
-                  <li>
-                    <a href="#how" className="hover:text-white transition-colors">
-                      Summary & ELI5
-                    </a>
-                  </li>
-                  <li>
-                    <a href="#how" className="hover:text-white transition-colors">
-                      Equations & Math
-                    </a>
-                  </li>
-                  <li>
-                    <a href="#input-zone" className="hover:text-white transition-colors">
-                      PyTorch Generator
-                    </a>
-                  </li>
-                  <li>
-                    <a href="#classics" className="hover:text-white transition-colors">
-                      AI Assistant
-                    </a>
-                  </li>
-                </ul>
-              </div>
-
-              {/* Benchmarks */}
-              <div className="space-y-3">
-                <h4 className="font-bold tracking-wider uppercase text-white text-[11px]">
-                  Benchmarks
-                </h4>
-                <ul className="space-y-2 text-zinc-400">
-                  <li>
-                    <button
-                      onClick={() => onSelectPaper(TRANSFORMER_PAPER_DATA)}
-                      className="text-left hover:text-white transition-colors cursor-pointer"
-                    >
-                      Transformer (1706.03762)
-                    </button>
-                  </li>
-                  <li>
-                    <a href="#classics" className="hover:text-white transition-colors">
-                      FlashAttention
-                    </a>
-                  </li>
-                  <li>
-                    <a href="#classics" className="hover:text-white transition-colors">
-                      Mamba SSM
-                    </a>
-                  </li>
-                  <li>
-                    <a href="#classics" className="hover:text-white transition-colors">
-                      Llama 2
-                    </a>
-                  </li>
-                  <li>
-                    <a href="#classics" className="hover:text-white transition-colors">
-                      LoRA Adaptation
-                    </a>
-                  </li>
-                </ul>
-              </div>
-
-              {/* Resources */}
-              <div className="space-y-3 col-span-2 sm:col-span-1">
-                <h4 className="font-bold tracking-wider uppercase text-white text-[11px]">
-                  Resources
-                </h4>
-                <ul className="space-y-2 text-zinc-400">
-                  <li>
-                    <a href="#input-form" className="hover:text-white transition-colors">
-                      arXiv Ingestion
-                    </a>
-                  </li>
-                  <li>
-                    <a href="#input-form" className="hover:text-white transition-colors">
-                      PDF Upload
-                    </a>
-                  </li>
-                  <li>
-                    <a href="#how" className="hover:text-white transition-colors">
-                      Verification Pipeline
-                    </a>
-                  </li>
-                  <li>
-                    <a href="#how" className="hover:text-white transition-colors">
-                      Documentation
-                    </a>
-                  </li>
-                  <li>
-                    <a href="#how" className="hover:text-white transition-colors">
-                      Privacy & Terms
-                    </a>
-                  </li>
-                </ul>
-              </div>
-            </div>
+            {/* Real anchors only */}
+            <nav className="flex flex-wrap items-center gap-x-7 gap-y-2 font-mono text-xs text-zinc-400">
+              <a href="#how" className="transition-colors hover:text-white">How it works</a>
+              <a href="#classics" className="transition-colors hover:text-white">Classics</a>
+            </nav>
           </div>
 
-          {/* Bottom Bar */}
-          <div className="mt-12 pt-8 border-t border-zinc-800/80 flex flex-col sm:flex-row items-center justify-between gap-4 font-mono text-[11px] text-zinc-500">
-            <div>
-              © 2026 myTLDR. Engineered for AI researchers, engineers, and curious minds.
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="text-zinc-600">ZERO HALLUCINATION GUARANTEE</span>
-              <span className="text-zinc-700">•</span>
-              <span className="text-[#0055FF] font-bold">VERIFIED OUTPUT</span>
-            </div>
+          <div className="mt-8 border-t border-zinc-800/80 pt-5 font-mono text-[11px] text-zinc-600">
+            © 2026 myTLDR
           </div>
         </div>
       </footer>

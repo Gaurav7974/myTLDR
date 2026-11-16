@@ -117,7 +117,11 @@ html {
 }
 
 body {
-  height: 100%;
+  /* min-height, not height: the landing page is a flex column whose content is
+     taller than the viewport. A fixed height made the column overflow, and the
+     overflow:hidden marquee band (automatic min-size 0) absorbed the squeeze
+     and clipped its own text in half. */
+  min-height: 100%;
   background-color: #FAFAFA;
 }
 
