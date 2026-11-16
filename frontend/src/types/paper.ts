@@ -228,6 +228,9 @@ export interface PaperData {
    *  When present, the visualizer uses it for the 2D diagram; when absent,
    *  the visualizer shows an honest unavailable state (never a static mock). */
   architectureGraph?: ArchitectureGraph;
+  /** False when the backend found no verified graph: the UI must not
+   *  rebuild one from the IR. Older payloads omit this flag. */
+  diagramAvailable?: boolean;
   bycroftStages?: BycroftStage[];
   residualHighways?: { id: string; startStep: number; endStep: number; label: string; color?: string }[];
   attentionHeatmap?: AttentionHeatmapData;

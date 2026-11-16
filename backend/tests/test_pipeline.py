@@ -14,7 +14,7 @@ from app.models.graph import (
     BoundingBox, GRAPH_PAYLOAD_VERSION, VISION_CONFIDENCE_THRESHOLD,
 )
 from app.services.graph_merge import (
-    merge_graph_metadata, should_render_reconstruction,
+    decide_diagram, merge_graph_metadata, should_render_reconstruction,
 )
 from app.services.pipeline import _pick_architecture_figure
 
@@ -185,80 +185,78 @@ def test_should_render_only_for_verified_vision_figure():
 
     assert should_render_reconstruction(None) is False
 
-# ── pipeline decision matrix ──────────────────────────────────────
-def test_pipeline_decision_verified_vision_wins():
-    """Mirrors the decision block in pipeline.py stage 4."""
-    from app.services.figure_extraction import is_verified_vision_graph
-
-    def decide(vision, text, text_verified):
-        if is_verified_vision_graph(vision):
-            return vision, True, "verified_vision"
-        if text_verified and text and len(text.nodes) > 0:
-            return text, True, "verified_text"
-        return None, False, "no_verified_graph"
-
-    valid_v = ArchitectureGraph(
-        source="vision", layout_mode="figure", version=GRAPH_PAYLOAD_VERSION,
-        nodes=[GraphNode(id="a", label="A", type="other")], edges=[],
-        verification=GraphVerification(valid=True, confidence=0.9),
+# ── pipeline decision matrix — tests call the same function as the pipeline ──
+def _decision_graph(
+    source="vision", layout="figure", valid=True, confidence=0.9,
+    hallucinations=None, with_nodes=True,
+):
+    return ArchitectureGraph(
+        source=source, layout_mode=layout, version=GRAPH_PAYLOAD_VERSION,
+        nodes=[GraphNode(id="a", label="A", type="other")] if with_nodes else [],
+        edges=[],
+        verification=GraphVerification(
+            valid=valid, confidence=confidence, hallucinations=hallucinations or [],
+        ),
     )
-    text = ArchitectureGraph(
-        source="text", layout_mode="auto", version=GRAPH_PAYLOAD_VERSION,
-        nodes=[GraphNode(id="a", label="A", type="other")], edges=[],
-    )
-    g, available, reason = decide(valid_v, text, text_verified=True)
-    assert g is valid_v
+
+
+def test_decide_diagram_verified_vision_wins():
+    vision = _decision_graph()
+    text = _decision_graph(source="text", layout="auto")
+
+    graph, available, reason = decide_diagram(vision, text, True, False)
+
     assert available is True
     assert reason == "verified_vision"
+    assert graph is not None
+    assert graph.source == "merged"
 
 
-def test_pipeline_decision_invalid_vision_falls_back_to_text():
-    from app.services.figure_extraction import is_verified_vision_graph
+def test_decide_diagram_verified_text_used():
+    text = _decision_graph(source="text", layout="auto")
 
-    def decide(vision, text, text_verified):
-        if is_verified_vision_graph(vision):
-            return vision, True, "verified_vision"
-        if text_verified and text and len(text.nodes) > 0:
-            return text, True, "verified_text"
-        return None, False, "no_verified_graph"
+    graph, available, reason = decide_diagram(None, text, True, False)
 
-    invalid_v = ArchitectureGraph(
-        source="vision", layout_mode="figure", version=GRAPH_PAYLOAD_VERSION,
-        nodes=[GraphNode(id="a", label="A", type="other")], edges=[],
-        verification=GraphVerification(valid=True, confidence=0.3),
-    )
-    text = ArchitectureGraph(
-        source="text", layout_mode="auto", version=GRAPH_PAYLOAD_VERSION,
-        nodes=[GraphNode(id="a", label="A", type="other")], edges=[],
-    )
-    g, available, reason = decide(invalid_v, text, text_verified=True)
-    assert g is text
+    assert graph is text
+    assert available is True
     assert reason == "verified_text"
 
 
-def test_pipeline_decision_no_verified_returns_no_diagram():
-    from app.services.figure_extraction import is_verified_vision_graph
+def test_decide_diagram_unverified_vision_is_text_only():
+    vision = _decision_graph(confidence=0.3)
 
-    def decide(vision, text, text_verified):
-        if is_verified_vision_graph(vision):
-            return vision, True, "verified_vision"
-        if text_verified and text and len(text.nodes) > 0:
-            return text, True, "verified_text"
-        return None, False, "no_verified_graph"
+    assert decide_diagram(vision, None, False, False) == (
+        None, False, "unverified_vision",
+    )
 
-    invalid_v = ArchitectureGraph(
-        source="vision", layout_mode="figure", version=GRAPH_PAYLOAD_VERSION,
-        nodes=[GraphNode(id="a", label="A", type="other")], edges=[],
-        verification=GraphVerification(valid=True, confidence=0.3),
+
+def test_decide_diagram_hallucinated_vision_is_text_only():
+    vision = _decision_graph(hallucinations=["fake"])
+
+    assert decide_diagram(vision, None, False, False) == (
+        None, False, "unverified_vision",
     )
-    text = ArchitectureGraph(
-        source="text", layout_mode="auto", version=GRAPH_PAYLOAD_VERSION,
-        nodes=[GraphNode(id="a", label="A", type="other")], edges=[],
+
+
+def test_decide_diagram_text_auto_fallback_is_text_only():
+    text = _decision_graph(source="text", layout="auto")
+
+    assert decide_diagram(None, text, False, False) == (
+        None, False, "text_auto_fallback",
     )
-    g, available, reason = decide(invalid_v, text, text_verified=False)
-    assert g is None
-    assert available is False
-    assert reason == "no_verified_graph"
+
+
+def test_decide_diagram_no_architecture_section():
+    assert decide_diagram(None, None, False, True) == (
+        None, False, "no_architecture_section",
+    )
+
+
+def test_decide_diagram_no_graphs():
+    assert decide_diagram(None, None, False, False) == (
+        None, False, "no_verified_graph",
+    )
+
 
 @pytest.mark.asyncio
 async def test_pipeline_rejects_non_academic_upload():

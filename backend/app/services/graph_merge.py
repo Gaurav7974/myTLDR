@@ -24,6 +24,7 @@ from app.services.figure_extraction import (
 
 # Re-export for callers that import the pipeline helpers.
 __all__ = [
+    "decide_diagram",
     "merge_graph_metadata",
     "should_render_reconstruction",
     "is_verified_vision_graph",
@@ -155,3 +156,34 @@ def should_render_reconstruction(graph: ArchitectureGraph | None) -> bool:
 # Convenience alias for pipeline imports
 def is_verified_vision_graph(graph: ArchitectureGraph | None) -> bool:
     return _is_verified_vision_graph(graph)
+
+
+def decide_diagram(
+    vision_graph: ArchitectureGraph | None,
+    text_graph: ArchitectureGraph | None,
+    text_verified: bool,
+    arch_section_missing: bool,
+) -> tuple[ArchitectureGraph | None, bool, str]:
+    """Single source of truth for whether a diagram may be shown.
+
+    Only verified graphs are renderable. An unverified candidate is
+    dropped so the frontend shows text-only rather than a wrong diagram.
+    """
+    if arch_section_missing and not vision_graph:
+        return None, False, "no_architecture_section"
+    if is_verified_vision_graph(vision_graph):
+        graph = (
+            merge_graph_metadata(vision_graph, text_graph, prefer="vision")
+            if text_verified and text_graph
+            else vision_graph
+        )
+        return graph, True, "verified_vision"
+    if vision_graph and vision_graph.nodes:
+        return None, False, "unverified_vision"
+    if text_verified and text_graph and text_graph.nodes:
+        return text_graph, True, "verified_text"
+    if text_graph and text_graph.nodes:
+        return None, False, "text_auto_fallback"
+    if arch_section_missing:
+        return None, False, "no_architecture_section"
+    return None, False, "no_verified_graph"
