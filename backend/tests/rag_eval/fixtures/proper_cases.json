@@ -1,0 +1,96 @@
+{
+  "transformer": {
+    "paper_id": "1706.03762",
+    "title": "Attention Is All You Need",
+    "pdf": "testing/papers/1706.03762.pdf",
+    "expected_pages": 15,
+    "oracle_clean_chars": 30147,
+    "oracle_diagram_source": "vision",
+    "oracle_ir_paradigm": "transformer",
+    "cases": [
+      {"query": "What is scaled dot-product attention formula?", "expect": ["softmax", "qk"]},
+      {"query": "How many attention heads are used?", "expect": ["h = 8", "8 parallel"]},
+      {"query": "What embedding dimension is used?", "expect": ["512", "dmodel"]},
+      {"query": "How long was the model trained and on how many GPUs?", "expect": ["3.5 days", "gpus"]},
+      {"query": "What BLEU scores were achieved on German and French?", "expect": ["28.4", "41.8"]},
+      {"query": "What positional encoding is used?", "expect": ["sinusoidal", "positional"]}
+    ]
+  },
+  "qwen3vl": {
+    "paper_id": "2511.21631",
+    "title": "Qwen3-VL Technical Report",
+    "pdf": "testing/papers/2511.21631.pdf",
+    "expected_pages": 42,
+    "oracle_clean_chars": 102454,
+    "oracle_diagram_source": "merged",
+    "oracle_ir_paradigm": "transformer",
+    "cases": [
+      {"query": "What context length does Qwen3-VL support?", "expect": ["256k", "256"]},
+      {"query": "What is interleaved MRoPE?", "expect": ["mrope", "interleaved"]},
+      {"query": "What is DeepStack?", "expect": ["deepstack"]},
+      {"query": "What is the vision-language merger?", "expect": ["merger", "vision-language"]},
+      {"query": "What vision encoder is used?", "expect": ["siglip"]}
+    ]
+  },
+  "qwen": {
+    "paper_id": "2309.16609",
+    "title": "QWEN Technical Report",
+    "pdf": "testing/papers/2309.16609.pdf",
+    "expected_pages": 59,
+    "oracle_clean_chars": 72040,
+    "oracle_diagram_source": "text",
+    "oracle_ir_paradigm": "transformer",
+    "cases": [
+      {"query": "What positional embedding is used?", "expect": ["rope", "rotary"]},
+      {"query": "What activation function is used?", "expect": ["swiglu"]},
+      {"query": "What normalization is used?", "expect": ["rmsnorm"]},
+      {"query": "How many tokens was Qwen pretrained on?", "expect": ["3 trillion", "3t"]},
+      {"query": "What parameter sizes were released?", "expect": ["1.8b", "7b", "14b"]}
+    ]
+  },
+  "resnet": {
+    "paper_id": "1512.03385",
+    "title": "Deep Residual Learning for Image Recognition",
+    "pdf": "papers/1512.03385.pdf",
+    "expected_pages": 12,
+    "oracle_clean_chars": null,
+    "oracle_diagram_source": null,
+    "oracle_ir_paradigm": "transformer",
+    "cases": [
+      {"query": "What is the residual formulation?", "expect": ["residual", "shortcut", "identity"]},
+      {"query": "What is the bottleneck block?", "expect": ["bottleneck", "1x1"]},
+      {"query": "What ImageNet top-5 error was achieved?", "expect": ["3.57"]},
+      {"query": "How deep was the deepest ResNet?", "expect": ["152", "deeper"]},
+      {"query": "What dataset was used?", "expect": ["imagenet"]}
+    ]
+  },
+  "deepseek_v3": {
+    "paper_id": "2412.19437",
+    "title": "DeepSeek-V3 Technical Report",
+    "pdf": "testing/papers/2412.19437.pdf",
+    "expected_pages": 53,
+    "oracle_clean_chars": 107892,
+    "oracle_diagram_source": "merged",
+    "oracle_ir_paradigm": "transformer",
+    "cases": [
+      {"query": "What is Multi-head Latent Attention?", "expect": ["mla", "latent attention"]},
+      {"query": "What is the MoE architecture?", "expect": ["moe", "mixture of experts"]},
+      {"query": "How many total and active parameters?", "expect": ["671b", "37b"]},
+      {"query": "What is Multi-Token Prediction?", "expect": ["multi-token prediction", "mtp"]}
+    ]
+  },
+  "survey": {
+    "paper_id": "2307.06435",
+    "title": "A Comprehensive Overview of Large Language Models",
+    "pdf": "testing/papers/2307.06435.pdf",
+    "expected_pages": 47,
+    "oracle_clean_chars": 176124,
+    "oracle_diagram_source": null,
+    "oracle_ir_paradigm": "transformer",
+    "expected_diagram_available": false,
+    "cases": [
+      {"query": "What are the main categories of LLMs covered?", "expect": ["pre-training", "fine-tuning"]},
+      {"query": "What evaluation methods are discussed?", "expect": ["benchmark", "evaluation"]}
+    ]
+  }
+}

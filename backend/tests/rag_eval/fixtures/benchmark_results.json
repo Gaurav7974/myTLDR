@@ -1,0 +1,144 @@
+{
+  "rows": [
+    {
+      "query": "What is scaled dot-product attention formula?",
+      "expect": [
+        "softmax",
+        "qk"
+      ],
+      "backend": {
+        "recall": 1.0,
+        "mrr": 0.3333333333333333,
+        "ndcg": 1.3175293653079347,
+        "prec": 0.6,
+        "hits": 5,
+        "ms": 4.6
+      },
+      "llamaindex": {
+        "recall": 1.0,
+        "mrr": 0.3333333333333333,
+        "ndcg": 1.3175293653079347,
+        "prec": 0.6,
+        "hits": 5,
+        "ms": 15.64
+      }
+    },
+    {
+      "query": "How many attention heads are used?",
+      "expect": [
+        "h = 8",
+        "8 parallel"
+      ],
+      "backend": {
+        "recall": 0.0,
+        "mrr": 0.0,
+        "ndcg": 0.0,
+        "prec": 0.0,
+        "hits": 5,
+        "ms": 3.82
+      },
+      "llamaindex": {
+        "recall": 0.0,
+        "mrr": 0.0,
+        "ndcg": 0.0,
+        "prec": 0.0,
+        "hits": 5,
+        "ms": 15.03
+      }
+    },
+    {
+      "query": "What embedding dimension is used?",
+      "expect": [
+        "512",
+        "dmodel"
+      ],
+      "backend": {
+        "recall": 1.0,
+        "mrr": 0.5,
+        "ndcg": 1.1309297535714575,
+        "prec": 0.4,
+        "hits": 5,
+        "ms": 3.81
+      },
+      "llamaindex": {
+        "recall": 1.0,
+        "mrr": 0.5,
+        "ndcg": 1.9484591188793923,
+        "prec": 0.8,
+        "hits": 5,
+        "ms": 15.03
+      }
+    },
+    {
+      "query": "How long was the model trained and on how many GPUs?",
+      "expect": [
+        "3.5 days",
+        "gpus"
+      ],
+      "backend": {
+        "recall": 1.0,
+        "mrr": 1.0,
+        "ndcg": 2.4484591188793923,
+        "prec": 0.8,
+        "hits": 5,
+        "ms": 4.02
+      },
+      "llamaindex": {
+        "recall": 1.0,
+        "mrr": 1.0,
+        "ndcg": 2.4484591188793923,
+        "prec": 0.8,
+        "hits": 5,
+        "ms": 15.11
+      }
+    },
+    {
+      "query": "What BLEU scores were achieved on German and French?",
+      "expect": [
+        "28.4",
+        "41.8"
+      ],
+      "backend": {
+        "recall": 1.0,
+        "mrr": 0.3333333333333333,
+        "ndcg": 1.3175293653079347,
+        "prec": 0.6,
+        "hits": 5,
+        "ms": 3.85
+      },
+      "llamaindex": {
+        "recall": 1.0,
+        "mrr": 0.5,
+        "ndcg": 1.5177825608059992,
+        "prec": 0.6,
+        "hits": 5,
+        "ms": 14.85
+      }
+    },
+    {
+      "query": "What positional encoding is used?",
+      "expect": [
+        "sinusoidal",
+        "positional"
+      ],
+      "backend": {
+        "recall": 1.0,
+        "mrr": 1.0,
+        "ndcg": 2.9484591188793923,
+        "prec": 1.0,
+        "hits": 5,
+        "ms": 3.92
+      },
+      "llamaindex": {
+        "recall": 1.0,
+        "mrr": 1.0,
+        "ndcg": 2.9484591188793923,
+        "prec": 1.0,
+        "hits": 5,
+        "ms": 15.27
+      }
+    }
+  ],
+  "backend_chunks": 87,
+  "llamaindex_chunks": 87
+}
