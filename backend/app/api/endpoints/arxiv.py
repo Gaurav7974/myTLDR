@@ -59,4 +59,5 @@ async def arxiv_lookup(
         "authors": meta.get("authors", []),
         "abstract": (meta.get("abstract") or "")[:2000],
         "categories": meta.get("categories", []),
+        "published": meta.get("published", ""),
     }

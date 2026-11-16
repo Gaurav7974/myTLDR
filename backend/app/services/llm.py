@@ -5,14 +5,18 @@ endpoint, so a single client drives them.
 Kept the legacy symbol name groq_client so existing imports keep working.
 """
 
-import time, threading, json, requests
+import time, threading, json, re, requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from app.core.config import settings
 from app.core.logger import get_logger
+
 log = get_logger(__name__)
 _session = requests.Session()
-_session.mount("https://", HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=Retry(total=0)))
+_session.mount(
+    "https://",
+    HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=Retry(total=0)),
+)
 _sem = threading.Semaphore(4)
 
 
@@ -25,6 +29,18 @@ class ChatClient:
 
     def __init__(self):
         self.providers = []
+        # Primary: Gemini (Google AI Studio, OpenAI-compatible). The Mistral
+        # accounts on file are quota-capped (2 RPM ministral / 0 RPM OCR), so
+        # Gemini carries the load; Mistral and Groq ride shotgun after it.
+        if settings.GEMINI_API_KEY:
+            self.providers.append(
+                {
+                    "name": "gemini",
+                    "url": settings.GEMINI_LLM_URL,
+                    "key": settings.GEMINI_API_KEY,
+                    "model": settings.GEMINI_MODEL,
+                }
+            )
         # Primary: Mistral (text + vision-capable).
         # If a second Mistral key is configured, register it alongside the first.
         # _next_mistral_key() rotates between them per-call so rate-limit quota
@@ -33,27 +49,50 @@ class ChatClient:
             mistral_keys = [settings.MISTRAL_API_KEY]
             if settings.MISTRAL_API_KEY_2:
                 mistral_keys.append(settings.MISTRAL_API_KEY_2)
-                log.info(f"[LLM] Mistral key rotation enabled: {len(mistral_keys)} keys configured")
+                log.info(
+                    f"[LLM] Mistral key rotation enabled: {len(mistral_keys)} keys configured"
+                )
             self._mistral_keys = mistral_keys
             self._mistral_key_idx = 0
             self._mistral_key_lock = threading.Lock()
-            self.providers.append({
-                "name": "mistral",
-                "url": settings.MISTRAL_LLM_URL,
-                "key": None,          # resolved per-call via _next_mistral_key()
-                "model": settings.MISTRAL_LLM_MODEL,
-                "_rotating": True,    # signals _post() to pick key dynamically
-            })
+            self.providers.append(
+                {
+                    "name": "mistral",
+                    "url": settings.MISTRAL_LLM_URL,
+                    "key": None,  # resolved per-call via _next_mistral_key()
+                    "model": settings.MISTRAL_LLM_MODEL,
+                    "_rotating": True,  # signals _post() to pick key dynamically
+                }
+            )
         # Optional failover: Groq (text-only).
         if settings.LLM_FALLBACK_ENABLED and settings.GROQ_API_KEY:
-            self.providers.append({
-                "name": "groq",
-                "url": settings.GROQ_API_URL,
-                "key": settings.GROQ_API_KEY,
-                "model": settings.LLM_FALLBACK_MODEL,
-            })
+            self.providers.append(
+                {
+                    "name": "groq",
+                    "url": settings.GROQ_API_URL,
+                    "key": settings.GROQ_API_KEY,
+                    "model": settings.LLM_FALLBACK_MODEL,
+                }
+            )
         self.max_retries = settings.LLM_MAX_RETRIES
         self.backoff_base = settings.LLM_RETRY_BACKOFF_BASE
+        # Gemini free tier ≈ 10 req/min for flash-lite; unthrottled bursts exhaust
+        # the pool in seconds (observed: classifier OK, then 429 on vision/IR).
+        # Elapse ~5s between calls to this provider.
+        self._min_interval = {"gemini": 5.0}
+        self._throttle_state: dict[str, float] = {}
+        self._throttle_lock = threading.Lock()
+
+    def _throttle(self, name: str) -> None:
+        iv = self._min_interval.get(name)
+        if not iv:
+            return
+        with self._throttle_lock:
+            now = time.time()
+            gap = iv - (now - self._throttle_state.get(name, 0.0))
+            if gap > 0:
+                time.sleep(gap)
+            self._throttle_state[name] = time.time()
 
     # -- Key rotation ----------------------------------------------------------
 
@@ -66,8 +105,13 @@ class ChatClient:
 
     # -- Public API ------------------------------------------------------------
 
-    def call(self, messages: list, model: str = None,
-             response_format: dict = None, temperature: float = 0.1) -> str:
+    def call(
+        self,
+        messages: list,
+        model: str = None,
+        response_format: dict = None,
+        temperature: float = 0.1,
+    ) -> str:
         """Call the chat endpoint, trying each configured provider in order."""
         if not self.providers:
             raise Exception("No LLM provider configured (set OCR_KEY or GROQ_API_KEY)")
@@ -75,7 +119,11 @@ class ChatClient:
         msgs = list(messages)
         if response_format and response_format.get("type") == "json_object":
             last_user_idx = next(
-                (i for i in range(len(msgs) - 1, -1, -1) if msgs[i].get("role") == "user"),
+                (
+                    i
+                    for i in range(len(msgs) - 1, -1, -1)
+                    if msgs[i].get("role") == "user"
+                ),
                 None,
             )
             has_json = False
@@ -83,10 +131,18 @@ class ChatClient:
                 has_json = "json" in str(msgs[last_user_idx].get("content", "")).lower()
             if not has_json and len(msgs) > 0:
                 msgs = [dict(m) for m in msgs]
-                if last_user_idx is not None and isinstance(msgs[last_user_idx].get("content"), str):
-                    msgs[last_user_idx]["content"] = msgs[last_user_idx]["content"] + "\n\nRespond strictly in valid JSON format."
+                if last_user_idx is not None and isinstance(
+                    msgs[last_user_idx].get("content"), str
+                ):
+                    msgs[last_user_idx]["content"] = (
+                        msgs[last_user_idx]["content"]
+                        + "\n\nRespond strictly in valid JSON format."
+                    )
                 elif isinstance(msgs[0].get("content"), str):
-                    msgs[0]["content"] = msgs[0]["content"] + "\n\nRespond strictly in valid JSON format."
+                    msgs[0]["content"] = (
+                        msgs[0]["content"]
+                        + "\n\nRespond strictly in valid JSON format."
+                    )
 
         last_err = None
         for prov in self.providers:
@@ -99,22 +155,32 @@ class ChatClient:
                 continue
         raise last_err or Exception("All LLM providers failed")
 
-    def _post(self, prov: dict, messages: list, model: str,
-              response_format, temperature) -> str:
+    def _post(
+        self, prov: dict, messages: list, model: str, response_format, temperature
+    ) -> str:
         # Resolve the API key: rotate for Mistral, use fixed key for Groq.
         api_key = self._next_mistral_key() if prov.get("_rotating") else prov["key"]
-        key_hint = f" (key ...{api_key[-6:]})" if prov.get("_rotating") and len(self._mistral_keys) > 1 else ""
+        key_hint = (
+            f" (key ...{api_key[-6:]})"
+            if prov.get("_rotating") and len(self._mistral_keys) > 1
+            else ""
+        )
 
         payload = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
+            # gemini-2.5-flash-lite spends budget on reasoning and truncates at small
+            # caps (observed: IR JSON cut off at char ~22.8k). 16384 keeps it complete.
+            # Mistral/Groq accept the field too.
+            "max_tokens": 16384,
         }
         if response_format:
             payload["response_format"] = response_format
 
         for attempt in range(self.max_retries):
             try:
+                self._throttle(prov["name"])
                 with _sem:
                     resp = _session.post(
                         prov["url"],
@@ -127,18 +193,28 @@ class ChatClient:
                     )
                 if resp.status_code == 429:
                     wait = self.backoff_base * (attempt + 1)
-                    log.warning(f"[RATE LIMIT] Waiting {wait}s on {prov['name']}{key_hint}...")
+                    log.warning(
+                        f"[RATE LIMIT] Waiting {wait}s on {prov['name']}{key_hint}..."
+                    )
                     time.sleep(wait)
                     # On 429, rotate to the other key for the retry attempt
                     if prov.get("_rotating") and len(self._mistral_keys) > 1:
                         api_key = self._next_mistral_key()
                     continue
                 if resp.status_code == 413:
-                    log.error(f"[ERROR] Payload too large on {prov['name']}, trimming trailing text...", exc_info=True)
-                    self._shrink_last_message(payload)
+                    log.error(
+                        f"[ERROR] Payload too large on {prov['name']}, trimming trailing text...",
+                        exc_info=True,
+                    )
+                    want_json = bool(
+                        response_format and response_format.get("type") == "json_object"
+                    )
+                    self._shrink_last_message(payload, want_json=want_json)
                     continue
                 if resp.status_code >= 400:
-                    log.warning(f"[{prov['name']} HTTP {resp.status_code}]: {resp.text[:500]}")
+                    log.warning(
+                        f"[{prov['name']} HTTP {resp.status_code}]: {resp.text[:500]}"
+                    )
                 resp.raise_for_status()
                 return resp.json()["choices"][0]["message"]["content"]
             except requests.exceptions.RequestException as e:
@@ -148,20 +224,30 @@ class ChatClient:
                 raise
         raise Exception(f"Failed after {self.max_retries} retries on {prov['name']}")
 
-    def _shrink_last_message(self, payload: dict, min_chars: int = 2000) -> None:
+    def _shrink_last_message(
+        self, payload: dict, min_chars: int = 2000, want_json: bool = False
+    ) -> None:
         """Trim the trailing paper body of the last message, keeping schema/instructions."""
+        json_hint = "\n\nRespond strictly in valid JSON format." if want_json else ""
         msg = payload["messages"][-1]
         content = msg["content"]
         if len(content) <= min_chars:
             raise Exception("Payload still too large after minimum trimming")
+        # json_hint re-appended so a json_object request never loses the literal word Groq requires
         if isinstance(content, str):
-            msg["content"] = content[: max(min_chars, len(content) // 2)]
+            msg["content"] = (
+                content[: max(min_chars, len(content) // 2) - len(json_hint)]
+                + json_hint
+            )
         elif isinstance(content, list):
             for part in reversed(content):
                 if isinstance(part, dict) and part.get("type") == "text":
                     txt = part.get("text", "")
                     if len(txt) > min_chars:
-                        part["text"] = txt[: max(min_chars, len(txt) // 2)]
+                        part["text"] = (
+                            txt[: max(min_chars, len(txt) // 2) - len(json_hint)]
+                            + json_hint
+                        )
                         break
 
     def extract_json(self, messages: list, model: str = None) -> dict:
@@ -181,14 +267,22 @@ class ChatClient:
         elif len(msgs) > 0:
             content = msgs[0].get("content", "")
             if isinstance(content, str) and "json" not in content.lower():
-                msgs[0] = {**msgs[0], "content": content + "\n\nRespond strictly in valid JSON format."}
+                msgs[0] = {
+                    **msgs[0],
+                    "content": content + "\n\nRespond strictly in valid JSON format.",
+                }
 
         response = self.call(
             messages=msgs,
             model=model,
             response_format={"type": "json_object"},
         )
-        return json.loads(response)
+        # Gemini sometimes wraps output in ```json fences even in json_object mode
+        text = response.strip()
+        fence = re.match(r"^```(?:json)?\s*(.*?)```$", text, re.DOTALL)
+        if fence:
+            text = fence.group(1).strip()
+        return json.loads(text)
 
 
 # Legacy symbol name kept for backward compatibility with existing imports.

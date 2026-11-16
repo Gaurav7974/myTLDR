@@ -11,6 +11,7 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin
 from app.core.config import settings
 from app.core.logger import get_logger
+
 log = get_logger(__name__)
 from app.core.security import sanitize_arxiv_id, validate_and_sanitize_url
 
@@ -27,6 +28,7 @@ _TAIL_STRIP_RE = re.compile(
 @dataclass
 class Figure:
     """A figure/diagram extracted from the paper, with its base64 image and caption."""
+
     id: str
     page: int
     base64: Optional[str]
@@ -37,6 +39,7 @@ class Figure:
 @dataclass
 class PageText:
     """Extracted content of a single PDF page, ready for the Parsed Text tab."""
+
     page_number: int  # 1-based
     markdown: str
     source: str  # "pymupdf" | "mistral_ocr"
@@ -50,10 +53,41 @@ class ExtractionResult:
     LLM/RAG pipeline; `pages` keeps the per-page markdown (with inline images)
     for the frontend reader.
     """
+
     text: str
     figures: List[Figure] = field(default_factory=list)
     pages: List[PageText] = field(default_factory=list)
     page_count: int = 0
+    page_offsets: List[tuple] = field(
+        default_factory=list
+    )  # [(page_number, char_offset)] for text
+
+
+_MONTHS = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
+
+
+def _format_arxiv_date(iso: str) -> str:
+    """ISO timestamp → 'July 18, 2023'. Anything unexpected is passed through."""
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", (iso or "").strip())
+    if not m:
+        return (iso or "").strip()
+    year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    if not 1 <= month <= 12:
+        return iso.strip()
+    return f"{_MONTHS[month - 1]} {day}, {year}"
 
 
 class _ArxivAbsParser(HTMLParser):
@@ -65,6 +99,7 @@ class _ArxivAbsParser(HTMLParser):
         self.authors: List[str] = []
         self.abstract = ""
         self.categories: List[str] = []
+        self.published = ""
         self._in_abstract = False
         self._abstract_chunks: List[str] = []
         self._in_subject = False
@@ -81,6 +116,8 @@ class _ArxivAbsParser(HTMLParser):
                 author_name = content.strip()
                 if author_name and author_name not in self.authors:
                     self.authors.append(author_name)
+            elif name == "citation_date" and not self.published:
+                self.published = content.strip()
         elif tag == "blockquote" and "abstract" in attr_dict.get("class", ""):
             self._in_abstract = True
         elif tag == "td" and "subjects" in attr_dict.get("class", ""):
@@ -136,27 +173,36 @@ class TextExtractor:
             return ExtractionResult(text="", figures=[], pages=[], page_count=0)
 
         ocr_candidates = [
-            p for p in pages
+            p
+            for p in pages
             if len(p.markdown.strip()) < settings.OCR_PAGE_TEXT_THRESHOLD
         ]
 
         if len(ocr_candidates) == page_count:
             # No text layer anywhere — one whole-document OCR call covers all pages
-            log.info("[OCR] No text layer found, calling Mistral OCR on whole document...")
+            log.info(
+                "[OCR] No text layer found, calling Mistral OCR on whole document..."
+            )
             try:
                 return self._mistral_ocr_pdf(pdf_bytes)
             except Exception as e:
-                log.warning(f"[WARN] Mistral OCR failed: {e} — returning raw text layer")
+                log.warning(
+                    f"[WARN] Mistral OCR failed: {e} — returning raw text layer"
+                )
                 return self._build_result(pages)
 
         # Hybrid: OCR only the image/scanned pages concurrently (bounded to 3 workers)
         hybrid_figures: List[Figure] = []
         if ocr_candidates:
             from concurrent.futures import ThreadPoolExecutor, as_completed
-            target_pages = ocr_candidates[:settings.OCR_MAX_PAGE_CALLS]
+
+            target_pages = ocr_candidates[: settings.OCR_MAX_PAGE_CALLS]
+
             def _ocr_page(p):
                 try:
-                    md, figs = self._mistral_ocr_single_page(pdf_bytes, p.page_number - 1)
+                    md, figs = self._mistral_ocr_single_page(
+                        pdf_bytes, p.page_number - 1
+                    )
                     return p, md, figs
                 except Exception as e:
                     log.warning(f"[WARN] OCR failed for page {p.page_number}: {e}")
@@ -171,40 +217,82 @@ class TextExtractor:
                         p.source = "mistral_ocr"
                     hybrid_figures.extend(figs)
         if len(ocr_candidates) > settings.OCR_MAX_PAGE_CALLS:
-            log.warning(f"[WARN] {len(ocr_candidates)} image pages exceed OCR_MAX_PAGE_CALLS; only the first {settings.OCR_MAX_PAGE_CALLS} were OCR'd")
+            log.warning(
+                f"[WARN] {len(ocr_candidates)} image pages exceed OCR_MAX_PAGE_CALLS; only the first {settings.OCR_MAX_PAGE_CALLS} were OCR'd"
+            )
         result = self._build_result(pages, hybrid_figures)
         if not result.figures:
             try:
                 doc2 = pymupdf.open(stream=pdf_bytes, filetype="pdf")
                 # Harvest every raster XObject, always (cap 60 safety, not 5)
                 for i, pg in enumerate(doc2):
-                    if len(result.figures) >= 60: break
+                    if len(result.figures) >= 60:
+                        break
                     for img in pg.get_images(full=True):
-                        if len(result.figures) >= 60: break
+                        if len(result.figures) >= 60:
+                            break
                         try:
                             xref = img[0]
                             bbox = pg.get_image_bbox(img)
-                            if not bbox: continue
-                            if len(b64:=base64.b64encode(pg.get_pixmap(clip=bbox, dpi=150).tobytes("png")).decode()) > settings.MAX_INLINE_IMAGE_KB*1024: continue
-                            result.figures.append(Figure(id=f"fig-{i+1}-{xref}", page=i+1, base64=b64, caption=f"Figure {len(result.figures)+1} p{i+1}"))
-                        except Exception: continue
+                            if not bbox:
+                                continue
+                            if (
+                                len(
+                                    b64 := base64.b64encode(
+                                        pg.get_pixmap(clip=bbox, dpi=150).tobytes("png")
+                                    ).decode()
+                                )
+                                > settings.MAX_INLINE_IMAGE_KB * 1024
+                            ):
+                                continue
+                            result.figures.append(
+                                Figure(
+                                    id=f"fig-{i + 1}-{xref}",
+                                    page=i + 1,
+                                    base64=b64,
+                                    caption=f"Figure {len(result.figures) + 1} p{i + 1}",
+                                )
+                            )
+                        except Exception:
+                            continue
                 # General vector fallback: no raster but page has drawings/text → render crop around shape-dense region
                 if not result.figures:
                     for i, pg in enumerate(doc2):
-                        if len(result.figures) >= 60: break
-                        drawings, text_len = len(pg.get_drawings()), len(pg.get_text().strip())
-                        if drawings == 0 and text_len < 200: continue
+                        if len(result.figures) >= 60:
+                            break
+                        drawings, text_len = (
+                            len(pg.get_drawings()),
+                            len(pg.get_text().strip()),
+                        )
+                        if drawings == 0 and text_len < 200:
+                            continue
                         # Coarse crop: shape-dense region (where drawings cluster) vs text
                         try:
                             # Use whole page for now; page-level classifier (step 2) will filter which page holds diagram
-                            b64 = base64.b64encode(pg.get_pixmap(dpi=120).tobytes("png")).decode()
+                            b64 = base64.b64encode(
+                                pg.get_pixmap(dpi=120).tobytes("png")
+                            ).decode()
                             # Heuristic: high drawings + moderate text suggests diagram page
-                            is_diagram_page = drawings > 5 or (drawings > 0 and text_len < 2000)
-                            if is_diagram_page or i < 5:  # keep first 5 vector pages as candidates
-                                result.figures.append(Figure(id=f"page-{i+1}-render", page=i+1, base64=b64, caption=f"Page {i+1} render", is_whole_page_fallback=True))
-                        except Exception: continue
+                            is_diagram_page = drawings > 5 or (
+                                drawings > 0 and text_len < 2000
+                            )
+                            if (
+                                is_diagram_page or i < 5
+                            ):  # keep first 5 vector pages as candidates
+                                result.figures.append(
+                                    Figure(
+                                        id=f"page-{i + 1}-render",
+                                        page=i + 1,
+                                        base64=b64,
+                                        caption=f"Page {i + 1} render",
+                                        is_whole_page_fallback=True,
+                                    )
+                                )
+                        except Exception:
+                            continue
                 doc2.close()
-            except Exception as e: log.warning(f"[WARN] pixmap fallback failed: {e}")
+            except Exception as e:
+                log.warning(f"[WARN] pixmap fallback failed: {e}")
         return result
 
     def _mistral_ocr_pdf(self, pdf_bytes: bytes) -> ExtractionResult:
@@ -234,41 +322,118 @@ class TextExtractor:
             b64 = img.get("image_base64") or img.get("base64")
             if not img_id or not b64:
                 continue
-            figures.append(Figure(
-                id=img_id,
-                page=page_index,
-                base64=b64,
-                caption=captions.get(img_id),
-            ))
+            figures.append(
+                Figure(
+                    id=img_id,
+                    page=page_index,
+                    base64=b64,
+                    caption=captions.get(img_id),
+                )
+            )
         return md, figures
 
     def _call_mistral_ocr(self, pdf_bytes: bytes) -> dict:
-        """POST a PDF to Mistral OCR and return the raw response JSON."""
+        """POST a PDF to Mistral OCR and return the raw response JSON.
+
+        When the OCR endpoint is unavailable (e.g. the account's OCR request
+        limit is 0) the pages are transcribed with the Mistral vision model
+        instead, in the same response shape so callers are unaffected.
+        """
         if not settings.MISTRAL_API_KEY:
             raise Exception("Mistral OCR API key not configured")
 
         # Encode PDF as base64
         b64 = base64.b64encode(pdf_bytes).decode()
 
-        resp = requests.post(
-            settings.MISTRAL_OCR_URL,
-            headers={
-                "Authorization": f"Bearer {settings.MISTRAL_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": settings.MISTRAL_OCR_MODEL,
-                "document": {
-                    "type": "document_url",
-                    "document_url": f"data:application/pdf;base64,{b64}"
+        try:
+            resp = requests.post(
+                settings.MISTRAL_OCR_URL,
+                headers={
+                    "Authorization": f"Bearer {settings.MISTRAL_API_KEY}",
+                    "Content-Type": "application/json",
                 },
-                # Request the actual figure images so they can be fed to a vision model later.
-                "include_image_base64": True,
-            },
-            timeout=120
+                json={
+                    "model": settings.MISTRAL_OCR_MODEL,
+                    "document": {
+                        "type": "document_url",
+                        "document_url": f"data:application/pdf;base64,{b64}",
+                    },
+                    # Request the actual figure images so they can be fed to a vision model later.
+                    "include_image_base64": True,
+                },
+                timeout=120,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            log.warning(
+                f"[WARN] Mistral OCR unavailable ({e}) — transcribing with the vision model"
+            )
+            return self._vision_ocr(pdf_bytes)
+
+    def _vision_ocr(self, pdf_bytes: bytes) -> dict:
+        """Transcribe every page with the Gemini vision model (Mistral OCR quota is 0).
+
+        Mirrors the OCR endpoint's response shape so the normal parsing path
+        is reused unchanged.
+        """
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+        try:
+            page_images = [
+                base64.b64encode(doc[i].get_pixmap(dpi=150).tobytes("png")).decode()
+                for i in range(len(doc))
+            ]
+        finally:
+            doc.close()
+
+        def _transcribe(image_b64: str) -> str:
+            try:
+                return self._vision_transcribe(image_b64)
+            except Exception as e:
+                log.warning(f"[WARN] Vision transcription failed: {e}")
+                return ""
+
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            markdowns = list(executor.map(_transcribe, page_images))
+
+        return {
+            "pages": [
+                {"index": idx, "markdown": md, "images": []}
+                for idx, md in enumerate(markdowns)
+            ]
+        }
+
+    def _vision_transcribe(self, image_b64: str) -> str:
+        """Ask the vision model to transcribe one rendered page."""
+        from app.services.llm import groq_client
+
+        transcript = groq_client.call(
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "Transcribe all text on this page exactly as written, including "
+                                "headings, paragraphs, captions and math. Output only the transcription."
+                            ),
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": f"data:image/png;base64,{image_b64}",
+                        },
+                    ],
+                }
+            ],
+            model=settings.VISION_MODEL,
+            temperature=0,
         )
-        resp.raise_for_status()
-        return resp.json()
+        # The model sometimes emits placeholder image refs; there are no real
+        # images behind them, so they are dropped rather than left as broken links.
+        return self._strip_images(transcript)
 
     def _parse_ocr_response(self, ocr_result: dict) -> ExtractionResult:
         """Parse Mistral OCR response into per-page content and figures."""
@@ -281,11 +446,11 @@ class TextExtractor:
             page_idx = page.get("index", i)
             md = self._inline_images(md, page.get("images", []) or [], inline_state)
             if md:
-                pages.append(PageText(
-                    page_number=page_idx + 1,
-                    markdown=md,
-                    source="mistral_ocr"
-                ))
+                pages.append(
+                    PageText(
+                        page_number=page_idx + 1, markdown=md, source="mistral_ocr"
+                    )
+                )
             captions = self._extract_figure_captions(page.get("markdown", "") or "")
             for img in page.get("images", []) or []:
                 img_id = img.get("id")
@@ -294,12 +459,14 @@ class TextExtractor:
                 b64 = img.get("image_base64") or img.get("base64")
                 if not b64:
                     continue
-                figures.append(Figure(
-                    id=img_id,
-                    page=page_idx,
-                    base64=b64,
-                    caption=captions.get(img_id),
-                ))
+                figures.append(
+                    Figure(
+                        id=img_id,
+                        page=page_idx,
+                        base64=b64,
+                        caption=captions.get(img_id),
+                    )
+                )
         return self._build_result(pages, figures)
 
     def _inline_images(self, markdown: str, images: list, inline_state: dict) -> str:
@@ -324,7 +491,10 @@ class TextExtractor:
             b64 = by_id.get(ref)
             if not b64:
                 return ""
-            if inline_state["count"] >= settings.MAX_INLINE_IMAGES or len(b64) > max_chars:
+            if (
+                inline_state["count"] >= settings.MAX_INLINE_IMAGES
+                or len(b64) > max_chars
+            ):
                 return ""
             inline_state["count"] += 1
             mime = "image/png" if ref.lower().endswith(".png") else "image/jpeg"
@@ -372,7 +542,9 @@ class TextExtractor:
             return stripped
         return text
 
-    def _build_result(self, pages: List[PageText], figures: Optional[List[Figure]] = None) -> ExtractionResult:
+    def _build_result(
+        self, pages: List[PageText], figures: Optional[List[Figure]] = None
+    ) -> ExtractionResult:
         """Join per-page content into the flat text the pipeline consumes.
 
         References / bibliography are stripped from the flat ``text`` before it
@@ -380,11 +552,31 @@ class TextExtractor:
         automatically benefits. The per-page ``pages`` list is NOT altered so
         the frontend Parsed Text reader still shows the full paper.
         """
-        text_parts = [self._strip_images(p.markdown) if p.source == "mistral_ocr" else p.markdown for p in pages]
-        raw_text = "\n\n".join(p for p in text_parts if p)
+        text_parts = [
+            self._strip_images(p.markdown) if p.source == "mistral_ocr" else p.markdown
+            for p in pages
+        ]
+        retained: List[str] = []
+        offsets: List[tuple] = []
+        cursor = 0
+        for p, part in zip(pages, text_parts):
+            if not part:
+                continue
+            offsets.append((p.page_number, cursor))
+            retained.append(part)
+            cursor += len(part) + 2  # len("\n\n") separator
+        raw_text = "\n\n".join(retained)
+        # Tail-strip only removes a suffix, so prefix offsets stay valid against clean_text.
         clean_text = self.strip_tail_sections(raw_text)
-        return ExtractionResult(text=clean_text, figures=figures or [], pages=pages, page_count=len(pages))
-    
+        offsets = [(num, off) for num, off in offsets if off < len(clean_text)]
+        return ExtractionResult(
+            text=clean_text,
+            figures=figures or [],
+            pages=pages,
+            page_count=len(pages),
+            page_offsets=offsets,
+        )
+
     def _extract_figure_captions(self, markdown: str) -> dict:
         """Map each image id (referenced as `![id](id)`) to its following caption line."""
         captions: dict = {}
@@ -394,13 +586,13 @@ class TextExtractor:
             if not m:
                 continue
             img_id = m.group("id")
-            for nxt in lines[i + 1:i + 4]:
+            for nxt in lines[i + 1 : i + 4]:
                 stripped = nxt.strip()
                 if stripped and re.match(r"(?i)\s*(figure|fig\.?)\b", stripped):
                     captions[img_id] = stripped
                     break
         return captions
-    
+
     def download_pdf(self, url: str) -> bytes:
         """Download PDF from URL with SSRF-safe redirect handling and byte cap."""
         safe_url = validate_and_sanitize_url(url)
@@ -417,7 +609,7 @@ class TextExtractor:
                     "User-Agent": settings.ARXIV_USER_AGENT,
                     "Accept": "application/pdf,application/octet-stream,*/*",
                     "Accept-Language": "en-US,en;q=0.9",
-                }
+                },
             )
             if resp.status_code in (301, 302, 303, 307, 308):
                 loc = resp.headers.get("Location")
@@ -431,22 +623,26 @@ class TextExtractor:
             resp.raise_for_status()
             cl = resp.headers.get("Content-Length")
             if cl and int(cl) > max_bytes:
-                raise ValueError(f"File exceeds maximum allowed size ({settings.MAX_UPLOAD_SIZE_MB}MB)")
+                raise ValueError(
+                    f"File exceeds maximum allowed size ({settings.MAX_UPLOAD_SIZE_MB}MB)"
+                )
             content = bytearray()
             for chunk in resp.iter_content(chunk_size=65536):
                 if chunk:
                     content.extend(chunk)
                     if len(content) > max_bytes:
-                        raise ValueError(f"File exceeds maximum allowed size ({settings.MAX_UPLOAD_SIZE_MB}MB)")
+                        raise ValueError(
+                            f"File exceeds maximum allowed size ({settings.MAX_UPLOAD_SIZE_MB}MB)"
+                        )
             return bytes(content)
         raise ValueError("Too many redirects")
-    
+
     def download_arxiv_pdf(self, arxiv_id: str) -> bytes:
         """Download PDF from arXiv with canonical ID sanitization."""
         clean_id = sanitize_arxiv_id(arxiv_id)
         url = f"https://arxiv.org/pdf/{clean_id}.pdf"
         return self.download_pdf(url)
-    
+
     def _fetch_arxiv_atom(self, clean_id: str) -> Optional[dict]:
         """Fetch metadata from arXiv Atom API with mirror redundancy and proper Accept headers."""
         headers = {
@@ -468,14 +664,16 @@ class TextExtractor:
                     meta = self._parse_arxiv_xml(resp.text)
                     if meta.get("arxiv_id_base"):
                         return meta
-                log.warning(f"arXiv Atom query {endpoint} returned status {resp.status_code}")
+                log.warning(
+                    f"arXiv Atom query {endpoint} returned status {resp.status_code}"
+                )
             except Exception as e:
                 log.warning(f"arXiv Atom query {endpoint} failed: {e}")
         return None
 
     def _fetch_arxiv_html(self, clean_id: str) -> Optional[dict]:
         """Fallback: Scrape canonical Highwire Press metadata from https://arxiv.org/abs/{clean_id}."""
-        requested_base = re.sub(r'v\d+$', '', clean_id)
+        requested_base = re.sub(r"v\d+$", "", clean_id)
         url = f"https://arxiv.org/abs/{clean_id}"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -502,9 +700,12 @@ class TextExtractor:
                             cleaned_authors.append(a)
                     return {
                         "title": parser.title,
-                        "authors": cleaned_authors if cleaned_authors else parser.authors,
+                        "authors": cleaned_authors
+                        if cleaned_authors
+                        else parser.authors,
                         "abstract": parser.abstract,
                         "categories": parser.categories,
+                        "published": _format_arxiv_date(parser.published),
                         "arxiv_id": clean_id,
                         "arxiv_id_base": requested_base,
                     }
@@ -528,11 +729,11 @@ class TextExtractor:
                 or if no usable title is present.
         """
         clean_id = sanitize_arxiv_id(arxiv_id)
-        requested_base = re.sub(r'v\d+$', '', clean_id)
-        
+        requested_base = re.sub(r"v\d+$", "", clean_id)
+
         # Tier 1 & 2: Atom XML API (export.arxiv.org / arxiv.org mirrors)
         meta = self._fetch_arxiv_atom(clean_id)
-        
+
         # Tier 3: HTML abstract page fallback (bypasses 406/429/WAF issues on export.arxiv.org)
         if not meta or not meta.get("title"):
             meta = self._fetch_arxiv_html(clean_id)
@@ -553,62 +754,75 @@ class TextExtractor:
                 "The paper may be unavailable; try again later."
             )
         return meta
-    
+
     def _rate_limit_arxiv(self):
         """Enforce rate limiting for arXiv API (sync — caller must be in to_thread)."""
         elapsed = time.time() - self._last_arxiv_call
         if elapsed < settings.ARXIV_RATE_LIMIT_SECONDS:
             time.sleep(settings.ARXIV_RATE_LIMIT_SECONDS - elapsed)
         self._last_arxiv_call = time.time()
-    
+
     def _parse_arxiv_xml(self, xml_text: str) -> dict:
         """Parse arXiv Atom XML response."""
         import xml.etree.ElementTree as ET
-        
+
         ns = {
             "atom": "http://www.w3.org/2005/Atom",
-            "arxiv": "http://arxiv.org/schemas/atom"
+            "arxiv": "http://arxiv.org/schemas/atom",
         }
-        
+
         root = ET.fromstring(xml_text)
         entry = root.find("atom:entry", ns)
 
         if entry is None:
-            return {"title": "", "authors": [], "abstract": "", "categories": [], "arxiv_id": "", "arxiv_id_base": ""}
+            return {
+                "title": "",
+                "authors": [],
+                "abstract": "",
+                "categories": [],
+                "published": "",
+                "arxiv_id": "",
+                "arxiv_id_base": "",
+            }
 
         id_el = entry.find("atom:id", ns)
         canonical_id = ""
         if id_el is not None and id_el.text:
             # Entry id looks like http://arxiv.org/abs/1512.03386v2
-            id_match = re.search(r'(\d{4}\.\d{4,5})(v\d+)?$', id_el.text.strip())
+            id_match = re.search(r"(\d{4}\.\d{4,5})(v\d+)?$", id_el.text.strip())
             if id_match:
                 canonical_id = id_match.group(1)
 
         title = entry.find("atom:title", ns)
         summary = entry.find("atom:summary", ns)
-        
+        published = entry.find("atom:published", ns)
+
         authors = []
         for author in entry.findall("atom:author", ns):
             name = author.find("atom:name", ns)
             if name is not None:
                 authors.append(name.text)
-        
+
         categories = []
         for cat in entry.findall("atom:category", ns):
             categories.append(cat.get("term", ""))
-        
+
         return {
             "title": title.text.strip() if title is not None else "",
             "authors": authors,
             "abstract": summary.text.strip() if summary is not None else "",
             "categories": categories,
+            "published": _format_arxiv_date(
+                published.text if published is not None else ""
+            ),
             "arxiv_id": canonical_id,
             "arxiv_id_base": canonical_id,
         }
-    
+
     def extract_paper_metadata_from_text(self, text: str) -> dict:
         """Extract paper title, authors, published year, abstract, and keywords from first page text using LLM."""
         from app.services.llm import groq_client
+
         first_page = text[:3500]
         prompt = f"""Extract the exact metadata from the first page of this academic research paper:
 ---
@@ -626,8 +840,11 @@ Respond ONLY with a valid JSON object matching:
         try:
             res = groq_client.extract_json(
                 messages=[
-                    {"role": "system", "content": "You are an expert research paper librarian. Extract the exact title, authors, year, and abstract from the paper text."},
-                    {"role": "user", "content": prompt}
+                    {
+                        "role": "system",
+                        "content": "You are an expert research paper librarian. Extract the exact title, authors, year, and abstract from the paper text.",
+                    },
+                    {"role": "user", "content": prompt},
                 ]
             )
             return {
@@ -635,7 +852,7 @@ Respond ONLY with a valid JSON object matching:
                 "authors": res.get("authors") or [],
                 "abstract": res.get("abstract") or "",
                 "published": str(res.get("published_year") or ""),
-                "categories": res.get("categories") or []
+                "categories": res.get("categories") or [],
             }
         except Exception as e:
             log.warning(f"[WARN] LLM metadata extraction failed: {e}")
@@ -646,9 +863,9 @@ Respond ONLY with a valid JSON object matching:
                 "authors": [],
                 "abstract": "",
                 "published": "",
-                "categories": []
+                "categories": [],
             }
-    
+
     # ── LLM-based architecture section detection (Fix #2 + Fast-Span) ──────────
     ARCH_SECTION_PROMPT = """You are an expert research-paper parser. Given the full text of a paper, locate the architecture / method / model section that describes the paper's PROPOSED model components, layers, blocks, and their connections.
 
@@ -698,19 +915,28 @@ Full paper text (truncated to {max_chars} chars for this call):
             from app.services.llm import groq_client
         except Exception as e:
             log.error(f"[ARCH_SECTION] LLM client unavailable: {e}")
-            return self._find_architecture_section_regex_fallback(text, reason="llm_unavailable")
+            return self._find_architecture_section_regex_fallback(
+                text, reason="llm_unavailable"
+            )
 
         try:
             data = groq_client.extract_json(
                 messages=[
-                    {"role": "system", "content": "You are a precise research-paper section locator. Return only valid JSON."},
+                    {
+                        "role": "system",
+                        "content": "You are a precise research-paper section locator. Return only valid JSON.",
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 model=settings.MISTRAL_LLM_MODEL,
             )
         except Exception as e:
-            log.warning(f"[ARCH_SECTION] LLM call failed: {e} — no fallback to arbitrary text")
-            return self._find_architecture_section_regex_fallback(text, reason=f"llm_error: {e}")
+            log.warning(
+                f"[ARCH_SECTION] LLM call failed: {e} — no fallback to arbitrary text"
+            )
+            return self._find_architecture_section_regex_fallback(
+                text, reason=f"llm_error: {e}"
+            )
 
         found = bool(data.get("found", False))
         confidence = float(data.get("confidence", 0.0) or 0.0)
@@ -721,10 +947,14 @@ Full paper text (truncated to {max_chars} chars for this call):
 
         # Explicit failure checks
         if not found:
-            log.warning(f"[ARCH_SECTION] LLM could not locate architecture section: {reason}")
+            log.warning(
+                f"[ARCH_SECTION] LLM could not locate architecture section: {reason}"
+            )
             return None
         if confidence < 0.5:
-            log.warning(f"[ARCH_SECTION] Low confidence {confidence:.2f}: {reason} — treating as not found")
+            log.warning(
+                f"[ARCH_SECTION] Low confidence {confidence:.2f}: {reason} — treating as not found"
+            )
             return None
 
         # High-performance in-memory slicing via heading coordinates
@@ -732,7 +962,7 @@ Full paper text (truncated to {max_chars} chars for this call):
             start_pos = text.lower().find(start_heading.lower())
             if start_pos == -1:
                 # Fuzzy search using primary keywords
-                words = [w for w in re.split(r'\W+', start_heading) if len(w) > 3]
+                words = [w for w in re.split(r"\W+", start_heading) if len(w) > 3]
                 if words:
                     m = re.search(re.escape(words[0]), text, re.IGNORECASE)
                     start_pos = m.start() if m else -1
@@ -749,15 +979,21 @@ Full paper text (truncated to {max_chars} chars for this call):
                 section_text = text[start_pos:end_pos].strip()
 
         if len(section_text) < 200:
-            log.warning(f"[ARCH_SECTION] Section too short ({len(section_text)} chars), confidence {confidence:.2f}: {reason}")
+            log.warning(
+                f"[ARCH_SECTION] Section too short ({len(section_text)} chars), confidence {confidence:.2f}: {reason}"
+            )
             return None
 
         # Dynamic sizing (Fix #3): cap to ceiling, otherwise keep actual length
         if len(section_text) > ceiling:
-            log.info(f"[ARCH_SECTION] Truncating {len(section_text)} -> {ceiling} chars (ceiling)")
+            log.info(
+                f"[ARCH_SECTION] Truncating {len(section_text)} -> {ceiling} chars (ceiling)"
+            )
             section_text = section_text[:ceiling]
 
-        log.info(f"[ARCH_SECTION] Found section ({len(section_text)} chars, conf={confidence:.2f}): {reason[:120]}")
+        log.info(
+            f"[ARCH_SECTION] Found section ({len(section_text)} chars, conf={confidence:.2f}): {reason[:120]}"
+        )
         return section_text
 
     def find_architecture_section_or_fallback(self, text: str) -> str | None:
@@ -772,7 +1008,9 @@ Full paper text (truncated to {max_chars} chars for this call):
         # Do NOT silently return first N chars — surface None
         return None
 
-    def _find_architecture_section_regex_fallback(self, text: str, reason: str = "") -> str | None:
+    def _find_architecture_section_regex_fallback(
+        self, text: str, reason: str = ""
+    ) -> str | None:
         """Legacy regex locator — used ONLY for diagnostics, never as silent success.
 
         Returns None to force explicit failure propagation. Logs what regex would
@@ -788,9 +1026,18 @@ Full paper text (truncated to {max_chars} chars for this call):
             r"(?im)^\s*\d+\.?\s+model\s+structure",
             r"(?im)^\s*\d+\.?\s+overall\s+architecture",
         ]
-        start = next((text.rfind('\n', 0, m.start()) + 1 for p in patterns if (m := re.search(p, text))), None)
+        start = next(
+            (
+                text.rfind("\n", 0, m.start()) + 1
+                for p in patterns
+                if (m := re.search(p, text))
+            ),
+            None,
+        )
         if start is None or start < 0:
-            log.warning(f"[ARCH_SECTION] Regex fallback also found nothing (LLM reason: {reason})")
+            log.warning(
+                f"[ARCH_SECTION] Regex fallback also found nothing (LLM reason: {reason})"
+            )
             return None
         nxt = re.search(r"\n(?=\d+\.?\s+[A-Za-z])", text[start + 200 :])
         if nxt:
@@ -800,16 +1047,18 @@ Full paper text (truncated to {max_chars} chars for this call):
             section = text[start : start + settings.SECTION_CHAR_CEILING]
         if len(section) > settings.SECTION_CHAR_CEILING:
             section = section[: settings.SECTION_CHAR_CEILING]
-        log.info(f"[ARCH_SECTION] Regex fallback would have returned {len(section)} chars (LLM reason: {reason}) — NOT used, surfacing failure")
+        log.info(
+            f"[ARCH_SECTION] Regex fallback would have returned {len(section)} chars (LLM reason: {reason}) — NOT used, surfacing failure"
+        )
         # Important: still return None — do not let regex substitute for LLM failure
         return None
-    
+
     def normalize_text(self, text: str) -> str:
         """Normalize text for content hashing."""
         # Strip whitespace, lowercase, remove page numbers
-        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r"\s+", " ", text)
         text = text.lower().strip()
-        text = re.sub(r'\n\d+\n', '\n', text)  # Remove standalone page numbers
+        text = re.sub(r"\n\d+\n", "\n", text)  # Remove standalone page numbers
         return text
 
 

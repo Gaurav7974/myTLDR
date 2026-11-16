@@ -14,6 +14,7 @@ visual geometry and text semantics are combined.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 import requests
@@ -23,6 +24,7 @@ from pydantic import ValidationError
 
 from app.core.config import settings
 from app.core.logger import get_logger
+
 log = get_logger(__name__)
 from app.models.graph import (
     ArchitectureGraph,
@@ -32,12 +34,16 @@ from app.models.graph import (
     VISION_CONFIDENCE_THRESHOLD,
 )
 
-# ── Vision key rotation ───────────────────────────────────────────────────────
-# Mirror the same round-robin strategy used in ChatClient so OCR/vision calls
-# are spread across both Mistral accounts, halving per-key rate-limit pressure.
-_vision_keys: list[str] = [k for k in [settings.VISION_API_KEY, settings.VISION_API_KEY_2] if k]
+# ── Vision key rotation ─────────────────────────────────────────────
+# Defaults to the Gemini AQ. key (settings.VISION_API_KEY); a second key
+# participates in round-robin when VISION_API_KEY_2 is configured.
+_vision_keys: list[str] = [
+    k for k in [settings.VISION_API_KEY, settings.VISION_API_KEY_2] if k
+]
 _vision_key_idx: int = 0
 _vision_key_lock = threading.Lock()
+_vision_last_call: float = 0.0
+
 
 def _next_vision_key() -> str:
     """Return the next vision API key in round-robin order (thread-safe)."""
@@ -164,9 +170,12 @@ Be CONSERVATIVE only for structural. The downstream renderer shows structural fa
 
 
 # ── Parsers (pure, testable) ─────────────────────────────────────────
-def _parse_vision_payload(raw: dict[str, Any], paper_title: str = "",
-                          figure_id: str | None = None,
-                          figure_page: int | None = None) -> ArchitectureGraph:
+def _parse_vision_payload(
+    raw: dict[str, Any],
+    paper_title: str = "",
+    figure_id: str | None = None,
+    figure_page: int | None = None,
+) -> ArchitectureGraph:
     """Convert a vision-LLM JSON payload into an ArchitectureGraph.
 
     The payload may be the rich schema or a minimal ``{nodes, edges}``
@@ -182,7 +191,9 @@ def _parse_vision_payload(raw: dict[str, Any], paper_title: str = "",
         "source": raw.get("source") or "vision",
         "layout_mode": raw.get("layout_mode") or "figure",
         "figure_id": figure_id or raw.get("figure_id"),
-        "figure_page": figure_page if figure_page is not None else raw.get("figure_page"),
+        "figure_page": figure_page
+        if figure_page is not None
+        else raw.get("figure_page"),
         "confidence": raw.get("confidence"),
         "paper_title": paper_title or raw.get("paper_title"),
         "metadata": raw.get("metadata"),
@@ -212,16 +223,22 @@ def _parse_vision_payload(raw: dict[str, Any], paper_title: str = "",
 
 def _parse_verification_payload(raw: dict[str, Any]) -> GraphVerification:
     if not isinstance(raw, dict):
-        return GraphVerification(valid=False, reason="verification payload was not a JSON object")
+        return GraphVerification(
+            valid=False, reason="verification payload was not a JSON object"
+        )
     raw_valid, valid = raw.get("valid", False), raw.get("valid", False) is True
+
     def _structural(items):
-        out=[]
-        for it in (items or []):
+        out = []
+        for it in items or []:
             if isinstance(it, dict):
-                if it.get("severity") == "structural": out.append(str(it.get("element") or it.get("reason") or it))
+                if it.get("severity") == "structural":
+                    out.append(str(it.get("element") or it.get("reason") or it))
                 # cosmetic ignored for gate
-            elif isinstance(it, str) and it.strip(): out.append(it)
+            elif isinstance(it, str) and it.strip():
+                out.append(it)
         return out
+
     try:
         return GraphVerification(
             valid=valid,
@@ -233,7 +250,11 @@ def _parse_verification_payload(raw: dict[str, Any]) -> GraphVerification:
             reason=str(raw.get("reason") or "") or None,
         )
     except (ValidationError, ValueError, TypeError) as e:
-        return GraphVerification(valid=False, confidence=0.0, reason=f"verification payload failed to parse: {e}")
+        return GraphVerification(
+            valid=False,
+            confidence=0.0,
+            reason=f"verification payload failed to parse: {e}",
+        )
 
 
 def is_verified_vision_graph(graph: ArchitectureGraph | None) -> bool:
@@ -280,16 +301,34 @@ def classify_candidates(figures, paper_title: str = "") -> list[dict]:
     Sorts candidates by caption keyword relevance first, caps at top 2 candidates,
     and runs fast check without serial sleeps.
     """
-    if not figures or not settings.VISION_API_KEY: return []
+    if not figures or not settings.VISION_API_KEY:
+        return []
 
     def _score_fig(fig):
         cap = (getattr(fig, "caption", None) or "").lower()
         score = 0
-        if "architecture" in cap: score += 4
-        if "model" in cap: score += 3
-        if any(k in cap for k in ("overview", "framework", "network", "pipeline", "diagram", "transformer", "attention", "block")): score += 2
-        if "figure" in cap or "fig" in cap: score += 1
-        if getattr(fig, "page", 1) <= 15: score += 2
+        if "architecture" in cap:
+            score += 4
+        if "model" in cap:
+            score += 3
+        if any(
+            k in cap
+            for k in (
+                "overview",
+                "framework",
+                "network",
+                "pipeline",
+                "diagram",
+                "transformer",
+                "attention",
+                "block",
+            )
+        ):
+            score += 2
+        if "figure" in cap or "fig" in cap:
+            score += 1
+        if getattr(fig, "page", 1) <= 15:
+            score += 2
         return score
 
     # Sort by relevance score descending
@@ -299,24 +338,53 @@ def classify_candidates(figures, paper_title: str = "") -> list[dict]:
     out = []
     consecutive_429s = 0
     for i, fig in enumerate(candidate_figs):
-        if not fig.base64: continue
+        if not fig.base64:
+            continue
         # Circuit-breaker: both keys exhausted → stop wasting thread time
         if consecutive_429s >= 2:
-            log.warning(f"[CLASSIFIER] Circuit breaker tripped after {consecutive_429s} consecutive 429s — aborting classifier early")
+            log.warning(
+                f"[CLASSIFIER] Circuit breaker tripped after {consecutive_429s} consecutive 429s — aborting classifier early"
+            )
             break
-        img_url = f"data:image/png;base64,{fig.base64}" if not fig.base64.startswith("data:") else fig.base64
-        msgs=[{"role":"system","content":"You are an image classifier."},{"role":"user","content":[{"type":"text","text":"Is this image an architecture/model diagram, or something else (chart, plot, table, photo)? Respond ONLY with valid JSON: {\"label\": \"architecture_diagram\" | \"other\", \"confidence\": 0.0-1.0}"},{"type":"image_url","image_url":{"url":img_url}}]}]
+        img_url = (
+            f"data:image/png;base64,{fig.base64}"
+            if not fig.base64.startswith("data:")
+            else fig.base64
+        )
+        msgs = [
+            {"role": "system", "content": "You are an image classifier."},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": 'Is this image an architecture/model diagram, or something else (chart, plot, table, photo)? Respond ONLY with valid JSON: {"label": "architecture_diagram" | "other", "confidence": 0.0-1.0}',
+                    },
+                    {"type": "image_url", "image_url": {"url": img_url}},
+                ],
+            },
+        ]
         try:
             t0 = time.time()
             # max_attempts=1: no retry sleep for classifier — fail fast, try next figure
             raw = FigureExtractor()._call_and_parse(msgs, max_attempts=1)
             label, conf = raw.get("label"), float(raw.get("confidence", 0.0) or 0.0)
-            if label not in ("architecture_diagram", "other"): label = "other"
-            out.append({"figure": fig, "label": label, "confidence": conf, "time": time.time() - t0})
+            if label not in ("architecture_diagram", "other"):
+                label = "other"
+            out.append(
+                {
+                    "figure": fig,
+                    "label": label,
+                    "confidence": conf,
+                    "time": time.time() - t0,
+                }
+            )
             log.info(f"classify {fig.id} p{fig.page} -> {label} {conf:.2f}")
             consecutive_429s = 0  # reset on success
             if label == "architecture_diagram" and conf >= 0.85 and fig.page <= 15:
-                log.info(f"Found high-confidence architecture diagram ({fig.id}, conf={conf:.2f}) on page {fig.page}. Early stopping classifier.")
+                log.info(
+                    f"Found high-confidence architecture diagram ({fig.id}, conf={conf:.2f}) on page {fig.page}. Early stopping classifier."
+                )
                 break
         except Exception as e:
             err_str = str(e)
@@ -328,18 +396,21 @@ def classify_candidates(figures, paper_title: str = "") -> list[dict]:
             out.append({"figure": fig, "label": "other", "confidence": 0.0})
     # Log distribution
     try:
-        dist_str = ','.join(f"{x['confidence']:.2f}" for x in out)
+        dist_str = ",".join(f"{x['confidence']:.2f}" for x in out)
         log.info(f"classify distribution: {dist_str}")
     except Exception:
         pass
     return out
 
+
 def pick_architecture_figure_classifier(figures, paper_title: str = ""):
     """Replace caption keyword scoring with classifier for every paper, no exceptions."""
     cands = classify_candidates(figures, paper_title)
-    arch = [c for c in cands if c["label"]=="architecture_diagram"]
-    if arch: return max(arch, key=lambda x: x["confidence"])["figure"]
+    arch = [c for c in cands if c["label"] == "architecture_diagram"]
+    if arch:
+        return max(arch, key=lambda x: x["confidence"])["figure"]
     return None
+
 
 # ── Extractor ────────────────────────────────────────────────────────
 class FigureExtractor:
@@ -352,7 +423,9 @@ class FigureExtractor:
         failure (no key, malformed JSON, validation error, etc.) so the
         pipeline can fall back without raising."""
         if not settings.VISION_API_KEY:
-            log.warning("[WARN] Vision API key not configured; skipping image-based extraction")
+            log.warning(
+                "[WARN] Vision API key not configured; skipping image-based extraction"
+            )
             return None
         if not figure or not figure.base64:
             return None
@@ -364,14 +437,21 @@ class FigureExtractor:
         )
 
         is_whole = bool(getattr(figure, "is_whole_page_fallback", False))
-        figure_context = "WHOLE PAGE (fallback) — locate diagram within page" if is_whole else "CROPPED FIGURE"
+        figure_context = (
+            "WHOLE PAGE (fallback) — locate diagram within page"
+            if is_whole
+            else "CROPPED FIGURE"
+        )
         system_prompt = VISION_GRAPH_PROMPT.replace("{figure_context}", figure_context)
         messages = [
             {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": f"Paper: {paper_title}\nFigure context: {figure_context}\nExtract the architecture graph shown in this figure as JSON."},
+                    {
+                        "type": "text",
+                        "text": f"Paper: {paper_title}\nFigure context: {figure_context}\nExtract the architecture graph shown in this figure as JSON.",
+                    },
                     {"type": "image_url", "image_url": {"url": image_url}},
                 ],
             },
@@ -379,7 +459,9 @@ class FigureExtractor:
         try:
             raw = self._call_and_parse(messages)
         except Exception as e:
-            log.error(f"[ERROR] Vision architecture extraction failed: {e}", exc_info=True)
+            log.error(
+                f"[ERROR] Vision architecture extraction failed: {e}", exc_info=True
+            )
             return None
 
         try:
@@ -424,19 +506,32 @@ class FigureExtractor:
         graph_summary = {
             "version": graph.version,
             "source": graph.source,
-            "groups": [g.model_dump(mode="json", exclude_none=True) for g in graph.groups],
-            "nodes": [n.model_dump(mode="json", exclude_none=True) for n in graph.nodes],
-            "edges": [e.model_dump(mode="json", exclude_none=True) for e in graph.edges],
+            "groups": [
+                g.model_dump(mode="json", exclude_none=True) for g in graph.groups
+            ],
+            "nodes": [
+                n.model_dump(mode="json", exclude_none=True) for n in graph.nodes
+            ],
+            "edges": [
+                e.model_dump(mode="json", exclude_none=True) for e in graph.edges
+            ],
         }
 
         is_whole = bool(getattr(figure, "is_whole_page_fallback", False))
-        figure_context = "WHOLE PAGE — diagram is embedded in full page, ignore margins/text" if is_whole else "CROPPED FIGURE"
+        figure_context = (
+            "WHOLE PAGE — diagram is embedded in full page, ignore margins/text"
+            if is_whole
+            else "CROPPED FIGURE"
+        )
         messages = [
             {"role": "system", "content": VISION_VERIFICATION_PROMPT},
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": f"Paper: {paper_title}\nFigure context: {figure_context}\nVerify this graph against the source figure.\n\nGraph JSON:\n{json.dumps(graph_summary, default=str)}"},
+                    {
+                        "type": "text",
+                        "text": f"Paper: {paper_title}\nFigure context: {figure_context}\nVerify this graph against the source figure.\n\nGraph JSON:\n{json.dumps(graph_summary, default=str)}",
+                    },
                     {"type": "image_url", "image_url": {"url": image_url}},
                 ],
             },
@@ -454,7 +549,9 @@ class FigureExtractor:
 
         return _parse_verification_payload(raw)
 
-    def _call_and_parse(self, messages: list, is_verification: bool = False, max_attempts: int = 0) -> dict:
+    def _call_and_parse(
+        self, messages: list, is_verification: bool = False, max_attempts: int = 0
+    ) -> dict:
         """POST to the vision LLM and return the JSON object from its reply.
 
         Picks the next API key in the round-robin on every call so both Mistral
@@ -469,10 +566,19 @@ class FigureExtractor:
             "model": settings.VISION_MODEL,
             "messages": messages,
             "temperature": 0.1,
+            "max_tokens": 16384,
             "response_format": {"type": "json_object"},
         }
         last_err: Exception | None = None
-        effective_attempts = max_attempts if max_attempts > 0 else max(settings.LLM_MAX_RETRIES, 3)
+        effective_attempts = (
+            max_attempts if max_attempts > 0 else max(settings.LLM_MAX_RETRIES, 3)
+        )
+        global _vision_last_call
+        # Keep in step with ChatClient's gemini throttle (this path bypasses it)
+        gap = 5.0 - (time.time() - _vision_last_call)
+        if gap > 0:
+            time.sleep(gap)
+        _vision_last_call = time.time()
 
         # Pick key once at call-start; rotate again on 429
         api_key = _next_vision_key() if _vision_keys else ""
@@ -489,10 +595,14 @@ class FigureExtractor:
                     timeout=120,
                 )
                 if resp.status_code == 429:
-                    last_err = requests.exceptions.HTTPError("429 Too Many Requests", response=resp)
+                    last_err = requests.exceptions.HTTPError(
+                        "429 Too Many Requests", response=resp
+                    )
                     if attempt < effective_attempts - 1:
                         wait = settings.LLM_RETRY_BACKOFF_BASE * (attempt + 1)
-                        log.warning(f"[RATE LIMIT] Vision 429{key_hint} — waiting {wait}s, rotating key...")
+                        log.warning(
+                            f"[RATE LIMIT] Vision 429{key_hint} — waiting {wait}s, rotating key..."
+                        )
                         time.sleep(wait)
                         # Rotate to the other key for the retry
                         if len(_vision_keys) > 1:
@@ -502,25 +612,39 @@ class FigureExtractor:
                     break
                 resp.raise_for_status()
                 content = resp.json()["choices"][0]["message"]["content"]
-                # Debug dump only when DEBUG=true (avoid unbounded disk writes)
+                # Gemini sometimes wraps JSON in ```json fences even in json_object mode
+                _stripped = content.strip()
+                _fence = re.match(r"^```(?:json)?\s*(.*?)```$", _stripped, re.DOTALL)
+                if _fence:
+                    content = _fence.group(1).strip()
                 if settings.DEBUG:
                     try:
                         import pathlib
-                        raw_dir = pathlib.Path(__file__).parent.parent / "logs" / "vision_raw"
+
+                        raw_dir = (
+                            pathlib.Path(__file__).parent.parent / "logs" / "vision_raw"
+                        )
                         raw_dir.mkdir(parents=True, exist_ok=True)
                         prefix = "verify" if is_verification else "extract"
-                        (raw_dir / f"{prefix}_{int(time.time())}.json").write_text(content, encoding="utf-8")
+                        (raw_dir / f"{prefix}_{int(time.time())}.json").write_text(
+                            content, encoding="utf-8"
+                        )
                     except Exception:
                         pass
                 data = json.loads(content)
                 if not isinstance(data, dict):
-                    raise ValueError(f"vision reply was not a JSON object: {type(data).__name__}")
+                    raise ValueError(
+                        f"vision reply was not a JSON object: {type(data).__name__}"
+                    )
                 return data
             except requests.exceptions.RequestException as e:
                 last_err = e
                 # Only retry transient HTTP errors, not JSON validation
                 status = getattr(getattr(e, "response", None), "status_code", None)
-                if status not in (429, 502, 503, 504) and not isinstance(e, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)):
+                if status not in (429, 502, 503, 504) and not isinstance(
+                    e,
+                    (requests.exceptions.ConnectionError, requests.exceptions.Timeout),
+                ):
                     break
                 if attempt < effective_attempts - 1:
                     time.sleep(settings.LLM_RETRY_BACKOFF_BASE * (attempt + 1))
@@ -533,7 +657,6 @@ class FigureExtractor:
         raise RuntimeError(
             f"vision {'verification' if is_verification else 'extraction'} failed: {last_err}"
         )
-
 
 
 figure_extractor = FigureExtractor()
