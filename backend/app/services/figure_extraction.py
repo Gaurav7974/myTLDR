@@ -598,17 +598,15 @@ class FigureExtractor:
                     last_err = requests.exceptions.HTTPError(
                         "429 Too Many Requests", response=resp
                     )
-                    if attempt < effective_attempts - 1:
-                        wait = settings.LLM_RETRY_BACKOFF_BASE * (attempt + 1)
+                    if attempt == 0 and len(_vision_keys) > 1:
+                        # Rotate to the other key once, no sleep — quota is usually exhausted
                         log.warning(
-                            f"[RATE LIMIT] Vision 429{key_hint} — waiting {wait}s, rotating key..."
+                            f"[RATE LIMIT] Vision 429{key_hint} — rotating key once, no wait"
                         )
-                        time.sleep(wait)
-                        # Rotate to the other key for the retry
-                        if len(_vision_keys) > 1:
-                            api_key = _next_vision_key()
-                            key_hint = f" (key ...{api_key[-6:]})"
+                        api_key = _next_vision_key()
+                        key_hint = f" (key ...{api_key[-6:]})"
                         continue
+                    log.warning("[RATE LIMIT] Vision 429 — failing without sleep")
                     break
                 resp.raise_for_status()
                 content = resp.json()["choices"][0]["message"]["content"]

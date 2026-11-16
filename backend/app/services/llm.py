@@ -12,6 +12,12 @@ from app.core.config import settings
 from app.core.logger import get_logger
 
 log = get_logger(__name__)
+
+
+class RateLimited(Exception):
+    """A provider returned 429 — caller should try the next provider, not sleep."""
+
+
 _session = requests.Session()
 _session.mount(
     "https://",
@@ -82,6 +88,12 @@ class ChatClient:
         self._min_interval = {"gemini": 5.0}
         self._throttle_state: dict[str, float] = {}
         self._throttle_lock = threading.Lock()
+        # Circuit breaker: 2 consecutive 429s from a provider cools it down for
+        # the rest of the process for a short window, so parallel tasks stop
+        # re-discovering an exhausted quota one at a time.
+        self._consec_429: dict[str, int] = {}
+        self._cooldown_until: dict[str, float] = {}
+        self._breaker_lock = threading.Lock()
 
     def _throttle(self, name: str) -> None:
         iv = self._min_interval.get(name)
@@ -95,6 +107,10 @@ class ChatClient:
             self._throttle_state[name] = time.time()
 
     # -- Key rotation ----------------------------------------------------------
+
+    def _breaker_reset(self, name: str) -> None:
+        self._consec_429[name] = 0
+        self._cooldown_until.pop(name, None)
 
     def _next_mistral_key(self) -> str:
         """Return the next Mistral API key in round-robin order (thread-safe)."""
@@ -146,9 +162,35 @@ class ChatClient:
 
         last_err = None
         for prov in self.providers:
+            with self._breaker_lock:
+                cooldown_left = (
+                    self._cooldown_until.get(prov["name"], 0.0) - time.time()
+                )
+            if cooldown_left > 0:
+                log.info(
+                    f"[LLM] provider '{prov['name']}' skipped — 429 cooldown {cooldown_left:.0f}s left"
+                )
+                continue
             use_model = model if model == prov["model"] else prov["model"]
             try:
-                return self._post(prov, msgs, use_model, response_format, temperature)
+                result = self._post(prov, msgs, use_model, response_format, temperature)
+                with self._breaker_lock:
+                    self._breaker_reset(prov["name"])
+                return result
+            except RateLimited as e:
+                with self._breaker_lock:
+                    n = self._consec_429.get(prov["name"], 0) + 1
+                    self._consec_429[prov["name"]] = n
+                    if n >= 2:
+                        self._cooldown_until[prov["name"]] = time.time() + 120
+                        log.warning(
+                            f"[LLM] provider '{prov['name']}' hit 429 twice — cooling down for 120s"
+                        )
+                log.warning(
+                    f"[LLM] provider '{prov['name']}' rate-limited: failing over"
+                )
+                last_err = e
+                continue
             except Exception as e:
                 log.warning(f"[LLM] provider '{prov['name']}' failed: {e}")
                 last_err = e
@@ -192,15 +234,10 @@ class ChatClient:
                         timeout=120,
                     )
                 if resp.status_code == 429:
-                    wait = self.backoff_base * (attempt + 1)
                     log.warning(
-                        f"[RATE LIMIT] Waiting {wait}s on {prov['name']}{key_hint}..."
+                        f"[RATE LIMIT] {prov['name']}{key_hint} returned 429 — failing over immediately"
                     )
-                    time.sleep(wait)
-                    # On 429, rotate to the other key for the retry attempt
-                    if prov.get("_rotating") and len(self._mistral_keys) > 1:
-                        api_key = self._next_mistral_key()
-                    continue
+                    raise RateLimited(f"{prov['name']} 429 Too Many Requests")
                 if resp.status_code == 413:
                     log.error(
                         f"[ERROR] Payload too large on {prov['name']}, trimming trailing text...",
