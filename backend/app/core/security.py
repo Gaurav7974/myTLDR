@@ -16,6 +16,10 @@ api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 bearer_auth = HTTPBearer(auto_error=False)
 
 
+def _keys_configured() -> bool:
+    return bool(settings.MASTER_API_KEY or settings.API_KEYS or settings.PROXY_API_KEY)
+
+
 def get_rate_limit_key(request: Request) -> str:
     """
     Extract rate limiting key:
@@ -29,6 +33,10 @@ def get_rate_limit_key(request: Request) -> str:
         if auth_header and auth_header.startswith("Bearer "):
             api_key = auth_header[7:].strip()
 
+    if api_key and settings.PROXY_API_KEY and api_key == settings.PROXY_API_KEY:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return f"ip:{forwarded.split(',')[0].strip()}"
     if api_key and settings.MASTER_API_KEY and api_key == settings.MASTER_API_KEY:
         return f"apikey:{_hash.sha256(api_key.encode()).hexdigest()[:12]}"
     if api_key and api_key in settings.API_KEYS:
@@ -54,7 +62,14 @@ def verify_api_key(
     """
     key = header_key or (bearer_creds.credentials if bearer_creds else None)
     if not key:
+        if _keys_configured():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing API Key",
+            )
         return None
+    if settings.PROXY_API_KEY and key == settings.PROXY_API_KEY:
+        return key
 
     if settings.MASTER_API_KEY and key == settings.MASTER_API_KEY:
         return key

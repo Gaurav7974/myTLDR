@@ -2,7 +2,7 @@
  * Client API services for paper ingestion, SSE streaming, and LLM chat.
  */
 
-import { PaperData, ParsedDocument } from '@/types/paper';
+import { PaperData, ParsedDocument, KeywordDefinition } from '@/types/paper';
 import { ArchitectureGraph } from '@/types/architecture_graph';
 
 export interface StreamProgressEvent {
@@ -30,9 +30,9 @@ export async function processPaperStream(
     if (url) formData.append('url', url);
     if (file) formData.append('file', file);
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+    const backendUrl = '/api';
 
-    const response = await fetch(`${backendUrl}/api/stream`, {
+    const response = await fetch(`${backendUrl}/stream`, {
       method: 'POST',
       body: formData,
       signal: AbortSignal.timeout(600000),
@@ -118,6 +118,7 @@ export interface ArxivLookup {
   authors: string[];
   abstract: string;
   categories: string[];
+  published?: string;
 }
 
 /**
@@ -127,9 +128,9 @@ export interface ArxivLookup {
  * UI can show "check the ID" instead of streaming the wrong paper.
  */
 export async function lookupArxiv(input: string): Promise<ArxivLookup> {
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+  const backendUrl = '/api';
   const response = await fetch(
-    `${backendUrl}/api/arxiv/lookup?arxiv_id=${encodeURIComponent(input)}`,
+    `${backendUrl}/arxiv/lookup?arxiv_id=${encodeURIComponent(input)}`,
     { signal: AbortSignal.timeout(30000) }
   );
   if (!response.ok) {
@@ -145,7 +146,29 @@ export async function lookupArxiv(input: string): Promise<ArxivLookup> {
   return (await response.json()) as ArxivLookup;
 }
 
-function transformBackendPayloadToPaperData(
+/**
+ * Backend keywords are snake_case; the UI type is camelCase. Rows without a
+ * term are dropped so a malformed LLM entry can't render an empty chip.
+ */
+export function mapBackendKeywords(raw: unknown): KeywordDefinition[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((k, i) => {
+      const row = (k || {}) as Record<string, unknown>;
+      return {
+        id: `kw-${i}`,
+        term: String(row.term || ''),
+        category: (row.category as KeywordDefinition['category']) || 'core',
+        definition: String(row.definition || ''),
+        simpleExplanation: String(row.simple_explanation || ''),
+        formula: (row.formula as string) || undefined,
+        relatedSection: (row.related_section as string) || undefined,
+      };
+    })
+    .filter((k) => k.term.length > 0);
+}
+
+export function transformBackendPayloadToPaperData(
   payload: Record<string, unknown>,
   url?: string,
   filename?: string
@@ -177,7 +200,7 @@ function transformBackendPayloadToPaperData(
       publishedDate: (metadata.published as string) || '',
       arxivId: (metadata.arxiv_id as string) || url?.replace(/.*\/abs\//, '').replace(/\.pdf.*$/, '') || url?.match(/\d{4}\.\d{4,5}/)?.[0],
       tags: (metadata.categories as string[]) || (explanation.tags as string[]) || [],
-      keywords: (explanation.metadata as Record<string, unknown>)?.keywords as PaperData['metadata']['keywords'] || [],
+      keywords: mapBackendKeywords(explanation.keywords),
       pdfUrl: directPdfUrl,
       citationsCount: (metadata.citations as number) || 0,
       contentHash: (payload.content_hash as string) || (metadata.arxiv_id as string) || url?.match(/\d{4}\.\d{4,5}/)?.[0],
@@ -206,7 +229,13 @@ function transformBackendPayloadToPaperData(
     codeNote: (payload.code_note as string) || null,
     architectureIR: payload.architecture_ir as PaperData['architectureIR'],
     sceneGraph3D: payload.scene_graph_3d as PaperData['sceneGraph3D'],
-    architectureGraph: transformArchitectureGraph(payload.graph, payload.architecture_ir),
+    architectureGraph: payload.diagram_available === false
+      ? undefined
+      : transformArchitectureGraph(payload.graph, payload.architecture_ir),
+    diagramAvailable:
+      typeof payload.diagram_available === 'boolean'
+        ? payload.diagram_available
+        : undefined,
     bycroftStages: payload.bycroft_stages as PaperData['bycroftStages'],
     residualHighways: payload.bycroft_highways as PaperData['residualHighways'],
     attentionHeatmap: payload.attention_heatmap as PaperData['attentionHeatmap'],

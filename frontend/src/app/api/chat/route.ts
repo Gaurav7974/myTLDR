@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { backendHeaders } from '@/lib/backendProxy';
 
 // Simple in-memory rate limiter: 30 requests per minute per IP
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -68,7 +69,7 @@ export async function POST(req: NextRequest) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(clientIp ? { 'X-Forwarded-For': clientIp } : {}),
+          ...backendHeaders(req),
         },
         body: JSON.stringify({
           paper_hash: effectiveHash,
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
           difficulty,
           ...(full_text ? { full_text } : {}),
         }),
-        signal: AbortSignal.timeout(25000), // 25s timeout for deep LLM synthesis
+        signal: AbortSignal.timeout(45000), // 45s — free-tier LLM providers retry under 429/503 bursts
       });
 
       if (response.ok) {
