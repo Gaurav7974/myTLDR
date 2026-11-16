@@ -12,6 +12,17 @@ load_dotenv(
 )
 
 
+def _normalize_database_url(url: str) -> str:
+    # Altare injects libpq-style `postgresql://...?sslmode=require`, which
+    # SQLAlchemy+asyncpg cannot consume: it needs the asyncpg dialect and
+    # asyncpg's `ssl` parameter.
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://") :]
+    if url.startswith("postgresql://"):
+        url = "postgresql+asyncpg://" + url[len("postgresql://") :]
+    return url.replace("sslmode=", "ssl=")
+
+
 class Settings:
     """App settings loaded from environment."""
 
@@ -120,8 +131,11 @@ class Settings:
     RAG_BM25_WEIGHT: float = float(os.getenv("RAG_BM25_WEIGHT", "0.4"))
 
     # Database
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5433/papers"
+    DATABASE_URL: str = _normalize_database_url(
+        os.getenv(
+            "DATABASE_URL",
+            "postgresql+asyncpg://postgres:postgres@localhost:5433/papers",
+        )
     )
 
     # Processing
