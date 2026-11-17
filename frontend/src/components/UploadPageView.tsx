@@ -320,8 +320,10 @@ export const UploadPageView: React.FC<UploadPageViewProps> = ({ onSelectPaper })
       return;
     }
 
-    if (file.size > 25 * 1024 * 1024) {
-      setSubmitError("File too large: Maximum supported paper size is 25MB.");
+    // Vercel serverless caps request bodies at ~4.5MB — a bigger PDF never
+    // reaches the backend (413 at the edge), so reject it here with a real message.
+    if (file.size > 4 * 1024 * 1024) {
+      setSubmitError("File too large: the hosted upload limit is 4MB. Try a smaller PDF (e.g. the arXiv preprint version) or paste an arXiv link instead.");
       return;
     }
 
