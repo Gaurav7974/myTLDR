@@ -108,7 +108,11 @@ class Settings:
     )
 
     # Embedding (Google Gemini)
-    GOOGLE_EMBEDDING_KEY: str = os.getenv("GOOGLE_EMBEDDING_KEY", "")
+    # Fall back to GEMINI_API_KEY: the embedding path used to require this var
+    # verbatim, so a Gemini key set only for the LLM path silently disabled RAG.
+    GOOGLE_EMBEDDING_KEY: str = os.getenv(
+        "GOOGLE_EMBEDDING_KEY", os.getenv("GEMINI_API_KEY", "")
+    )
     GOOGLE_EMBEDDING_MODEL: str = os.getenv(
         "GOOGLE_EMBEDDING_MODEL", "gemini-embedding-001"
     )
